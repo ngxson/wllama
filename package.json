@@ -1,0 +1,37 @@
+{
+  "name": "wllama",
+  "version": "1.0.0",
+  "description": "Low-level WASM binding for llama.cpp",
+  "main": "index.js",
+  "type": "module",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "serve": "http-server -c-1",
+    "clean": "rm -rf ./esm",
+    "build": "npm run clean && tsc -p tsconfig.build.json && ./scripts/post_build.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ngxson/wllama.git"
+  },
+  "keywords": [
+    "llama",
+    "llm",
+    "ai",
+    "rag",
+    "embeddings",
+    "generation"
+  ],
+  "author": "Xuan Son NGUYEN <contact@ngxson.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ngxson/wllama/issues"
+  },
+  "homepage": "https://github.com/ngxson/wllama#readme",
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "typescript": "^5.4.2"
+  }
+}

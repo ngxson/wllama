@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -e
+
+CURRENT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+cd $CURRENT_PATH/..
+
+cp src/multi-thread/wllama.wasm         esm/multi-thread
+cp src/multi-thread/wllama.worker.mjs   esm/multi-thread
+cp src/single-thread/wllama.wasm        esm/single-thread
+
+# https://stackoverflow.com/questions/62619058/appending-js-extension-on-relative-import-statements-during-typescript-compilat
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  find ./esm -name "*.js" -exec sed -i '' -E "s#export (.*) from '\.(.*)';#export \1 from '.\2\.js';#g" {} +;
+  find ./esm -name "*.js" -exec sed -i '' -E "s#import (.*) from '\.(.*)';#import \1 from '.\2\.js';#g" {} +;
+else
+  find ./esm -name "*.js" -exec sed -i -E "s#export (.*) from '\.(.*)';#export \1 from '.\2\.js';#g" {} +;
+  find ./esm -name "*.js" -exec sed -i -E "s#import (.*) from '\.(.*)';#import \1 from '.\2\.js';#g" {} +;
+fi

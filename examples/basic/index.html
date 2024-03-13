@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wllama.cpp demo</title>
+
+  <style>
+    body {
+      background-color: rgb(55, 55, 55);
+      color: rgb(222, 222, 222);
+      font-family: 'Courier New', Courier, monospace;
+      padding: 1em;
+    }
+
+    #output_cmpl {
+      border: 1px solid #aaa;
+      border-radius: 5px;
+      padding: 0.7em;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Completions</h2>
+  Prompt: <input id="input_prompt" value="Once upon a time," /><br/>
+  Number of tokens: <input id="input_n_predict" value="50" type="number" /><br/>
+  <button id="btn_run_cmpl">Run completions</button>
+  <br/>
+  <br/>
+  Completion: <br/>
+  <div id="output_cmpl"></div>
+
+  <br/>
+  --------------------<br/>
+  <br/>
+
+  <h2>Embeddings</h2>
+  Text A: <input id="input_a" value="What is the weather like?" /><br/>
+  Text B: <input id="input_b" value="Will it rain tomorrow?" /><br/>
+  <button id="btn_run_embd">Calculate embeddings and cosine distance</button><br/>
+  <br/>
+  Cosine distance = <span id="output_embd"></span>
+
+  <script type="module">
+    import { Wllama } from '../../esm/index.js';
+
+    async function main() {
+      setCmplDisable(true);
+      setEmbdDisable(true);
+
+      const configPaths = {
+        wasmSingleThreadPath: '../../esm/single-thread/wllama.wasm',
+        wasmMultiThreadPath: '../../esm/multi-thread/wllama.wasm',
+        workerMultiThreadPath: '../../esm/multi-thread/wllama.worker.mjs',
+      };
+
+      /////////////////////////////////////////////////////////////////////
+      // completions
+
+      const wllama = new Wllama(configPaths);
+      await wllama.loadModel('https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf', {});
+      setCmplDisable(false);
+
+      elemBtnCompletions.onclick = async () => {
+        setCmplDisable(true);
+        await wllama.createCompletion(elemInput.value, {
+          nPredict: parseInt(elemNPredict.value),
+          sampling: {
+            temp: 0.5,
+            top_k: 40,
+            top_p: 0.9,
+          },
+          onNewToken: (token, piece, currentText) => {
+            elemOutputCmpl.textContent = currentText;
+          },
+        });
+        setCmplDisable(false);
+      };
+
+      /////////////////////////////////////////////////////////////////////
+      // embeddings
+
+      const wllama1 = new Wllama(configPaths);
+      await wllama1.loadModel('https://huggingface.co/ggml-org/models/resolve/main/bert-bge-small/ggml-model-f16.gguf', {
+        // IMPORTANT: do not forget to set embeddings to true. If not set, "createEmbeddings" will crash the app
+        embeddings: true,
+      });
+      setEmbdDisable(false);
+
+      elemBtnEmbeddings.onclick = async () => {
+        setEmbdDisable(true);
+        const embdA = await wllama1.createEmbeddings(elemInputA.value);
+        console.log({embdA});
+        const embdB = await wllama1.createEmbeddings(elemInputB.value);
+        console.log({embdB});
+        const normA = Math.sqrt(embdA.reduce((acc, x) => acc + x*x, 0));
+        const normB = Math.sqrt(embdB.reduce((acc, x) => acc + x*x, 0));
+        const dotProd = embdA.reduce((acc, _, i) => acc + embdA[i]*embdB[i], 0);
+        const distance = dotProd / (normA * normB)
+        elemOutputEmbd.textContent = distance;
+        setEmbdDisable(false);
+      };
+    }
+
+    /////////////////////////////////////////////////////////////////////
+
+    // DOM elements: completions
+    const elemInput = document.getElementById('input_prompt');
+    const elemNPredict = document.getElementById('input_n_predict');
+    const elemBtnCompletions = document.getElementById('btn_run_cmpl');
+    const elemOutputCmpl = document.getElementById('output_cmpl');
+    // DOM elements: embeddings
+    const elemInputA = document.getElementById('input_a');
+    const elemInputB = document.getElementById('input_b');
+    const elemBtnEmbeddings = document.getElementById('btn_run_embd');
+    const elemOutputEmbd = document.getElementById('output_embd');
+    // utils
+    const setCmplDisable = (disabled) => {
+      elemInput.disabled = disabled;
+      elemNPredict.disabled = disabled;
+      elemBtnCompletions.disabled = disabled;
+    };
+    const setEmbdDisable = (disabled) => {
+      elemInputA.disabled = disabled;
+      elemInputB.disabled = disabled;
+      elemBtnEmbeddings.disabled = disabled;
+    };
+
+    main();
+  </script>
+</body>
+</html>

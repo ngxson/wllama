@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "useDefineForClassFields": true,
+    "target": "ESNext",
+    "lib": ["esnext", "dom"],
+    "allowJs": true,
+    "moduleResolution": "node",
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "skipLibCheck": true,
+    "preserveConstEnums": true,
+    "sourceMap": true,
+    "declaration": true,
+    "downlevelIteration": true,
+    "resolveJsonModule": true,
+    "experimentalDecorators": true,
+
+    "noEmit": false,
+    "module": "es6",
+    "outDir": "esm",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [ "./src/**/*.ts" ]
+}

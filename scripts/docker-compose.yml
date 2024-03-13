@@ -1,0 +1,45 @@
+services:
+  llamacpp-wasm-builder:
+    container_name: llamacpp-wasm-builder
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM emscripten/emsdk:3.1.55
+        RUN apt update && apt install -y git
+    user: "${D_UID}:${D_GID}"
+    volumes:
+      - ..:/source:Z
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        cd /source
+
+        mkdir -p wasm/single-thread
+        cd wasm/single-thread
+
+        export SHARED_EMCC_CFLAGS="--no-entry -O3 -msimd128 -fno-rtti -DNDEBUG -flto=full -sEXPORT_ALL=1 -sEXPORT_ES6=1 -sMODULARIZE=1 -sINITIAL_MEMORY=800MB -sMAXIMUM_MEMORY=4GB -sALLOW_MEMORY_GROWTH -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_start,_wllama_action,_wllama_exit,_wllama_decode_exception -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sNO_EXIT_RUNTIME=1"
+
+        # emcc --clear-cache
+
+        emcmake cmake ../..
+        export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS"
+        emmake make wllama -j
+
+        cd ../..
+        mkdir -p wasm/multi-thread
+        cd wasm/multi-thread
+        export EMCC_CFLAGS="" # temporary clear it
+        emcmake cmake ../..
+        export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS -pthread -sUSE_PTHREADS=1 -sPTHREAD_POOL_SIZE=32"
+        emmake make wllama -j
+
+        # copy output files
+        cd ../..
+        mkdir -p src/multi-thread
+        cp wasm/multi-thread/wllama.js         src/multi-thread
+        cp wasm/multi-thread/wllama.wasm       src/multi-thread
+        cp wasm/multi-thread/wllama.worker.mjs src/multi-thread
+        cp wasm/single-thread/wllama.js        src/single-thread
+        cp wasm/single-thread/wllama.wasm      src/single-thread
