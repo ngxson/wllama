@@ -17,6 +17,8 @@
     "url": "git+https://github.com/ngxson/wllama.git"
   },
   "keywords": [
+    "wasm",
+    "webassembly",
     "llama",
     "llm",
     "ai",

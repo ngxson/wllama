@@ -1,10 +1,14 @@
-# wllama - WASM low-level binding for llama.cpp
+# wllama - WASM binding for llama.cpp
 
-Another WASM binding for llama.cpp. Inspired by [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm), but unlike it, **wllama** aims to supports **low-level API** like (de)tokenization, embeddings,...
+![](./README_banner.png)
+
+Another WASM binding for [llama.cpp](https://github.com/ggerganov/llama.cpp). Inspired by [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm), but unlike it, **wllama** aims to supports **low-level API** like (de)tokenization, embeddings,...
+
+WASM allow llama.cpp to run directly on browser, without any server part.
 
 ## Demo
 
-TODO
+- Basic usages with completions and embeddings: https://ngxson.github.io/wllama/examples/basic/
 
 ## How to build
 
