@@ -10,7 +10,10 @@
   "scripts": {
     "serve": "http-server -c-1",
     "clean": "rm -rf ./esm",
-    "build": "npm run clean && tsc -p tsconfig.build.json && ./scripts/post_build.sh"
+    "build:wasm": "./scripts/build_wasm.sh",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "postbuild": "./scripts/post_build.sh && npm run docs",
+    "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts"
   },
   "repository": {
     "type": "git",
@@ -34,6 +37,7 @@
   "homepage": "https://github.com/ngxson/wllama#readme",
   "devDependencies": {
     "http-server": "^14.1.1",
+    "typedoc": "^0.25.12",
     "typescript": "^5.4.2"
   }
 }

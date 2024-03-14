@@ -1791,19 +1791,21 @@ var Module = (() => {
         var _wllama_exit = Module["_wllama_exit"] = () => (_wllama_exit = Module["_wllama_exit"] = wasmExports["x"])();
         var _wllama_decode_exception = Module["_wllama_decode_exception"] = a0 => (_wllama_decode_exception = Module["_wllama_decode_exception"] = wasmExports["y"])(a0);
         var _main = Module["_main"] = (a0, a1) => (_main = Module["_main"] = wasmExports["z"])(a0, a1);
-        var _emscripten_builtin_memalign = (a0, a1) => (_emscripten_builtin_memalign = wasmExports["B"])(a0, a1);
-        var setTempRet0 = a0 => (setTempRet0 = wasmExports["C"])(a0);
-        var stackSave = () => (stackSave = wasmExports["D"])();
-        var stackRestore = a0 => (stackRestore = wasmExports["E"])(a0);
-        var stackAlloc = a0 => (stackAlloc = wasmExports["F"])(a0);
-        var ___cxa_increment_exception_refcount = a0 => (___cxa_increment_exception_refcount = wasmExports["G"])(a0);
-        var ___cxa_is_pointer_type = a0 => (___cxa_is_pointer_type = wasmExports["H"])(a0);
-        var dynCall_jiji = Module["dynCall_jiji"] = (a0, a1, a2, a3, a4) => (dynCall_jiji = Module["dynCall_jiji"] = wasmExports["I"])(a0, a1, a2, a3, a4);
-        var dynCall_viijii = Module["dynCall_viijii"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_viijii = Module["dynCall_viijii"] = wasmExports["J"])(a0, a1, a2, a3, a4, a5, a6);
-        var dynCall_iiiiij = Module["dynCall_iiiiij"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_iiiiij = Module["dynCall_iiiiij"] = wasmExports["K"])(a0, a1, a2, a3, a4, a5, a6);
-        var dynCall_iiiiijj = Module["dynCall_iiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8) => (dynCall_iiiiijj = Module["dynCall_iiiiijj"] = wasmExports["L"])(a0, a1, a2, a3, a4, a5, a6, a7, a8);
-        var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) => (dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = wasmExports["M"])(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
-        function applySignatureConversions(wasmExports) { wasmExports = Object.assign({}, wasmExports); var makeWrapper_ppp = f => (a0, a1) => f(a0, a1) >>> 0; var makeWrapper_p = f => () => f() >>> 0; var makeWrapper_pp = f => a0 => f(a0) >>> 0; wasmExports["B"] = makeWrapper_ppp(wasmExports["B"]); wasmExports["D"] = makeWrapper_p(wasmExports["D"]); wasmExports["F"] = makeWrapper_pp(wasmExports["F"]); return wasmExports; }
+        var _free = a0 => (_free = wasmExports["A"])(a0);
+        var _malloc = a0 => (_malloc = wasmExports["B"])(a0);
+        var _emscripten_builtin_memalign = (a0, a1) => (_emscripten_builtin_memalign = wasmExports["D"])(a0, a1);
+        var setTempRet0 = a0 => (setTempRet0 = wasmExports["E"])(a0);
+        var stackSave = () => (stackSave = wasmExports["F"])();
+        var stackRestore = a0 => (stackRestore = wasmExports["G"])(a0);
+        var stackAlloc = a0 => (stackAlloc = wasmExports["H"])(a0);
+        var ___cxa_increment_exception_refcount = a0 => (___cxa_increment_exception_refcount = wasmExports["I"])(a0);
+        var ___cxa_is_pointer_type = a0 => (___cxa_is_pointer_type = wasmExports["J"])(a0);
+        var dynCall_jiji = Module["dynCall_jiji"] = (a0, a1, a2, a3, a4) => (dynCall_jiji = Module["dynCall_jiji"] = wasmExports["K"])(a0, a1, a2, a3, a4);
+        var dynCall_viijii = Module["dynCall_viijii"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_viijii = Module["dynCall_viijii"] = wasmExports["L"])(a0, a1, a2, a3, a4, a5, a6);
+        var dynCall_iiiiij = Module["dynCall_iiiiij"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_iiiiij = Module["dynCall_iiiiij"] = wasmExports["M"])(a0, a1, a2, a3, a4, a5, a6);
+        var dynCall_iiiiijj = Module["dynCall_iiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8) => (dynCall_iiiiijj = Module["dynCall_iiiiijj"] = wasmExports["N"])(a0, a1, a2, a3, a4, a5, a6, a7, a8);
+        var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) => (dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = wasmExports["O"])(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
+        function applySignatureConversions(wasmExports) { wasmExports = Object.assign({}, wasmExports); var makeWrapper_pp = f => a0 => f(a0) >>> 0; var makeWrapper_ppp = f => (a0, a1) => f(a0, a1) >>> 0; var makeWrapper_p = f => () => f() >>> 0; wasmExports["B"] = makeWrapper_pp(wasmExports["B"]); wasmExports["D"] = makeWrapper_ppp(wasmExports["D"]); wasmExports["F"] = makeWrapper_p(wasmExports["F"]); wasmExports["H"] = makeWrapper_pp(wasmExports["H"]); return wasmExports; }
         Module["addRunDependency"] = addRunDependency;
         Module["removeRunDependency"] = removeRunDependency;
         Module["FS_createPath"] = FS.createPath;
@@ -1852,6 +1854,38 @@ var Module = (() => {
         if (Module["noInitialRun"])
             shouldRunNow = false;
         run();
+        var workerResponded = false, workerCallbackId = -1;
+        (function () { var messageBuffer = null, buffer = 0, bufferSize = 0; function flushMessages() { if (!messageBuffer)
+            return; if (runtimeInitialized) {
+            var temp = messageBuffer;
+            messageBuffer = null;
+            temp.forEach(function (message) { onmessage(message); });
+        } } function messageResender() { flushMessages(); if (messageBuffer) {
+            setTimeout(messageResender, 100);
+        } } onmessage = msg => { if (!runtimeInitialized) {
+            if (!messageBuffer) {
+                messageBuffer = [];
+                setTimeout(messageResender, 100);
+            }
+            messageBuffer.push(msg);
+            return;
+        } flushMessages(); var func = Module["_" + msg.data["funcName"]]; if (!func)
+            throw "invalid worker function to call: " + msg.data["funcName"]; var data = msg.data["data"]; if (data) {
+            if (!data.byteLength)
+                data = new Uint8Array(data);
+            if (!buffer || bufferSize < data.length) {
+                if (buffer)
+                    _free(buffer);
+                bufferSize = data.length;
+                buffer = _malloc(data.length);
+            }
+            HEAPU8.set(data, buffer >>> 0);
+        } workerResponded = false; workerCallbackId = msg.data["callbackId"]; if (data) {
+            func(buffer, data.length);
+        }
+        else {
+            func(0, 0);
+        } }; })();
         return moduleArg.ready;
     });
 })();

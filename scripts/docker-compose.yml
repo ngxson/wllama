@@ -24,7 +24,7 @@ services:
         # emcc --clear-cache
 
         emcmake cmake ../..
-        export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS"
+        export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS -sBUILD_AS_WORKER=1"
         emmake make wllama -j
 
         cd ../..
@@ -38,8 +38,8 @@ services:
         # copy output files
         cd ../..
         mkdir -p src/multi-thread
-        cp wasm/multi-thread/wllama.js         src/multi-thread
-        cp wasm/multi-thread/wllama.wasm       src/multi-thread
-        cp wasm/multi-thread/wllama.worker.mjs src/multi-thread
-        cp wasm/single-thread/wllama.js        src/single-thread
-        cp wasm/single-thread/wllama.wasm      src/single-thread
+        cp wasm/multi-thread/wllama.js          src/multi-thread
+        cp wasm/multi-thread/wllama.wasm        src/multi-thread
+        cp wasm/multi-thread/wllama.worker.mjs  src/multi-thread
+        cp wasm/single-thread/wllama.js         src/single-thread
+        cp wasm/single-thread/wllama.wasm       src/single-thread

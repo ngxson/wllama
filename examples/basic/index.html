@@ -50,16 +50,16 @@
       setEmbdDisable(true);
 
       const configPaths = {
-        wasmSingleThreadPath: '../../esm/single-thread/wllama.wasm',
-        wasmMultiThreadPath: '../../esm/multi-thread/wllama.wasm',
-        workerMultiThreadPath: '../../esm/multi-thread/wllama.worker.mjs',
+        'single-thread/wllama.wasm'     : '../../esm/single-thread/wllama.wasm',
+        'multi-thread/wllama.wasm'      : '../../esm/multi-thread/wllama.wasm',
+        'multi-thread/wllama.worker.mjs': '../../esm/multi-thread/wllama.worker.mjs',
       };
 
       /////////////////////////////////////////////////////////////////////
       // completions
 
       const wllama = new Wllama(configPaths);
-      await wllama.loadModel('https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf', {});
+      await wllama.loadModelFromUrl('https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf', {});
       setCmplDisable(false);
 
       elemBtnCompletions.onclick = async () => {
@@ -82,7 +82,7 @@
       // embeddings
 
       const wllama1 = new Wllama(configPaths);
-      await wllama1.loadModel('https://huggingface.co/ggml-org/models/resolve/main/bert-bge-small/ggml-model-f16.gguf', {
+      await wllama1.loadModelFromUrl('https://huggingface.co/ggml-org/models/resolve/main/bert-bge-small/ggml-model-f16.gguf', {
         // IMPORTANT: do not forget to set embeddings to true. If not set, "createEmbeddings" will crash the app
         embeddings: true,
       });
