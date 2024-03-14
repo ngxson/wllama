@@ -1,6 +1,6 @@
 {
-  "name": "wllama",
-  "version": "1.0.0",
+  "name": "@wllama/wllama",
+  "version": "1.0.1",
   "description": "Low-level WASM binding for llama.cpp",
   "main": "index.js",
   "type": "module",

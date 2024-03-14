@@ -9,6 +9,7 @@ Wasm allow llama.cpp to run directly on browser, without any server part.
 ## Features
 
 - Typescript support
+- No runtime dependency (see [package.json](./package.json))
 - High-level API: completions, embeddings
 - Low-level API: (de)tokenize, KV cache control, sampling control,...
 - Ability to load splitted model
@@ -16,7 +17,7 @@ Wasm allow llama.cpp to run directly on browser, without any server part.
 
 ## Demo and documentations
 
-**Documentation:** https://ngxson.github.io/docs/
+**Documentation:** https://ngxson.github.io/wllama/docs/
 
 Demo:
 - Basic usages with completions and embeddings: https://ngxson.github.io/wllama/examples/basic/
@@ -63,7 +64,6 @@ npm run build
 
 ## TODO
 
-- Deploy to npm
 - Guide: How to split gguf file?
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
 - Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp
