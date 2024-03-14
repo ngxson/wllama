@@ -23,6 +23,8 @@
 <body>
 
   <h2>Completions</h2>
+  Model: <span id="cmpl_model"></span><br/>
+  <button id="btn_start_cmpl">Load model</button><br/>
   Prompt: <input id="input_prompt" value="Once upon a time," /><br/>
   Number of tokens: <input id="input_n_predict" value="50" type="number" /><br/>
   <button id="btn_run_cmpl">Run completions</button>
@@ -36,6 +38,8 @@
   <br/>
 
   <h2>Embeddings</h2>
+  Model: <span id="embd_model"></span><br/>
+  <button id="btn_start_embd">Load model</button><br/>
   Text A: <input id="input_a" value="What is the weather like?" /><br/>
   Text B: <input id="input_b" value="Will it rain tomorrow?" /><br/>
   <button id="btn_run_embd">Calculate embeddings and cosine distance</button><br/>
@@ -45,21 +49,40 @@
   <script type="module">
     import { Wllama } from '../../esm/index.js';
 
+    const CONFIG_PATHS = {
+      'single-thread/wllama.wasm'     : '../../esm/single-thread/wllama.wasm',
+      'multi-thread/wllama.wasm'      : '../../esm/multi-thread/wllama.wasm',
+      'multi-thread/wllama.worker.mjs': '../../esm/multi-thread/wllama.worker.mjs',
+    };
+    const CMPL_MODEL = 'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
+    const CMPL_MODEL_SIZE = '19MB';
+    const EMBD_MODEL = 'https://huggingface.co/ggml-org/models/resolve/main/bert-bge-small/ggml-model-f16.gguf';
+    const EMBD_MODEL_SIZE = '67MB';
+
     async function main() {
       setCmplDisable(true);
       setEmbdDisable(true);
-
-      const configPaths = {
-        'single-thread/wllama.wasm'     : '../../esm/single-thread/wllama.wasm',
-        'multi-thread/wllama.wasm'      : '../../esm/multi-thread/wllama.wasm',
-        'multi-thread/wllama.worker.mjs': '../../esm/multi-thread/wllama.worker.mjs',
+      const getName = (url) => url.match(/\/resolve\/main(.*)/)[1];
+      elemCmplModel.textContent = `${getName(CMPL_MODEL)}, size: ${CMPL_MODEL_SIZE}`;
+      elemEmbdModel.textContent = `${getName(EMBD_MODEL)}, size: ${EMBD_MODEL_SIZE}`;
+      elemBtnStartCmpl.onclick = async () => {
+        elemBtnStartCmpl.disabled = true;
+        await startCompletions(CMPL_MODEL);
+        elemBtnStartCmpl.style.display = 'none';
       };
+      elemBtnStartEmbd.onclick = async () => {
+        elemBtnStartEmbd.disabled = true;
+        await startEmbeddings(EMBD_MODEL);
+        elemBtnStartEmbd.style.display = 'none';
+      };
+    }
 
-      /////////////////////////////////////////////////////////////////////
-      // completions
+    /////////////////////////////////////////////////////////////////////
+    // completions
 
-      const wllama = new Wllama(configPaths);
-      await wllama.loadModelFromUrl('https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf', {});
+    async function startCompletions(modelUrl) {
+      const wllama = new Wllama(CONFIG_PATHS);
+      await wllama.loadModelFromUrl(modelUrl, {});
       setCmplDisable(false);
 
       elemBtnCompletions.onclick = async () => {
@@ -77,12 +100,14 @@
         });
         setCmplDisable(false);
       };
+    }
 
-      /////////////////////////////////////////////////////////////////////
-      // embeddings
+    /////////////////////////////////////////////////////////////////////
+    // embeddings
 
-      const wllama1 = new Wllama(configPaths);
-      await wllama1.loadModelFromUrl('https://huggingface.co/ggml-org/models/resolve/main/bert-bge-small/ggml-model-f16.gguf', {
+    async function startEmbeddings(modelUrl) {
+      const wllama1 = new Wllama(CONFIG_PATHS);
+      await wllama1.loadModelFromUrl(modelUrl, {
         // IMPORTANT: do not forget to set embeddings to true. If not set, "createEmbeddings" will crash the app
         embeddings: true,
       });
@@ -106,11 +131,15 @@
     /////////////////////////////////////////////////////////////////////
 
     // DOM elements: completions
+    const elemCmplModel = document.getElementById('cmpl_model');
+    const elemBtnStartCmpl = document.getElementById('btn_start_cmpl');
     const elemInput = document.getElementById('input_prompt');
     const elemNPredict = document.getElementById('input_n_predict');
     const elemBtnCompletions = document.getElementById('btn_run_cmpl');
     const elemOutputCmpl = document.getElementById('output_cmpl');
     // DOM elements: embeddings
+    const elemEmbdModel = document.getElementById('embd_model');
+    const elemBtnStartEmbd = document.getElementById('btn_start_embd');
     const elemInputA = document.getElementById('input_a');
     const elemInputB = document.getElementById('input_b');
     const elemBtnEmbeddings = document.getElementById('btn_run_embd');
