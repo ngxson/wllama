@@ -43,6 +43,7 @@ export declare class Wllama {
     private wModule?;
     private pathConfig;
     private useMultiThread;
+    private useEmbeddings;
     private wllamaStart;
     private wllamaAction;
     private wllamaExit;
@@ -83,7 +84,7 @@ export declare class Wllama {
      * @param text Input text
      * @returns An embedding vector
      */
-    createEmbeddings(text: string): Promise<number[]>;
+    createEmbedding(text: string): Promise<number[]>;
     /**
      * Make completion for a given text
      * @param prompt Input text

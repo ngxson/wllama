@@ -108,16 +108,16 @@
     async function startEmbeddings(modelUrl) {
       const wllama1 = new Wllama(CONFIG_PATHS);
       await wllama1.loadModelFromUrl(modelUrl, {
-        // IMPORTANT: do not forget to set embeddings to true. If not set, "createEmbeddings" will crash the app
+        // IMPORTANT: do not forget to set embeddings to true. If not set, "createEmbedding" will crash the app
         embeddings: true,
       });
       setEmbdDisable(false);
 
       elemBtnEmbeddings.onclick = async () => {
         setEmbdDisable(true);
-        const embdA = await wllama1.createEmbeddings(elemInputA.value);
+        const embdA = await wllama1.createEmbedding(elemInputA.value);
         console.log({embdA});
-        const embdB = await wllama1.createEmbeddings(elemInputB.value);
+        const embdB = await wllama1.createEmbedding(elemInputB.value);
         console.log({embdB});
         const normA = Math.sqrt(embdA.reduce((acc, x) => acc + x*x, 0));
         const normB = Math.sqrt(embdB.reduce((acc, x) => acc + x*x, 0));

@@ -8,6 +8,7 @@ export class Wllama {
     wModule;
     pathConfig;
     useMultiThread = false;
+    useEmbeddings = false;
     wllamaStart;
     wllamaAction = () => { throw new Error('Model is not yet loaded'); };
     wllamaExit = () => { throw new Error('Model is not yet loaded'); };
@@ -126,6 +127,7 @@ export class Wllama {
         });
         this.bosToken = loadResult.token_bos;
         this.eosToken = loadResult.token_eos;
+        this.useEmbeddings = !!config.embeddings;
     }
     //////////////////////////////////////////////
     // High level API
@@ -134,7 +136,10 @@ export class Wllama {
      * @param text Input text
      * @returns An embedding vector
      */
-    async createEmbeddings(text) {
+    async createEmbedding(text) {
+        if (!this.useEmbeddings) {
+            throw new Error('embeddings is not enabled in LoadModelConfig');
+        }
         await this.samplingInit(this.samplingConfig);
         await this.kvClear();
         const tokens = await this.tokenize(text);
@@ -169,6 +174,7 @@ export class Wllama {
             }
             if (!this.useMultiThread) {
                 // if this is single-thread, we add a setTimeout to allow frontend code to run
+                // TODO: we should somehow use web worker
                 await delay(0);
             }
             // decode next token

@@ -51,7 +51,7 @@ import { Wllama } from './esm/index.js';
     'multi-thread/wllama.worker.mjs': './esm/multi-thread/wllama.worker.mjs',
   };
   // Automatically switch between single-thread and multi-thread version based on browser support
-  // If you want to enforce single-thread, remove "wasmMultiThreadPath" and "workerMultiThreadPath"
+  // If you want to enforce single-thread, add { "n_threads": 1 } to LoadModelConfig
   const wllama = new Wllama(CONFIG_PATHS);
   await wllama.loadModelFromUrl('https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf', {});
   const outputText = await wllama.createCompletion(elemInput.value, {

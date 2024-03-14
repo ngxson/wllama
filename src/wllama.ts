@@ -54,6 +54,7 @@ export class Wllama {
   private wModule?: any;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
+  private useEmbeddings: boolean = false;
   private wllamaStart: any;
   private wllamaAction: any = () => {throw new Error('Model is not yet loaded')};
   private wllamaExit: any = () => {throw new Error('Model is not yet loaded')};
@@ -179,6 +180,7 @@ export class Wllama {
     });
     this.bosToken = loadResult.token_bos;
     this.eosToken = loadResult.token_eos;
+    this.useEmbeddings = !!config.embeddings;
   }
 
   //////////////////////////////////////////////
@@ -189,7 +191,10 @@ export class Wllama {
    * @param text Input text
    * @returns An embedding vector
    */
-  async createEmbeddings(text: string): Promise<number[]> {
+  async createEmbedding(text: string): Promise<number[]> {
+    if (!this.useEmbeddings) {
+      throw new Error('embeddings is not enabled in LoadModelConfig')
+    }
     await this.samplingInit(this.samplingConfig);
     await this.kvClear();
     const tokens = await this.tokenize(text);
