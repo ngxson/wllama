@@ -121,27 +121,27 @@ export declare class Wllama {
      * Lookup to see if a token exist in vocab or not. Useful for searching special tokens like "<|im_start|>"
      * NOTE: It will match the whole token, so do not use it as a replacement for tokenize()
      * @param piece
-     * @returns
+     * @returns Token ID associated to the given piece. Returns -1 if cannot find the token.
      */
-    lookupToken(piece: string): Promise<any>;
+    lookupToken(piece: string): Promise<number>;
     /**
      * Convert a given text to list of tokens
      * @param text
      * @param special Should split special tokens?
-     * @returns
+     * @returns List of token ID
      */
     tokenize(text: string, special?: boolean): Promise<number[]>;
     /**
      * Convert a list of tokens to text
      * @param tokens
-     * @returns
+     * @returns Uint8Array, which maybe an unfinished unicode
      */
     detokenize(tokens: number[]): Promise<Uint8Array>;
     /**
      * Run llama_decode()
      * @param tokens A list of tokens to be decoded
      * @param options
-     * @returns n_past
+     * @returns n_past (number of tokens so far in the sequence)
      */
     decode(tokens: number[], options: {
         skipLogits?: boolean;
@@ -150,7 +150,7 @@ export declare class Wllama {
     }>;
     /**
      * Sample a new token (remember to samplingInit() at least once before calling this function)
-     * @returns
+     * @returns the token ID and its detokenized value (which maybe an unfinished unicode)
      */
     samplingSample(): Promise<{
         piece: Uint8Array;
@@ -164,7 +164,7 @@ export declare class Wllama {
     /**
      * Calculate embeddings for a given list of tokens
      * @param tokens
-     * @returns
+     * @returns A list of number represents an embedding vector of N dimensions
      */
     embeddings(tokens: number[]): Promise<number[]>;
     /**

@@ -1,3 +1,3 @@
-import { Wllama } from './wllama';
+import { Wllama, AssetsPathConfig, LoadModelConfig, SamplingConfig } from './wllama';
 
-export { Wllama };
+export { Wllama, AssetsPathConfig, LoadModelConfig, SamplingConfig };

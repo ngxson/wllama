@@ -200,7 +200,7 @@ export class Wllama {
      * Lookup to see if a token exist in vocab or not. Useful for searching special tokens like "<|im_start|>"
      * NOTE: It will match the whole token, so do not use it as a replacement for tokenize()
      * @param piece
-     * @returns
+     * @returns Token ID associated to the given piece. Returns -1 if cannot find the token.
      */
     async lookupToken(piece) {
         const result = await this.wllamaAction('lookup_token', { piece });
@@ -215,7 +215,7 @@ export class Wllama {
      * Convert a given text to list of tokens
      * @param text
      * @param special Should split special tokens?
-     * @returns
+     * @returns List of token ID
      */
     async tokenize(text, special = true) {
         const result = await this.wllamaAction('tokenize', special
@@ -226,7 +226,7 @@ export class Wllama {
     /**
      * Convert a list of tokens to text
      * @param tokens
-     * @returns
+     * @returns Uint8Array, which maybe an unfinished unicode
      */
     async detokenize(tokens) {
         const result = await this.wllamaAction('detokenize', { tokens });
@@ -236,7 +236,7 @@ export class Wllama {
      * Run llama_decode()
      * @param tokens A list of tokens to be decoded
      * @param options
-     * @returns n_past
+     * @returns n_past (number of tokens so far in the sequence)
      */
     async decode(tokens, options) {
         const req = { tokens };
@@ -256,7 +256,7 @@ export class Wllama {
     }
     /**
      * Sample a new token (remember to samplingInit() at least once before calling this function)
-     * @returns
+     * @returns the token ID and its detokenized value (which maybe an unfinished unicode)
      */
     async samplingSample() {
         const result = await this.wllamaAction('sampling_sample', {});
@@ -278,7 +278,7 @@ export class Wllama {
     /**
      * Calculate embeddings for a given list of tokens
      * @param tokens
-     * @returns
+     * @returns A list of number represents an embedding vector of N dimensions
      */
     async embeddings(tokens) {
         const result = await this.wllamaAction('embeddings', { tokens });
