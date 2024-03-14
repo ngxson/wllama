@@ -14,6 +14,7 @@ Wasm allow llama.cpp to run directly on browser, without any server part.
 - Low-level API: (de)tokenize, KV cache control, sampling control,...
 - Ability to load splitted model
 - Auto switch between single-thread and multi-thread build based on browser support
+- Pre-built npm package [@wllama/wllama](https://www.npmjs.com/package/@wllama/wllama)
 
 ## Demo and documentations
 
@@ -24,20 +25,35 @@ Demo:
 
 ## How to use
 
-See in `examples`
+### Use Wllama inside React Typescript project
+
+Install it:
+
+```bash
+npm i @wllama/wllama
+```
+
+For complete code, see [examples/reactjs/src/App.tsx](./examples/reactjs/src/App.tsx)
+
+NOTE: this example only covers completions usage. For embeddings, please see [examples/basic/index.html](./examples/basic/index.html)
+
+### Simple usage with ES6 module
+
+For complete code, see [examples/basic/index.html](./examples/basic/index.html)
 
 ```javascript
-import { Wllama } from '../../esm/index.js';
+import { Wllama } from './esm/index.js';
 
 (async () => {
+  const CONFIG_PATHS = {
+    'single-thread/wllama.wasm'     : './esm/single-thread/wllama.wasm',
+    'multi-thread/wllama.wasm'      : './esm/multi-thread/wllama.wasm',
+    'multi-thread/wllama.worker.mjs': './esm/multi-thread/wllama.worker.mjs',
+  };
   // Automatically switch between single-thread and multi-thread version based on browser support
   // If you want to enforce single-thread, remove "wasmMultiThreadPath" and "workerMultiThreadPath"
-  const wllama = new Wllama({
-    wasmSingleThreadPath: '../../esm/single-thread/wllama.wasm',
-    wasmMultiThreadPath: '../../esm/multi-thread/wllama.wasm',
-    workerMultiThreadPath: '../../esm/multi-thread/wllama.worker.mjs',
-  });
-  await wllama.loadModel('https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf', {});
+  const wllama = new Wllama(CONFIG_PATHS);
+  await wllama.loadModelFromUrl('https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf', {});
   const outputText = await wllama.createCompletion(elemInput.value, {
     nPredict: 50,
     sampling: {

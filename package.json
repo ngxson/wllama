@@ -1,6 +1,6 @@
 {
   "name": "@wllama/wllama",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Low-level WASM binding for llama.cpp",
   "main": "index.js",
   "type": "module",
@@ -13,7 +13,8 @@
     "build:wasm": "./scripts/build_wasm.sh",
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "postbuild": "./scripts/post_build.sh && npm run docs",
-    "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts"
+    "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts",
+    "upload": "npm publish --access public"
   },
   "repository": {
     "type": "git",
