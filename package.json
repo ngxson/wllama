@@ -8,7 +8,8 @@
     "example": "examples"
   },
   "scripts": {
-    "serve": "http-server -c-1",
+    "serve": "node ./scripts/http_server.js",
+    "serve:mt": "MULTITHREAD=1 node ./scripts/http_server.js",
     "clean": "rm -rf ./esm",
     "build:wasm": "./scripts/build_wasm.sh",
     "build": "npm run clean && tsc -p tsconfig.build.json",
@@ -37,7 +38,7 @@
   },
   "homepage": "https://github.com/ngxson/wllama#readme",
   "devDependencies": {
-    "http-server": "^14.1.1",
+    "express": "^4.18.3",
     "typedoc": "^0.25.12",
     "typescript": "^5.4.2"
   }
