@@ -1,19 +1,26 @@
 <!DOCTYPE html><html class="default" lang="en"><head><meta charSet="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>@wllama/wllama</title><meta name="description" content="Documentation for @wllama/wllama"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar"><div class="tsd-toolbar-contents container"><div class="table-cell" id="tsd-search" data-base="."><div class="field"><label for="tsd-search-field" class="tsd-widget tsd-toolbar-icon search no-caption"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><use href="assets/icons.svg#icon-search"></use></svg></label><input type="text" id="tsd-search-field" aria-label="Search"/></div><div class="field"><div id="tsd-toolbar-links"></div></div><ul class="results"><li class="state loading">Preparing search index...</li><li class="state failure">The search index is not available</li></ul><a href="index.html" class="title">@wllama/wllama</a></div><div class="table-cell" id="tsd-widgets"><a href="#" class="tsd-widget tsd-toolbar-icon menu no-caption" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><use href="assets/icons.svg#icon-menu"></use></svg></a></div></div></header><div class="container container-main"><div class="col-content"><div class="tsd-page-title"><h2>@wllama/wllama</h2></div><div class="tsd-panel tsd-typography"><a id="md:wllama---wasm-binding-for-llamacpp" class="tsd-anchor"></a><h1><a href="#md:wllama---wasm-binding-for-llamacpp">wllama - Wasm binding for llama.cpp</a></h1><p><img src="./README_banner.png" alt=""></p>
-<p>Another WebAssembly binding for <a href="https://github.com/ggerganov/llama.cpp">llama.cpp</a>. Inspired by <a href="https://github.com/tangledgroup/llama-cpp-wasm">tangledgroup/llama-cpp-wasm</a>, but unlike it, <strong>wllama</strong> aims to supports <strong>low-level API</strong> like (de)tokenization, embeddings,...</p>
-<p>Wasm allow llama.cpp to run directly on browser, without any server part.</p>
+<p>Another WebAssembly binding for <a href="https://github.com/ggerganov/llama.cpp">llama.cpp</a>. Inspired by <a href="https://github.com/tangledgroup/llama-cpp-wasm">tangledgroup/llama-cpp-wasm</a>, but unlike it, <strong>Wllama</strong> aims to supports <strong>low-level API</strong> like (de)tokenization, embeddings,...</p>
 <a id="md:features" class="tsd-anchor"></a><h2><a href="#md:features">Features</a></h2><ul>
 <li>Typescript support</li>
+<li>Can run inference directly on browser (using <a href="https://emscripten.org/docs/porting/simd.html">WebAssembly SIMD</a>), no backend or GPU is needed!</li>
 <li>No runtime dependency (see <a href="./package.json">package.json</a>)</li>
 <li>High-level API: completions, embeddings</li>
 <li>Low-level API: (de)tokenize, KV cache control, sampling control,...</li>
-<li>Ability to load splitted model</li>
+<li>Ability to split the model into smaller files and load them parallel (same as <code>split</code> and <code>cat</code>)</li>
 <li>Auto switch between single-thread and multi-thread build based on browser support</li>
 <li>Pre-built npm package <a href="https://www.npmjs.com/package/@wllama/wllama">@wllama/wllama</a></li>
+</ul>
+<p>Limitations:</p>
+<ul>
+<li>To enable multi-thread, you must add <code>Cross-Origin-Embedder-Policy</code> and <code>Cross-Origin-Opener-Policy</code> headers. See <a href="https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724">this discussion</a> for more details.</li>
+<li>No WebGL support, because llama.cpp does not support WebGL backend</li>
+<li>Max model size is 2GB, due to <a href="https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length">size restriction of ArrayBuffer</a></li>
 </ul>
 <a id="md:demo-and-documentations" class="tsd-anchor"></a><h2><a href="#md:demo-and-documentations">Demo and documentations</a></h2><p><strong>Documentation:</strong> <a href="https://ngxson.github.io/wllama/docs/">https://ngxson.github.io/wllama/docs/</a></p>
 <p>Demo:</p>
 <ul>
 <li>Basic usages with completions and embeddings: <a href="https://ngxson.github.io/wllama/examples/basic/">https://ngxson.github.io/wllama/examples/basic/</a></li>
+<li>Advanced example using low-level API: <a href="https://ngxson.github.io/wllama/examples/advanced/">https://ngxson.github.io/wllama/examples/advanced/</a></li>
 </ul>
 <a id="md:how-to-use" class="tsd-anchor"></a><h2><a href="#md:how-to-use">How to use</a></h2><a id="md:use-wllama-inside-react-typescript-project" class="tsd-anchor"></a><h3><a href="#md:use-wllama-inside-react-typescript-project">Use Wllama inside React Typescript project</a></h3><p>Install it:</p>
 <pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">i</span><span class="hl-1"> </span><span class="hl-2">@wllama/wllama</span>
@@ -26,8 +33,15 @@
 <a id="md:how-to-build" class="tsd-anchor"></a><h2><a href="#md:how-to-build">How to build</a></h2><p>This repository already come with pre-built binary. But if you want to build it yourself, you can use the commands below:</p>
 <pre><code class="language-shell"><span class="hl-7"># Require having docker compose installed</span><br/><span class="hl-7"># Firstly, build llama.cpp into wasm</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">build:wasm</span><br/><span class="hl-7"># (Optionally) Build ES6 module</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">build</span>
 </code><button>Copy</button></pre>
-<a id="md:todo" class="tsd-anchor"></a><h2><a href="#md:todo">TODO</a></h2><ul>
-<li>Guide: How to split gguf file?</li>
+<a id="md:todo" class="tsd-anchor"></a><h2><a href="#md:todo">TODO</a></h2><p>Short term:</p>
+<ul>
+<li>Guide: How to split gguf file into smaller one?</li>
+<li>Add a more pratical embedding example (using a better model)</li>
+<li>Maybe doing a full RAG-in-browser example using tinyllama?</li>
+</ul>
+<p>Long term:</p>
+<ul>
+<li>When using single-thread build, add ability to run it in a worker (so that heavy operation will not block the render)</li>
 <li>Support multi-sequences: knowing the resource limitation when using WASM, I don&#39;t think having multi-sequences is a good idea</li>
 <li>Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp</li>
 </ul>

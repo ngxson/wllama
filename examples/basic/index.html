@@ -110,7 +110,7 @@
       await wllama1.loadModelFromUrl(modelUrl, {
         // IMPORTANT: do not forget to set embeddings to true. If not set, "createEmbedding" will crash the app
         embeddings: true,
-        pooling_type: 'LLAMA_POOLING_TYPE_CLS', // depend on the model, you will need to change this
+        pooling_type: 'LLAMA_POOLING_TYPE_MEAN', // depend on the model, you will need to change this
       });
       setEmbdDisable(false);
 
@@ -120,11 +120,9 @@
         console.log({embdA});
         const embdB = await wllama1.createEmbedding(elemInputB.value);
         console.log({embdB});
-        const normA = Math.sqrt(embdA.reduce((acc, x) => acc + x*x, 0));
-        const normB = Math.sqrt(embdB.reduce((acc, x) => acc + x*x, 0));
+        // since embeddings are normalized, we don't need to calculate norm
         const dotProd = embdA.reduce((acc, _, i) => acc + embdA[i]*embdB[i], 0);
-        const distance = dotProd / (normA * normB)
-        elemOutputEmbd.textContent = distance;
+        elemOutputEmbd.textContent = dotProd;
         setEmbdDisable(false);
       };
     }

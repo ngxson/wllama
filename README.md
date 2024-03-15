@@ -15,6 +15,11 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 - Auto switch between single-thread and multi-thread build based on browser support
 - Pre-built npm package [@wllama/wllama](https://www.npmjs.com/package/@wllama/wllama)
 
+Limitations:
+- To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
+- No WebGL support, because llama.cpp does not support WebGL backend
+- Max model size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length)
+
 ## Demo and documentations
 
 **Documentation:** https://ngxson.github.io/wllama/docs/

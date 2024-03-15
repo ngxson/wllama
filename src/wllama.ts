@@ -393,7 +393,7 @@ export class Wllama {
   }
 
   /**
-   * Calculate embeddings for a given list of tokens
+   * Calculate embeddings for a given list of tokens. Output vector is always normalized
    * @param tokens 
    * @returns A list of number represents an embedding vector of N dimensions
    */
