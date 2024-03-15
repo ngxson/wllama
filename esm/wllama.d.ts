@@ -11,7 +11,8 @@ export interface LoadModelConfig {
     embeddings?: boolean;
     offload_kqv?: boolean;
     n_seq_max?: number;
-    rope_scaling_type?: number;
+    pooling_type?: 'LLAMA_POOLING_TYPE_UNSPECIFIED' | 'LLAMA_POOLING_TYPE_NONE' | 'LLAMA_POOLING_TYPE_MEAN' | 'LLAMA_POOLING_TYPE_CLS';
+    rope_scaling_type?: 'LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED' | 'LLAMA_ROPE_SCALING_TYPE_NONE' | 'LLAMA_ROPE_SCALING_TYPE_LINEAR' | 'LLAMA_ROPE_SCALING_TYPE_YARN';
     rope_freq_base?: number;
     rope_freq_scale?: number;
     yarn_ext_factor?: number;
@@ -99,6 +100,7 @@ export declare class Wllama {
     /**
      * Create or reset the ctx_sampling
      * @param config
+     * @param pastTokens In case re-initializing the ctx_sampling, you can re-import past tokens into the new context
      */
     samplingInit(config: {
         mirostat?: number;
@@ -116,7 +118,13 @@ export declare class Wllama {
         min_p?: number;
         tfs_z?: number;
         typical_p?: number;
-    }): Promise<void>;
+    }, pastTokens?: number[]): Promise<void>;
+    /**
+     * Get a list of pieces in vocab.
+     * NOTE: This function is slow, should only be used once.
+     * @returns A list of Uint8Array. The nth element in the list associated to nth token in vocab
+     */
+    getVocab(): Promise<Uint8Array[]>;
     /**
      * Lookup to see if a token exist in vocab or not. Useful for searching special tokens like "<|im_start|>"
      * NOTE: It will match the whole token, so do not use it as a replacement for tokenize()
@@ -162,6 +170,14 @@ export declare class Wllama {
      */
     samplingAccept(tokens: number[]): Promise<void>;
     /**
+     * Get softmax-ed probability of logits, can be used for custom sampling
+     * @param topK Get top K tokens having highest logits value. If topK == -1, we return all n_vocab logits, but this is not recommended because it's slow.
+     */
+    getLogits(topK?: number): Promise<{
+        token: number;
+        p: number;
+    }[]>;
+    /**
      * Calculate embeddings for a given list of tokens
      * @param tokens
      * @returns A list of number represents an embedding vector of N dimensions
@@ -178,6 +194,22 @@ export declare class Wllama {
      * Clear all tokens in KV cache
      */
     kvClear(): Promise<void>;
+    /**
+     * Save session to file (virtual file system)
+     * TODO: add ability to download the file
+     * @param filePath
+     * @returns List of tokens saved to the file
+     */
+    sessionSave(filePath: string): Promise<{
+        tokens: number[];
+    }>;
+    /**
+     * Load session from file (virtual file system)
+     * TODO: add ability to download the file
+     * @param filePath
+     *
+     */
+    sessionLoad(filePath: string): Promise<void>;
     /**
      * Unload the model and free all memory
      */

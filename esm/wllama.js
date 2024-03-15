@@ -188,13 +188,26 @@ export class Wllama {
     /**
      * Create or reset the ctx_sampling
      * @param config
+     * @param pastTokens In case re-initializing the ctx_sampling, you can re-import past tokens into the new context
      */
-    async samplingInit(config) {
+    async samplingInit(config, pastTokens = []) {
         this.samplingConfig = config;
-        const result = await this.wllamaAction('sampling_init', config);
+        const result = await this.wllamaAction('sampling_init', {
+            ...config,
+            tokens: pastTokens,
+        });
         if (!result.success) {
             throw new Error('Failed to initialize sampling');
         }
+    }
+    /**
+     * Get a list of pieces in vocab.
+     * NOTE: This function is slow, should only be used once.
+     * @returns A list of Uint8Array. The nth element in the list associated to nth token in vocab
+     */
+    async getVocab() {
+        const result = await this.wllamaAction('get_vocab', {});
+        return result.vocab.map((arr) => new Uint8Array(arr));
     }
     /**
      * Lookup to see if a token exist in vocab or not. Useful for searching special tokens like "<|im_start|>"
@@ -276,6 +289,15 @@ export class Wllama {
         }
     }
     /**
+     * Get softmax-ed probability of logits, can be used for custom sampling
+     * @param topK Get top K tokens having highest logits value. If topK == -1, we return all n_vocab logits, but this is not recommended because it's slow.
+     */
+    async getLogits(topK = 40) {
+        const result = await this.wllamaAction('get_logits', { top_k: topK });
+        const logits = result.logits;
+        return logits.map(([token, p]) => ({ token, p }));
+    }
+    /**
      * Calculate embeddings for a given list of tokens
      * @param tokens
      * @returns A list of number represents an embedding vector of N dimensions
@@ -314,6 +336,31 @@ export class Wllama {
         const result = await this.wllamaAction('kv_clear', {});
         if (!result.success) {
             throw new Error('kvClear unknown error');
+        }
+    }
+    /**
+     * Save session to file (virtual file system)
+     * TODO: add ability to download the file
+     * @param filePath
+     * @returns List of tokens saved to the file
+     */
+    async sessionSave(filePath) {
+        const result = await this.wllamaAction('session_save', { session_path: filePath });
+        return result;
+    }
+    /**
+     * Load session from file (virtual file system)
+     * TODO: add ability to download the file
+     * @param filePath
+     *
+     */
+    async sessionLoad(filePath) {
+        const result = await this.wllamaAction('session_load', { session_path: filePath });
+        if (result.error) {
+            throw new Error(result.error);
+        }
+        else if (!result.success) {
+            throw new Error('sessionLoad unknown error');
         }
     }
     /**

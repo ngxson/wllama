@@ -110,6 +110,7 @@
       await wllama1.loadModelFromUrl(modelUrl, {
         // IMPORTANT: do not forget to set embeddings to true. If not set, "createEmbedding" will crash the app
         embeddings: true,
+        pooling_type: 'LLAMA_POOLING_TYPE_CLS', // depend on the model, you will need to change this
       });
       setEmbdDisable(false);
 

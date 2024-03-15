@@ -3,6 +3,7 @@
 #include <string>
 #include <sstream>
 #include <stdio.h>
+#include <cmath>
 
 #include "llama.h"
 #include "json.hpp"
@@ -63,35 +64,46 @@ inline std::vector<unsigned int> convert_string_to_int_arr(std::string &input)
 inline static ggml_type kv_cache_type_from_str(const std::string &s)
 {
   if (s == "f32")
-  {
     return GGML_TYPE_F32;
-  }
   if (s == "f16")
-  {
     return GGML_TYPE_F16;
-  }
   if (s == "q8_0")
-  {
     return GGML_TYPE_Q8_0;
-  }
   if (s == "q4_0")
-  {
     return GGML_TYPE_Q4_0;
-  }
   if (s == "q4_1")
-  {
     return GGML_TYPE_Q4_1;
-  }
   if (s == "q5_0")
-  {
     return GGML_TYPE_Q5_0;
-  }
   if (s == "q5_1")
-  {
     return GGML_TYPE_Q5_1;
-  }
-
   throw std::runtime_error("Invalid cache type: " + s);
+}
+
+inline static llama_pooling_type pooling_type_from_str(const std::string &s)
+{
+  if (s == "LLAMA_POOLING_TYPE_UNSPECIFIED")
+    return LLAMA_POOLING_TYPE_UNSPECIFIED;
+  if (s == "LLAMA_POOLING_TYPE_NONE")
+    return LLAMA_POOLING_TYPE_NONE;
+  if (s == "LLAMA_POOLING_TYPE_MEAN")
+    return LLAMA_POOLING_TYPE_MEAN;
+  if (s == "LLAMA_POOLING_TYPE_CLS")
+    return LLAMA_POOLING_TYPE_CLS;
+  throw std::runtime_error("Invalid pooling type: " + s);
+}
+
+inline static llama_rope_scaling_type rope_scaling_type_from_str(const std::string &s)
+{
+  if (s == "LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED")
+    return LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED;
+  if (s == "LLAMA_ROPE_SCALING_TYPE_NONE")
+    return LLAMA_ROPE_SCALING_TYPE_NONE;
+  if (s == "LLAMA_ROPE_SCALING_TYPE_LINEAR")
+    return LLAMA_ROPE_SCALING_TYPE_LINEAR;
+  if (s == "LLAMA_ROPE_SCALING_TYPE_YARN")
+    return LLAMA_ROPE_SCALING_TYPE_YARN;
+  throw std::runtime_error("Invalid RoPE scaling type: " + s);
 }
 
 //////////////////////////////////////////
@@ -115,9 +127,11 @@ json action_load(app_t &app, json &body)
     cparams.n_batch = body["n_batch"];
   if (body.count("n_seq_max") > 0)
     cparams.n_seq_max = body["n_seq_max"];
+  if (body.count("pooling_type") > 0)
+    cparams.pooling_type = pooling_type_from_str(body["pooling_type"]);
   // context extending: https://github.com/ggerganov/llama.cpp/pull/2054
   if (body.count("rope_scaling_type") > 0)
-    cparams.rope_scaling_type = body["rope_scaling_type"];
+    cparams.rope_scaling_type = rope_scaling_type_from_str(body["rope_scaling_type"]);
   if (body.count("rope_freq_base") > 0)
     cparams.rope_freq_base = body["rope_freq_base"];
   if (body.count("rope_freq_scale") > 0)
@@ -206,6 +220,22 @@ json action_sampling_init(app_t &app, json &body)
     }
   }
   return json{{"success", true}};
+}
+
+// get map token ID to vocab (be careful, it is slow!)
+json action_get_vocab(app_t &app, json &body)
+{
+  int32_t max_tokens = llama_n_vocab(app.model);
+  std::vector<std::vector<unsigned int> > vocab(max_tokens);
+  for (int32_t id = 0; id < max_tokens; id++)
+  {
+    std::string token_as_str = llama_token_to_piece(app.ctx, id);
+    vocab[id] = convert_string_to_int_arr(token_as_str);
+  }
+  return json{
+      {"success", true},
+      {"vocab", vocab},
+  };
 }
 
 // lookup single token (also be able to check if it exists or not)
@@ -322,6 +352,49 @@ json action_sampling_accept(app_t &app, json &body)
   return json{{"success", true}};
 }
 
+// get softmax-ed probability of logits, can be used for custom sampling. The output is always sorted
+json action_get_logits(app_t &app, json &body)
+{
+  int top_k = body["top_k"]; // if is -1, we take all logits (will be slow!)
+  int32_t idx = app.batch.n_tokens - 1;
+  float *logits = llama_get_logits_ith(app.ctx, idx);
+  int32_t n_vocab = llama_n_vocab(app.model);
+  auto sort_fn = [](llama_token_data &a, llama_token_data &b) -> bool
+  {
+    return b.logit < a.logit;
+  };
+  // get all candidates and sort
+  std::vector<llama_token_data> candidates;
+  candidates.reserve(n_vocab);
+  float sum = 0.0f; // for softmax
+  for (llama_token token_id = 0; token_id < n_vocab; token_id++)
+  {
+    float exp_val = exp(logits[token_id]);
+    candidates.emplace_back(llama_token_data{token_id, logits[token_id], exp_val});
+    sum += exp_val;
+  }
+  for (auto &c : candidates)
+  {
+    c.p /= sum; // calculate softmax
+  }
+  std::sort(candidates.begin(), candidates.end(), sort_fn);
+  if (top_k >= 0)
+  {
+    candidates.erase(candidates.begin() + top_k, candidates.end());
+  }
+  // convert response to json
+  std::vector<json> output;
+  output.reserve(candidates.size());
+  for (auto &c : candidates)
+  {
+    output.emplace_back(json{c.id, c.p});
+  }
+  return json{
+      {"success", true},
+      {"logits", output},
+  };
+}
+
 // get embeddings, this will call action_decode internally
 json action_embeddings(app_t &app, json &body)
 {
@@ -333,17 +406,20 @@ json action_embeddings(app_t &app, json &body)
   // decode
   json req = json{{"tokens", tokens_list}};
   json res = action_decode(app, req);
-  if (res.count("error")) {
+  if (res.count("error"))
+  {
     return res;
   }
   int32_t idx = app.batch.n_tokens - 1;
   const float *embd = llama_get_embeddings_seq(app.ctx, 0);
-  if (embd == NULL) {
-      embd = llama_get_embeddings_ith(app.ctx, idx);
-      if (embd == NULL) {
-        fprintf(stderr, "%s: failed to get embeddings for token %d\n", __func__, idx);
-        return json{{"error", "failed to get embeddings"}};
-      }
+  if (embd == NULL)
+  {
+    embd = llama_get_embeddings_ith(app.ctx, idx);
+    if (embd == NULL)
+    {
+      fprintf(stderr, "%s: failed to get embeddings for token %d\n", __func__, idx);
+      return json{{"error", "failed to get embeddings"}};
+    }
   }
   llama_embd_normalize(embd, out, n_embd);
   return json{

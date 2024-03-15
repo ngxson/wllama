@@ -2,17 +2,16 @@
 
 ![](./README_banner.png)
 
-Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp). Inspired by [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm), but unlike it, **wllama** aims to supports **low-level API** like (de)tokenization, embeddings,...
-
-Wasm allow llama.cpp to run directly on browser, without any server part.
+Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp). Inspired by [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm), but unlike it, **Wllama** aims to supports **low-level API** like (de)tokenization, embeddings,...
 
 ## Features
 
 - Typescript support
+- Can run inference directly on browser, no backend is needed!
 - No runtime dependency (see [package.json](./package.json))
 - High-level API: completions, embeddings
 - Low-level API: (de)tokenize, KV cache control, sampling control,...
-- Ability to load splitted model
+- Ability to split the model into smaller files and load them parallel (same as `split` and `cat`)
 - Auto switch between single-thread and multi-thread build based on browser support
 - Pre-built npm package [@wllama/wllama](https://www.npmjs.com/package/@wllama/wllama)
 
@@ -22,6 +21,7 @@ Wasm allow llama.cpp to run directly on browser, without any server part.
 
 Demo:
 - Basic usages with completions and embeddings: https://ngxson.github.io/wllama/examples/basic/
+- Advanced example using low-level API: https://ngxson.github.io/wllama/examples/advanced/
 
 ## How to use
 
@@ -80,6 +80,12 @@ npm run build
 
 ## TODO
 
-- Guide: How to split gguf file?
+Short term:
+- Guide: How to split gguf file into smaller one?
+- Add a more pratical embedding example (using a better model)
+- Maybe doing a full RAG-in-browser example using tinyllama?
+
+Long term:
+- When using single-thread build, add ability to run it in a worker (so that heavy operation will not block the render)
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
 - Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp

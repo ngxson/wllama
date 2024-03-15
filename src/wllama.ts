@@ -16,8 +16,15 @@ export interface LoadModelConfig {
   embeddings?: boolean,
   offload_kqv?: boolean,
   n_seq_max?: number,
+  pooling_type?: 'LLAMA_POOLING_TYPE_UNSPECIFIED'
+    | 'LLAMA_POOLING_TYPE_NONE'
+    | 'LLAMA_POOLING_TYPE_MEAN'
+    | 'LLAMA_POOLING_TYPE_CLS',
   // context extending
-  rope_scaling_type?: number,
+  rope_scaling_type?: 'LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED'
+    | 'LLAMA_ROPE_SCALING_TYPE_NONE'
+    | 'LLAMA_ROPE_SCALING_TYPE_LINEAR'
+    | 'LLAMA_ROPE_SCALING_TYPE_YARN',
   rope_freq_base?: number,
   rope_freq_scale?: number,
   yarn_ext_factor?: number,
@@ -250,6 +257,7 @@ export class Wllama {
   /**
    * Create or reset the ctx_sampling 
    * @param config 
+   * @param pastTokens In case re-initializing the ctx_sampling, you can re-import past tokens into the new context
    */
   async samplingInit(config: {
     // See sampling.h for more details
@@ -268,12 +276,25 @@ export class Wllama {
     min_p?: number,
     tfs_z?: number,
     typical_p?: number,
-  }): Promise<void> {
+  }, pastTokens: number[] = []): Promise<void> {
     this.samplingConfig = config;
-    const result = await this.wllamaAction('sampling_init', config);
+    const result = await this.wllamaAction('sampling_init', {
+      ...config,
+      tokens: pastTokens,
+    });
     if (!result.success) {
       throw new Error('Failed to initialize sampling');
     }
+  }
+
+  /**
+   * Get a list of pieces in vocab.  
+   * NOTE: This function is slow, should only be used once.
+   * @returns A list of Uint8Array. The nth element in the list associated to nth token in vocab
+   */
+  async getVocab(): Promise<Uint8Array[]> {
+    const result = await this.wllamaAction('get_vocab', {});
+    return result.vocab.map((arr: number[]) => new Uint8Array(arr));
   }
 
   /**
@@ -282,7 +303,7 @@ export class Wllama {
    * @param piece 
    * @returns Token ID associated to the given piece. Returns -1 if cannot find the token.
    */
-  async lookupToken(piece: string) {
+  async lookupToken(piece: string): Promise<number> {
     const result = await this.wllamaAction('lookup_token', { piece });
     if (!result.success) {
       return -1;
@@ -362,6 +383,16 @@ export class Wllama {
   }
 
   /**
+   * Get softmax-ed probability of logits, can be used for custom sampling
+   * @param topK Get top K tokens having highest logits value. If topK == -1, we return all n_vocab logits, but this is not recommended because it's slow.
+   */
+  async getLogits(topK: number = 40): Promise<{token: number, p: number}[]> {
+    const result = await this.wllamaAction('get_logits', { top_k: topK });
+    const logits = result.logits as number[][];
+    return logits.map(([token, p]) => ({ token, p }));
+  }
+
+  /**
    * Calculate embeddings for a given list of tokens
    * @param tokens 
    * @returns A list of number represents an embedding vector of N dimensions
@@ -402,6 +433,32 @@ export class Wllama {
       throw new Error('kvClear unknown error');
     }
   }
+
+  /**
+   * Save session to file (virtual file system)  
+   * TODO: add ability to download the file
+   * @param filePath 
+   * @returns List of tokens saved to the file
+   */
+  async sessionSave(filePath: string): Promise<{ tokens: number[] }> {
+    const result = await this.wllamaAction('session_save', { session_path: filePath });
+    return result;
+  }
+
+  /**
+   * Load session from file (virtual file system)  
+   * TODO: add ability to download the file
+   * @param filePath 
+   * 
+   */
+  async sessionLoad(filePath: string): Promise<void> {
+    const result = await this.wllamaAction('session_load', { session_path: filePath });
+    if (result.error) {
+      throw new Error(result.error);
+    } else if (!result.success) {
+      throw new Error('sessionLoad unknown error');
+    }
+  }
   
   /**
    * Unload the model and free all memory
@@ -410,5 +467,5 @@ export class Wllama {
     await this.wllamaExit();
   }
 
-  // TODO: add session save / session load / current_status
+  // TODO: add current_status
 }

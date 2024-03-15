@@ -22,6 +22,7 @@ extern "C" int wllama_start()
 {
   log_disable();
   llama_backend_init();
+  std::cerr << llama_print_system_info() << "\n";
   return 0;
 }
 
@@ -37,10 +38,12 @@ extern "C" const char *wllama_action(const char *name, const char *body)
     WLLAMA_ACTION(sampling_init);
     WLLAMA_ACTION(sampling_sample);
     WLLAMA_ACTION(sampling_accept);
+    WLLAMA_ACTION(get_vocab);
     WLLAMA_ACTION(lookup_token);
     WLLAMA_ACTION(tokenize);
     WLLAMA_ACTION(detokenize);
     WLLAMA_ACTION(decode);
+    WLLAMA_ACTION(get_logits);
     WLLAMA_ACTION(embeddings);
     WLLAMA_ACTION(kv_remove);
     WLLAMA_ACTION(kv_clear);
