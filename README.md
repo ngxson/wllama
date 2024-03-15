@@ -7,7 +7,7 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 ## Features
 
 - Typescript support
-- Can run inference directly on browser, no backend is needed!
+- Can run inference directly on browser (using [WebAssembly SIMD](https://emscripten.org/docs/porting/simd.html)), no backend or GPU is needed!
 - No runtime dependency (see [package.json](./package.json))
 - High-level API: completions, embeddings
 - Low-level API: (de)tokenize, KV cache control, sampling control,...
