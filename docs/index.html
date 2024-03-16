@@ -6,14 +6,15 @@
 <li>No runtime dependency (see <a href="./package.json">package.json</a>)</li>
 <li>High-level API: completions, embeddings</li>
 <li>Low-level API: (de)tokenize, KV cache control, sampling control,...</li>
-<li>Ability to split the model into smaller files and load them parallel (same as <code>split</code> and <code>cat</code>)</li>
+<li>Ability to split the model into smaller files and load them in parallel (same as <code>split</code> and <code>cat</code>)</li>
 <li>Auto switch between single-thread and multi-thread build based on browser support</li>
+<li>Inference is done inside a worker, does not block UI render</li>
 <li>Pre-built npm package <a href="https://www.npmjs.com/package/@wllama/wllama">@wllama/wllama</a></li>
 </ul>
 <p>Limitations:</p>
 <ul>
 <li>To enable multi-thread, you must add <code>Cross-Origin-Embedder-Policy</code> and <code>Cross-Origin-Opener-Policy</code> headers. See <a href="https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724">this discussion</a> for more details.</li>
-<li>No WebGL support, because llama.cpp does not support WebGL backend</li>
+<li>No WebGL support, but maybe possible in the future</li>
 <li>Max model size is 2GB, due to <a href="https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length">size restriction of ArrayBuffer</a></li>
 </ul>
 <a id="md:demo-and-documentations" class="tsd-anchor"></a><h2><a href="#md:demo-and-documentations">Demo and documentations</a></h2><p><strong>Documentation:</strong> <a href="https://ngxson.github.io/wllama/docs/">https://ngxson.github.io/wllama/docs/</a></p>
@@ -25,7 +26,7 @@
 <a id="md:how-to-use" class="tsd-anchor"></a><h2><a href="#md:how-to-use">How to use</a></h2><a id="md:use-wllama-inside-react-typescript-project" class="tsd-anchor"></a><h3><a href="#md:use-wllama-inside-react-typescript-project">Use Wllama inside React Typescript project</a></h3><p>Install it:</p>
 <pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">i</span><span class="hl-1"> </span><span class="hl-2">@wllama/wllama</span>
 </code><button>Copy</button></pre>
-<p>For complete code, see <a href="./examples/reactjs/src/App.tsx">examples/reactjs/src/App.tsx</a></p>
+<p>For complete code, see <a href="./examples/reactjs">examples/reactjs</a></p>
 <p>NOTE: this example only covers completions usage. For embeddings, please see <a href="./examples/basic/index.html">examples/basic/index.html</a></p>
 <a id="md:simple-usage-with-es6-module" class="tsd-anchor"></a><h3><a href="#md:simple-usage-with-es6-module">Simple usage with ES6 module</a></h3><p>For complete code, see <a href="./examples/basic/index.html">examples/basic/index.html</a></p>
 <pre><code class="language-javascript"><span class="hl-3">import</span><span class="hl-1"> { </span><span class="hl-4">Wllama</span><span class="hl-1"> } </span><span class="hl-3">from</span><span class="hl-1"> </span><span class="hl-2">&#39;./esm/index.js&#39;</span><span class="hl-1">;</span><br/><br/><span class="hl-1">(</span><span class="hl-5">async</span><span class="hl-1"> () </span><span class="hl-5">=&gt;</span><span class="hl-1"> {</span><br/><span class="hl-1">  </span><span class="hl-5">const</span><span class="hl-1"> </span><span class="hl-6">CONFIG_PATHS</span><span class="hl-1"> = {</span><br/><span class="hl-1">    </span><span class="hl-2">&#39;single-thread/wllama.wasm&#39;</span><span class="hl-4">     :</span><span class="hl-1"> </span><span class="hl-2">&#39;./esm/single-thread/wllama.wasm&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-2">&#39;multi-thread/wllama.wasm&#39;</span><span class="hl-4">      :</span><span class="hl-1"> </span><span class="hl-2">&#39;./esm/multi-thread/wllama.wasm&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-2">&#39;multi-thread/wllama.worker.mjs&#39;</span><span class="hl-4">:</span><span class="hl-1"> </span><span class="hl-2">&#39;./esm/multi-thread/wllama.worker.mjs&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">  };</span><br/><span class="hl-1">  </span><span class="hl-7">// Automatically switch between single-thread and multi-thread version based on browser support</span><br/><span class="hl-1">  </span><span class="hl-7">// If you want to enforce single-thread, add { &quot;n_threads&quot;: 1 } to LoadModelConfig</span><br/><span class="hl-1">  </span><span class="hl-5">const</span><span class="hl-1"> </span><span class="hl-6">wllama</span><span class="hl-1"> = </span><span class="hl-5">new</span><span class="hl-1"> </span><span class="hl-0">Wllama</span><span class="hl-1">(</span><span class="hl-6">CONFIG_PATHS</span><span class="hl-1">);</span><br/><span class="hl-1">  </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">wllama</span><span class="hl-1">.</span><span class="hl-0">loadModelFromUrl</span><span class="hl-1">(</span><span class="hl-2">&#39;https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf&#39;</span><span class="hl-1">, {});</span><br/><span class="hl-1">  </span><span class="hl-5">const</span><span class="hl-1"> </span><span class="hl-6">outputText</span><span class="hl-1"> = </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">wllama</span><span class="hl-1">.</span><span class="hl-0">createCompletion</span><span class="hl-1">(</span><span class="hl-4">elemInput</span><span class="hl-1">.</span><span class="hl-4">value</span><span class="hl-1">, {</span><br/><span class="hl-1">    </span><span class="hl-4">nPredict:</span><span class="hl-1"> </span><span class="hl-8">50</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-4">sampling:</span><span class="hl-1"> {</span><br/><span class="hl-1">      </span><span class="hl-4">temp:</span><span class="hl-1"> </span><span class="hl-8">0.5</span><span class="hl-1">,</span><br/><span class="hl-1">      </span><span class="hl-4">top_k:</span><span class="hl-1"> </span><span class="hl-8">40</span><span class="hl-1">,</span><br/><span class="hl-1">      </span><span class="hl-4">top_p:</span><span class="hl-1"> </span><span class="hl-8">0.9</span><span class="hl-1">,</span><br/><span class="hl-1">    },</span><br/><span class="hl-1">  });</span><br/><span class="hl-1">  </span><span class="hl-4">console</span><span class="hl-1">.</span><span class="hl-0">log</span><span class="hl-1">(</span><span class="hl-4">outputText</span><span class="hl-1">);</span><br/><span class="hl-1">})();</span>
@@ -41,7 +42,7 @@
 </ul>
 <p>Long term:</p>
 <ul>
-<li>When using single-thread build, add ability to run it in a worker (so that heavy operation will not block the render)</li>
+<li>Support GPU inference via WebGL</li>
 <li>Support multi-sequences: knowing the resource limitation when using WASM, I don&#39;t think having multi-sequences is a good idea</li>
 <li>Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp</li>
 </ul>
