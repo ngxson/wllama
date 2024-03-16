@@ -11,14 +11,14 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 - No runtime dependency (see [package.json](./package.json))
 - High-level API: completions, embeddings
 - Low-level API: (de)tokenize, KV cache control, sampling control,...
-- Ability to split the model into smaller files and load them parallel (same as `split` and `cat`)
+- Ability to split the model into smaller files and load them in parallel (same as `split` and `cat`)
 - Auto switch between single-thread and multi-thread build based on browser support
 - Inference is done inside a worker, does not block UI render
 - Pre-built npm package [@wllama/wllama](https://www.npmjs.com/package/@wllama/wllama)
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- No WebGL support, because llama.cpp does not support WebGL backend
+- No WebGL support, but maybe possible in the future
 - Max model size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length)
 
 ## Demo and documentations
@@ -92,6 +92,6 @@ Short term:
 - Maybe doing a full RAG-in-browser example using tinyllama?
 
 Long term:
-- When using single-thread build, add ability to run it in a worker (so that heavy operation will not block the render)
+- Support GPU inference via WebGL
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
 - Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp
