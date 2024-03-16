@@ -39,7 +39,7 @@ Install it:
 npm i @wllama/wllama
 ```
 
-For complete code, see [examples/reactjs/src/App.tsx](./examples/reactjs/src/App.tsx)
+For complete code, see [examples/reactjs](./examples/reactjs)
 
 NOTE: this example only covers completions usage. For embeddings, please see [examples/basic/index.html](./examples/basic/index.html)
 
