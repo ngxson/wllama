@@ -1,7 +1,5 @@
-import ModuleSingleThread from './single-thread/wllama';
-import ModuleMultiThread from './multi-thread/wllama';
 import { ProxyToWorker } from './worker';
-import { absoluteUrl, bufToText, delay, getWModuleConfig, isSupportMultiThread, joinBuffers, loadBinaryResource } from './utils';
+import { absoluteUrl, bufToText, isSupportMultiThread, joinBuffers, loadBinaryResource } from './utils';
 
 export interface AssetsPathConfig {
   'single-thread/wllama.wasm': string,
