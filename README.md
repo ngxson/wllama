@@ -13,6 +13,7 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 - Low-level API: (de)tokenize, KV cache control, sampling control,...
 - Ability to split the model into smaller files and load them parallel (same as `split` and `cat`)
 - Auto switch between single-thread and multi-thread build based on browser support
+- Inference is done inside a worker, does not block UI render
 - Pre-built npm package [@wllama/wllama](https://www.npmjs.com/package/@wllama/wllama)
 
 Limitations:

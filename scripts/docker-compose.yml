@@ -24,7 +24,7 @@ services:
         # emcc --clear-cache
 
         emcmake cmake ../..
-        export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS -sBUILD_AS_WORKER=1"
+        export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS"
         emmake make wllama -j
 
         cd ../..

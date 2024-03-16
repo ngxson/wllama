@@ -1,6 +1,7 @@
 import ModuleSingleThread from './single-thread/wllama';
 import ModuleMultiThread from './multi-thread/wllama';
-import { bufToText, delay, getWModuleConfig, isSupportMultiThread, joinBuffers, loadBinaryResource } from './utils';
+import { ProxyToWorker } from './worker';
+import { absoluteUrl, bufToText, delay, getWModuleConfig, isSupportMultiThread, joinBuffers, loadBinaryResource } from './utils';
 
 export interface AssetsPathConfig {
   'single-thread/wllama.wasm': string,
@@ -58,13 +59,10 @@ export interface SamplingConfig {
 };
 
 export class Wllama {
-  private wModule?: any;
+  private proxy: ProxyToWorker = null as any;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
   private useEmbeddings: boolean = false;
-  private wllamaStart: any;
-  private wllamaAction: any = () => {throw new Error('Model is not yet loaded')};
-  private wllamaExit: any = () => {throw new Error('Model is not yet loaded')};
   // available when loaded
   private bosToken: number = -1;
   private eosToken: number = -1;
@@ -99,26 +97,6 @@ export class Wllama {
     return this.useMultiThread;
   }
 
-  private _callWrapper(name: string, ret: string, args: string[]) {
-    const fn = this.wModule.cwrap(name, ret, args);
-    const decodeException = this.wModule.cwrap('wllama_decode_exception', 'string', ['number']);
-    return async (action: string, req: any): Promise<any> => {
-      let result: any;
-      try {
-        if (args.length === 2) {
-          result = JSON.parse(await fn(action, JSON.stringify(req)));
-        } else {
-          result = fn();
-        }
-      } catch (ex) {
-        const what = await decodeException(ex);
-        console.error(what);
-        throw new Error(what);
-      }
-      return result;
-    };
-  }
-
   /**
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * @param modelUrl URL or list of URLs (in the correct order)
@@ -138,7 +116,7 @@ export class Wllama {
     if (!ggufBuffer.byteLength) {
       throw new Error('Input model must be a non-empty Uint8Array');
     }
-    if (this.wModule) {
+    if (this.proxy) {
       throw new Error('Module is already initialized');
     }
     // detect if we can use multi-thread
@@ -146,31 +124,26 @@ export class Wllama {
     if (!supportMultiThread) {
       console.warn('Multi-threads are not supported in this environment, falling back to single-thread');
     }
-    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm'] && !!this.pathConfig['multi-thread/wllama.worker.mjs'];
+    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm']
+      && !!this.pathConfig['multi-thread/wllama.worker.mjs'];
     if (!hasPathMultiThread) {
       console.warn('Missing paths to "wllama.wasm" and "wllama.worker.mjs", falling back to single-thread');
     }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
     const nbThreads = config.n_threads ?? hwConccurency;
     this.useMultiThread = supportMultiThread && hasPathMultiThread && nbThreads > 1;
-    this.wModule = this.useMultiThread
-      ? await ModuleMultiThread(getWModuleConfig({
-        'wllama.wasm': this.pathConfig['multi-thread/wllama.wasm']!!,
-        'wllama.worker.mjs': this.pathConfig['multi-thread/wllama.worker.mjs']!!,
-      }))
-      : await ModuleSingleThread(getWModuleConfig({
-        'wllama.wasm': this.pathConfig['single-thread/wllama.wasm'],
-      }));
-    // create vfs folder for storing model bins
-    this.wModule['FS_createPath']('/', 'models', true, true);
-    // load model
-    this.wModule['FS_createDataFile']('/models', 'model.bin', ggufBuffer, true, true, true);
-    // initialize bindings
-    this.wllamaStart = this._callWrapper('wllama_start', 'number', []);
-    this.wllamaAction = this._callWrapper('wllama_action', 'string', ['string', 'string']);
-    this.wllamaExit = this._callWrapper('wllama_exit', 'number', []);
+    const mPathConfig = this.useMultiThread
+      ? {
+        'wllama.wasm': absoluteUrl(this.pathConfig['multi-thread/wllama.wasm']!!),
+        'wllama.worker.mjs': absoluteUrl(this.pathConfig['multi-thread/wllama.worker.mjs']!!),
+      }
+      : {
+        'wllama.wasm': absoluteUrl(this.pathConfig['single-thread/wllama.wasm']),
+      };
+    this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread);
+    await this.proxy.moduleInit(ggufBuffer);
     // run it
-    const startResult: number = await this.wllamaStart();
+    const startResult: number = await this.proxy.wllamaStart();
     if (startResult !== 0) {
       throw new Error(`Error while calling start function, result = ${startResult}`);
     }
@@ -178,7 +151,7 @@ export class Wllama {
     const loadResult: {
       token_bos: number,
       token_eos: number,
-    } = await this.wllamaAction('load', {
+    } = await this.proxy.wllamaAction('load', {
       ...config,
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,
@@ -239,11 +212,6 @@ export class Wllama {
       if (options.onNewToken) {
         options.onNewToken(sampled.token, sampled.piece, bufToText(outBuf));
       }
-      if (!this.useMultiThread) {
-        // if this is single-thread, we add a setTimeout to allow frontend code to run
-        // TODO: we should somehow use web worker
-        await delay(0);
-      }
       // decode next token
       await this.samplingAccept([sampled.token]);
       await this.decode([sampled.token], {});
@@ -278,7 +246,7 @@ export class Wllama {
     typical_p?: number,
   }, pastTokens: number[] = []): Promise<void> {
     this.samplingConfig = config;
-    const result = await this.wllamaAction('sampling_init', {
+    const result = await this.proxy.wllamaAction('sampling_init', {
       ...config,
       tokens: pastTokens,
     });
@@ -293,7 +261,7 @@ export class Wllama {
    * @returns A list of Uint8Array. The nth element in the list associated to nth token in vocab
    */
   async getVocab(): Promise<Uint8Array[]> {
-    const result = await this.wllamaAction('get_vocab', {});
+    const result = await this.proxy.wllamaAction('get_vocab', {});
     return result.vocab.map((arr: number[]) => new Uint8Array(arr));
   }
 
@@ -304,7 +272,7 @@ export class Wllama {
    * @returns Token ID associated to the given piece. Returns -1 if cannot find the token.
    */
   async lookupToken(piece: string): Promise<number> {
-    const result = await this.wllamaAction('lookup_token', { piece });
+    const result = await this.proxy.wllamaAction('lookup_token', { piece });
     if (!result.success) {
       return -1;
     } else {
@@ -319,7 +287,7 @@ export class Wllama {
    * @returns List of token ID
    */
   async tokenize(text: string, special: boolean = true): Promise<number[]> {
-    const result = await this.wllamaAction('tokenize', special
+    const result = await this.proxy.wllamaAction('tokenize', special
       ? { text, special: true }
       : { text }
     );
@@ -332,7 +300,7 @@ export class Wllama {
    * @returns Uint8Array, which maybe an unfinished unicode
    */
   async detokenize(tokens: number[]): Promise<Uint8Array> {
-    const result = await this.wllamaAction('detokenize', { tokens });
+    const result = await this.proxy.wllamaAction('detokenize', { tokens });
     return new Uint8Array(result.buffer);
   }
 
@@ -349,7 +317,7 @@ export class Wllama {
     if (options.skipLogits) {
       req.skip_logits = true;
     }
-    const result = await this.wllamaAction('decode', req);
+    const result = await this.proxy.wllamaAction('decode', req);
     if (result.error) {
       throw new Error(result.error);
     } else if (!result.success) {
@@ -364,7 +332,7 @@ export class Wllama {
    * @returns the token ID and its detokenized value (which maybe an unfinished unicode)
    */
   async samplingSample(): Promise<{ piece: Uint8Array, token: number }> {
-    const result = await this.wllamaAction('sampling_sample', {});
+    const result = await this.proxy.wllamaAction('sampling_sample', {});
     return {
       piece: new Uint8Array(result.piece),
       token: result.token,
@@ -376,7 +344,7 @@ export class Wllama {
    * @param tokens 
    */
   async samplingAccept(tokens: number[]): Promise<void> {
-    const result = await this.wllamaAction('sampling_accept', { tokens });
+    const result = await this.proxy.wllamaAction('sampling_accept', { tokens });
     if (!result.success) {
       throw new Error('samplingAccept unknown error');
     }
@@ -387,7 +355,7 @@ export class Wllama {
    * @param topK Get top K tokens having highest logits value. If topK == -1, we return all n_vocab logits, but this is not recommended because it's slow.
    */
   async getLogits(topK: number = 40): Promise<{token: number, p: number}[]> {
-    const result = await this.wllamaAction('get_logits', { top_k: topK });
+    const result = await this.proxy.wllamaAction('get_logits', { top_k: topK });
     const logits = result.logits as number[][];
     return logits.map(([token, p]) => ({ token, p }));
   }
@@ -398,7 +366,7 @@ export class Wllama {
    * @returns A list of number represents an embedding vector of N dimensions
    */
   async embeddings(tokens: number[]): Promise<number[]> {
-    const result = await this.wllamaAction('embeddings', { tokens });
+    const result = await this.proxy.wllamaAction('embeddings', { tokens });
     if (result.error) {
       throw new Error(result.error);
     } else if (!result.success) {
@@ -415,7 +383,7 @@ export class Wllama {
    * @param nDiscard 
    */
   async kvRemove(nKeep: number, nDiscard: number): Promise<void> {
-    const result = await this.wllamaAction('kv_remove', {
+    const result = await this.proxy.wllamaAction('kv_remove', {
       n_keep: nKeep,
       n_discard: nDiscard,
     });
@@ -428,7 +396,7 @@ export class Wllama {
    * Clear all tokens in KV cache
    */
   async kvClear(): Promise<void> {
-    const result = await this.wllamaAction('kv_clear', {});
+    const result = await this.proxy.wllamaAction('kv_clear', {});
     if (!result.success) {
       throw new Error('kvClear unknown error');
     }
@@ -441,7 +409,7 @@ export class Wllama {
    * @returns List of tokens saved to the file
    */
   async sessionSave(filePath: string): Promise<{ tokens: number[] }> {
-    const result = await this.wllamaAction('session_save', { session_path: filePath });
+    const result = await this.proxy.wllamaAction('session_save', { session_path: filePath });
     return result;
   }
 
@@ -452,7 +420,7 @@ export class Wllama {
    * 
    */
   async sessionLoad(filePath: string): Promise<void> {
-    const result = await this.wllamaAction('session_load', { session_path: filePath });
+    const result = await this.proxy.wllamaAction('session_load', { session_path: filePath });
     if (result.error) {
       throw new Error(result.error);
     } else if (!result.success) {
@@ -464,7 +432,7 @@ export class Wllama {
    * Unload the model and free all memory
    */
   async exit(): Promise<void> {
-    await this.wllamaExit();
+    await this.proxy.wllamaExit();
   }
 
   // TODO: add current_status

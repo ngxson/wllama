@@ -41,13 +41,10 @@ export interface SamplingConfig {
     typical_p?: number;
 }
 export declare class Wllama {
-    private wModule?;
+    private proxy;
     private pathConfig;
     private useMultiThread;
     private useEmbeddings;
-    private wllamaStart;
-    private wllamaAction;
-    private wllamaExit;
     private bosToken;
     private eosToken;
     private samplingConfig;
@@ -67,7 +64,6 @@ export declare class Wllama {
      * @returns true if multi-thread is used
      */
     isMultithread(): boolean;
-    private _callWrapper;
     /**
      * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
      * @param modelUrl URL or list of URLs (in the correct order)
@@ -178,7 +174,7 @@ export declare class Wllama {
         p: number;
     }[]>;
     /**
-     * Calculate embeddings for a given list of tokens
+     * Calculate embeddings for a given list of tokens. Output vector is always normalized
      * @param tokens
      * @returns A list of number represents an embedding vector of N dimensions
      */

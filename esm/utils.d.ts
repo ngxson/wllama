@@ -27,3 +27,4 @@ export declare const getWModuleConfig: (pathConfig: {
  */
 export declare const isSupportMultiThread: () => Promise<boolean>;
 export declare const delay: (ms: number) => Promise<unknown>;
+export declare const absoluteUrl: (relativePath: string) => string;

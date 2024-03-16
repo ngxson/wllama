@@ -106,4 +106,5 @@ catch (e) {
     return !1;
 } })(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3, 1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11]));
 export const delay = (ms) => new Promise(r => setTimeout(r, ms));
+export const absoluteUrl = (relativePath) => new URL(relativePath, document.baseURI).href;
 //# sourceMappingURL=utils.js.map
