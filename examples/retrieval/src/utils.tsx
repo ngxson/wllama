@@ -2,7 +2,9 @@ import { Wllama } from '@wllama/wllama';
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 
 // See: https://vitejs.dev/guide/assets#explicit-url-imports
+import wllamaSingleJS from '@wllama/wllama/src/single-thread/wllama.js?url';
 import wllamaSingle from '@wllama/wllama/src/single-thread/wllama.wasm?url';
+import wllamaMultiJS from '@wllama/wllama/src/multi-thread/wllama.js?url';
 import wllamaMulti from '@wllama/wllama/src/multi-thread/wllama.wasm?url';
 import wllamaMultiWorker from '@wllama/wllama/src/multi-thread/wllama.worker.mjs?url';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
@@ -11,7 +13,9 @@ export const EMBD_MODEL_URL = 'https://huggingface.co/nomic-ai/nomic-embed-text-
 export const EMBD_MODEL_NAME = 'nomic-embed-text-v1.5';
 
 const CONFIG_PATHS = {
+  'single-thread/wllama.js': wllamaSingleJS,
   'single-thread/wllama.wasm': wllamaSingle,
+  'multi-thread/wllama.js': wllamaMultiJS,
   'multi-thread/wllama.wasm': wllamaMulti,
   'multi-thread/wllama.worker.mjs': wllamaMultiWorker,
 };
