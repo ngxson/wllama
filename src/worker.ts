@@ -1,7 +1,3 @@
-import ModuleSingleThread from './single-thread/wllama';
-import ModuleMultiThread from './multi-thread/wllama';
-import { AssetsPathConfig } from './wllama';
-
 /**
  * Module code will be copied into worker.
  * 
@@ -141,16 +137,27 @@ export class ProxyToWorker {
   taskId: number = 1;
   resultQueue: Task[] = [];
   busy = false; // is the work loop is running?
-  worker: Worker;
+  worker?: Worker;
+  pathConfig: any;
+  multiThread: boolean;
 
   constructor(pathConfig: any, multiThread: boolean = false) {
-    let moduleCode = multiThread ? ModuleMultiThread.toString() : ModuleSingleThread.toString();
+    this.pathConfig = pathConfig;
+    this.multiThread = multiThread;
+  }
+
+  async moduleInit(ggufBuffer: Uint8Array): Promise<void> {
+    if (!this.pathConfig['wllama.js']) {
+      throw new Error('"single-thread/wllama.js" or "multi-thread/wllama.js" is missing from pathConfig');
+    }
+    const Module = await import(this.pathConfig['wllama.js']);
+    let moduleCode = Module.default.toString();
     // monkey-patch: remove all "import.meta"
     // FIXME: this monkey-patch will remove support for nodejs
     moduleCode = moduleCode.replace(/import\.meta/g, 'importMeta');
     const completeCode = [
       'const importMeta = {}',
-      `const pathConfig = ${JSON.stringify(pathConfig)}`,
+      `const pathConfig = ${JSON.stringify(this.pathConfig)}`,
       `function ModuleWrapper() {
         const _scriptDir = ${JSON.stringify(window.location.href)};
         return ${moduleCode};
@@ -162,10 +169,8 @@ export class ProxyToWorker {
     this.worker = new Worker(workerURL);
     this.worker.onmessage = this.onRecvMsg.bind(this);
     this.worker.onerror = console.error;
-  }
 
-  moduleInit(ggufBuffer: Uint8Array): Promise<void> {
-    return this.pushTask({
+    return await this.pushTask({
       verb: 'module.init',
       args: [ggufBuffer],
       callbackId: this.taskId++,
@@ -213,7 +218,7 @@ export class ProxyToWorker {
       const task = this.taskQueue.shift();
       if (!task) break; // no more tasks
       this.resultQueue.push(task);
-      this.worker.postMessage(task.param);
+      this.worker!!.postMessage(task.param);
     }
     this.busy = false;
   }
