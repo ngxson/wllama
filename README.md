@@ -59,7 +59,9 @@ import { Wllama } from './esm/index.js';
 
 (async () => {
   const CONFIG_PATHS = {
+    'single-thread/wllama.js'       : './esm/single-thread/wllama.js',
     'single-thread/wllama.wasm'     : './esm/single-thread/wllama.wasm',
+    'multi-thread/wllama.js'        : './esm/multi-thread/wllama.js',
     'multi-thread/wllama.wasm'      : './esm/multi-thread/wllama.wasm',
     'multi-thread/wllama.worker.mjs': './esm/multi-thread/wllama.worker.mjs',
   };
@@ -87,7 +89,7 @@ This repository already come with pre-built binary. But if you want to build it 
 # Require having docker compose installed
 # Firstly, build llama.cpp into wasm
 npm run build:wasm
-# (Optionally) Build ES6 module
+# (Optionally) Build ES module
 npm run build
 ```
 

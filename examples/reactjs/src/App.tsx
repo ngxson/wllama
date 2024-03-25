@@ -42,6 +42,7 @@ function App() {
         top_k: 40,
         top_p: 0.9,
       },
+      // @ts-ignore
       onNewToken: (token, piece, currentText) => {
         setOutput(currentText);
       },
