@@ -165,17 +165,32 @@ export class Wllama {
   // High level API
 
   /**
-   * Calculate embedding vector for a given text
+   * Calculate embedding vector for a given text.
+   * By default, BOS and EOS tokens will be added automatically. You can use the "skipBOS" and "skipEOS" option to disable it.
    * @param text Input text
    * @returns An embedding vector
    */
-  async createEmbedding(text: string): Promise<number[]> {
+  async createEmbedding(text: string, options: {
+    skipBOS?: boolean,
+    skipEOS?: boolean,
+  } = {}): Promise<number[]> {
+    const opt = {
+      skipBOS: false,
+      skipEOS: false,
+      ...options,
+    };
     if (!this.useEmbeddings) {
       throw new Error('embeddings is not enabled in LoadModelConfig')
     }
     await this.samplingInit(this.samplingConfig);
     await this.kvClear();
     const tokens = await this.tokenize(text);
+    if (this.bosToken && !opt.skipBOS) {
+      tokens.unshift(this.bosToken);
+    }
+    if (this.eosToken && !opt.skipEOS) {
+      tokens.push(this.eosToken);
+    }
     const result = await this.embeddings(tokens);
     return result;
   }

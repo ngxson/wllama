@@ -223,7 +223,7 @@ var Module = (() => {
         function instantiateAsync(binary, binaryFile, imports, callback) { if (!binary && typeof WebAssembly.instantiateStreaming == "function" && !isDataURI(binaryFile) && !isFileURI(binaryFile) && !ENVIRONMENT_IS_NODE && typeof fetch == "function") {
             return fetch(binaryFile, { credentials: "same-origin" }).then(response => { var result = WebAssembly.instantiateStreaming(response, imports); return result.then(callback, function (reason) { err(`wasm streaming compile failed: ${reason}`); err("falling back to ArrayBuffer instantiation"); return instantiateArrayBuffer(binaryFile, imports, callback); }); });
         } return instantiateArrayBuffer(binaryFile, imports, callback); }
-        function createWasm() { var info = { "a": wasmImports }; function receiveInstance(instance, module) { wasmExports = instance.exports; wasmExports = applySignatureConversions(wasmExports); registerTLSInit(wasmExports["K"]); wasmTable = wasmExports["M"]; addOnInit(wasmExports["D"]); wasmModule = module; removeRunDependency("wasm-instantiate"); return wasmExports; } addRunDependency("wasm-instantiate"); function receiveInstantiationResult(result) { receiveInstance(result["instance"], result["module"]); } if (Module["instantiateWasm"]) {
+        function createWasm() { var info = { "a": wasmImports }; function receiveInstance(instance, module) { wasmExports = instance.exports; wasmExports = applySignatureConversions(wasmExports); registerTLSInit(wasmExports["ua"]); wasmTable = wasmExports["wa"]; addOnInit(wasmExports["ma"]); wasmModule = module; removeRunDependency("wasm-instantiate"); return wasmExports; } addRunDependency("wasm-instantiate"); function receiveInstantiationResult(result) { receiveInstance(result["instance"], result["module"]); } if (Module["instantiateWasm"]) {
             try {
                 return Module["instantiateWasm"](info, receiveInstance);
             }
@@ -426,6 +426,19 @@ var Module = (() => {
             default: abort(`invalid type for setValue: ${type}`);
         } }
         Module["setValue"] = setValue;
+        var exceptionCaught = [];
+        Module["exceptionCaught"] = exceptionCaught;
+        var uncaughtExceptionCount = 0;
+        Module["uncaughtExceptionCount"] = uncaughtExceptionCount;
+        function ___cxa_begin_catch(ptr) { ptr >>>= 0; var info = new ExceptionInfo(ptr); if (!info.get_caught()) {
+            info.set_caught(true);
+            uncaughtExceptionCount--;
+        } info.set_rethrown(false); exceptionCaught.push(info); ___cxa_increment_exception_refcount(info.excPtr); return info.get_exception_ptr(); }
+        Module["___cxa_begin_catch"] = ___cxa_begin_catch;
+        var exceptionLast = 0;
+        Module["exceptionLast"] = exceptionLast;
+        var ___cxa_end_catch = () => { _setThrew(0, 0); var info = exceptionCaught.pop(); ___cxa_decrement_exception_refcount(info.excPtr); exceptionLast = 0; };
+        Module["___cxa_end_catch"] = ___cxa_end_catch;
         class ExceptionInfo {
             constructor(excPtr) { this.excPtr = excPtr; this.ptr = excPtr - 24; }
             set_type(type) { GROWABLE_HEAP_U32()[this.ptr + 4 >>> 2 >>> 0] = type; }
@@ -445,12 +458,45 @@ var Module = (() => {
                 return adjusted; return this.excPtr; }
         }
         Module["ExceptionInfo"] = ExceptionInfo;
-        var exceptionLast = 0;
-        Module["exceptionLast"] = exceptionLast;
-        var uncaughtExceptionCount = 0;
-        Module["uncaughtExceptionCount"] = uncaughtExceptionCount;
+        function ___resumeException(ptr) { ptr >>>= 0; if (!exceptionLast) {
+            exceptionLast = ptr;
+        } throw exceptionLast; }
+        Module["___resumeException"] = ___resumeException;
+        var findMatchingCatch = args => { var thrown = exceptionLast; if (!thrown) {
+            setTempRet0(0);
+            return 0;
+        } var info = new ExceptionInfo(thrown); info.set_adjusted_ptr(thrown); var thrownType = info.get_type(); if (!thrownType) {
+            setTempRet0(0);
+            return thrown;
+        } for (var arg in args) {
+            var caughtType = args[arg];
+            if (caughtType === 0 || caughtType === thrownType) {
+                break;
+            }
+            var adjusted_ptr_addr = info.ptr + 16;
+            if (___cxa_can_catch(caughtType, thrownType, adjusted_ptr_addr)) {
+                setTempRet0(caughtType);
+                return thrown;
+            }
+        } setTempRet0(thrownType); return thrown; };
+        Module["findMatchingCatch"] = findMatchingCatch;
+        function ___cxa_find_matching_catch_2() { return findMatchingCatch([]); }
+        Module["___cxa_find_matching_catch_2"] = ___cxa_find_matching_catch_2;
+        function ___cxa_find_matching_catch_3(arg0) { arg0 >>>= 0; return findMatchingCatch([arg0]); }
+        Module["___cxa_find_matching_catch_3"] = ___cxa_find_matching_catch_3;
+        var ___cxa_rethrow = () => { var info = exceptionCaught.pop(); if (!info) {
+            abort("no exception to throw");
+        } var ptr = info.excPtr; if (!info.get_rethrown()) {
+            exceptionCaught.push(info);
+            info.set_rethrown(true);
+            info.set_caught(false);
+            uncaughtExceptionCount++;
+        } exceptionLast = ptr; throw exceptionLast; };
+        Module["___cxa_rethrow"] = ___cxa_rethrow;
         function ___cxa_throw(ptr, type, destructor) { ptr >>>= 0; type >>>= 0; destructor >>>= 0; var info = new ExceptionInfo(ptr); info.init(type, destructor); exceptionLast = ptr; uncaughtExceptionCount++; throw exceptionLast; }
         Module["___cxa_throw"] = ___cxa_throw;
+        var ___cxa_uncaught_exceptions = () => uncaughtExceptionCount;
+        Module["___cxa_uncaught_exceptions"] = ___cxa_uncaught_exceptions;
         function ___emscripten_init_main_thread_js(tb) { tb >>>= 0; __emscripten_thread_init(tb, !ENVIRONMENT_IS_WORKER, 1, !ENVIRONMENT_IS_WEB, 65536, false); PThread.threadInitTLS(); }
         Module["___emscripten_init_main_thread_js"] = ___emscripten_init_main_thread_js;
         function ___emscripten_thread_cleanup(thread) { thread >>>= 0; if (!ENVIRONMENT_IS_PTHREAD)
@@ -1951,6 +1997,8 @@ var Module = (() => {
             return e.errno;
         } }
         Module["_fd_write"] = _fd_write;
+        function _llvm_eh_typeid_for(type) { type >>>= 0; return type; }
+        Module["_llvm_eh_typeid_for"] = _llvm_eh_typeid_for;
         var isLeapYear = year => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
         Module["isLeapYear"] = isLeapYear;
         var arraySum = (array, index) => { var sum = 0; for (var i = 0; i <= index; sum += array[i++]) { } return sum; };
@@ -2073,38 +2121,306 @@ var Module = (() => {
         Module["FS_createLazyFile"] = FS.createLazyFile;
         Module["FS_createDevice"] = FS.createDevice;
         var proxiedFunctionTable = [_proc_exit, exitOnMainThread, pthreadCreateProxied, ___syscall_fcntl64, ___syscall_ioctl, ___syscall_openat, __mmap_js, __munmap_js, _environ_get, _environ_sizes_get, _fd_close, _fd_read, _fd_seek, _fd_write];
-        var wasmImports = { c: ___cxa_throw, x: ___emscripten_init_main_thread_js, h: ___emscripten_thread_cleanup, t: ___pthread_create_js, f: ___syscall_fcntl64, C: ___syscall_ioctl, k: ___syscall_openat, n: __emscripten_get_now_is_monotonic, s: __emscripten_notify_mailbox_postmessage, v: __emscripten_receive_on_main_thread_js, w: __emscripten_thread_mailbox_await, m: __emscripten_thread_set_strongref, o: __mmap_js, p: __munmap_js, b: _abort, i: _emscripten_check_blocking_allowed, g: _emscripten_date_now, l: _emscripten_exit_with_live_runtime, e: _emscripten_get_now, r: _emscripten_resize_heap, y: _environ_get, z: _environ_sizes_get, u: _exit, j: _fd_close, B: _fd_read, q: _fd_seek, A: _fd_write, a: wasmMemory || Module["wasmMemory"], d: _strftime_l };
+        var wasmImports = { u: ___cxa_begin_catch, y: ___cxa_end_catch, b: ___cxa_find_matching_catch_2, k: ___cxa_find_matching_catch_3, I: ___cxa_rethrow, t: ___cxa_throw, _: ___cxa_uncaught_exceptions, ea: ___emscripten_init_main_thread_js, K: ___emscripten_thread_cleanup, ba: ___pthread_create_js, l: ___resumeException, N: ___syscall_fcntl64, ja: ___syscall_ioctl, ka: ___syscall_openat, P: __emscripten_get_now_is_monotonic, aa: __emscripten_notify_mailbox_postmessage, ca: __emscripten_receive_on_main_thread_js, da: __emscripten_thread_mailbox_await, O: __emscripten_thread_set_strongref, T: __mmap_js, U: __munmap_js, n: _abort, L: _emscripten_check_blocking_allowed, H: _emscripten_date_now, la: _emscripten_exit_with_live_runtime, B: _emscripten_get_now, $: _emscripten_resize_heap, fa: _environ_get, ga: _environ_sizes_get, Z: _exit, M: _fd_close, ia: _fd_read, V: _fd_seek, ha: _fd_write, E: invoke_i, J: invoke_ifi, c: invoke_ii, g: invoke_iii, q: invoke_iiifiiii, m: invoke_iiii, p: invoke_iiiii, i: invoke_iiiiii, v: invoke_iiiiiii, r: invoke_iiiiiiii, Y: invoke_iiiiiiiiii, G: invoke_iiiiiiiiiiii, s: invoke_iiiiiiiiiiiii, S: invoke_iiiiiiiiiiiiijiiifii, Q: invoke_iiij, R: invoke_j, j: invoke_v, o: invoke_vi, d: invoke_vii, W: invoke_viid, X: invoke_viif, D: invoke_viifi, h: invoke_viii, e: invoke_viiii, f: invoke_viiiii, A: invoke_viiiiii, x: invoke_viiiiiii, C: invoke_viiiiiiiiii, F: invoke_viiiiiiiiiiiiiii, z: _llvm_eh_typeid_for, a: wasmMemory || Module["wasmMemory"], w: _strftime_l };
         var wasmExports = createWasm();
-        var ___wasm_call_ctors = () => (___wasm_call_ctors = wasmExports["D"])();
-        var _wllama_start = Module["_wllama_start"] = () => (_wllama_start = Module["_wllama_start"] = wasmExports["E"])();
-        var _wllama_action = Module["_wllama_action"] = (a0, a1) => (_wllama_action = Module["_wllama_action"] = wasmExports["F"])(a0, a1);
-        var _wllama_exit = Module["_wllama_exit"] = () => (_wllama_exit = Module["_wllama_exit"] = wasmExports["G"])();
-        var _wllama_decode_exception = Module["_wllama_decode_exception"] = a0 => (_wllama_decode_exception = Module["_wllama_decode_exception"] = wasmExports["H"])(a0);
-        var _main = Module["_main"] = (a0, a1) => (_main = Module["_main"] = wasmExports["I"])(a0, a1);
-        var _pthread_self = Module["_pthread_self"] = () => (_pthread_self = Module["_pthread_self"] = wasmExports["J"])();
-        var __emscripten_tls_init = Module["__emscripten_tls_init"] = () => (__emscripten_tls_init = Module["__emscripten_tls_init"] = wasmExports["K"])();
-        var _emscripten_builtin_memalign = (a0, a1) => (_emscripten_builtin_memalign = wasmExports["L"])(a0, a1);
-        var __emscripten_thread_init = Module["__emscripten_thread_init"] = (a0, a1, a2, a3, a4, a5) => (__emscripten_thread_init = Module["__emscripten_thread_init"] = wasmExports["N"])(a0, a1, a2, a3, a4, a5);
-        var __emscripten_thread_crashed = Module["__emscripten_thread_crashed"] = () => (__emscripten_thread_crashed = Module["__emscripten_thread_crashed"] = wasmExports["O"])();
-        var _emscripten_main_thread_process_queued_calls = () => (_emscripten_main_thread_process_queued_calls = wasmExports["P"])();
-        var _emscripten_main_runtime_thread_id = () => (_emscripten_main_runtime_thread_id = wasmExports["Q"])();
-        var __emscripten_run_on_main_thread_js = (a0, a1, a2, a3, a4) => (__emscripten_run_on_main_thread_js = wasmExports["R"])(a0, a1, a2, a3, a4);
-        var __emscripten_thread_free_data = a0 => (__emscripten_thread_free_data = wasmExports["S"])(a0);
-        var __emscripten_thread_exit = Module["__emscripten_thread_exit"] = a0 => (__emscripten_thread_exit = Module["__emscripten_thread_exit"] = wasmExports["T"])(a0);
-        var __emscripten_check_mailbox = () => (__emscripten_check_mailbox = wasmExports["U"])();
-        var setTempRet0 = a0 => (setTempRet0 = wasmExports["V"])(a0);
-        var _emscripten_stack_set_limits = (a0, a1) => (_emscripten_stack_set_limits = wasmExports["W"])(a0, a1);
-        var stackSave = () => (stackSave = wasmExports["X"])();
-        var stackRestore = a0 => (stackRestore = wasmExports["Y"])(a0);
-        var stackAlloc = a0 => (stackAlloc = wasmExports["Z"])(a0);
-        var ___cxa_increment_exception_refcount = a0 => (___cxa_increment_exception_refcount = wasmExports["_"])(a0);
-        var ___cxa_is_pointer_type = a0 => (___cxa_is_pointer_type = wasmExports["$"])(a0);
-        var dynCall_jiji = Module["dynCall_jiji"] = (a0, a1, a2, a3, a4) => (dynCall_jiji = Module["dynCall_jiji"] = wasmExports["aa"])(a0, a1, a2, a3, a4);
-        var dynCall_viijii = Module["dynCall_viijii"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_viijii = Module["dynCall_viijii"] = wasmExports["ba"])(a0, a1, a2, a3, a4, a5, a6);
-        var dynCall_iiiiij = Module["dynCall_iiiiij"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_iiiiij = Module["dynCall_iiiiij"] = wasmExports["ca"])(a0, a1, a2, a3, a4, a5, a6);
-        var dynCall_iiiiijj = Module["dynCall_iiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8) => (dynCall_iiiiijj = Module["dynCall_iiiiijj"] = wasmExports["da"])(a0, a1, a2, a3, a4, a5, a6, a7, a8);
-        var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) => (dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = wasmExports["ea"])(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
-        function applySignatureConversions(wasmExports) { wasmExports = Object.assign({}, wasmExports); var makeWrapper_p = f => () => f() >>> 0; var makeWrapper_ppp = f => (a0, a1) => f(a0, a1) >>> 0; var makeWrapper_pp = f => a0 => f(a0) >>> 0; wasmExports["J"] = makeWrapper_p(wasmExports["J"]); wasmExports["L"] = makeWrapper_ppp(wasmExports["L"]); wasmExports["Q"] = makeWrapper_p(wasmExports["Q"]); wasmExports["X"] = makeWrapper_p(wasmExports["X"]); wasmExports["Z"] = makeWrapper_pp(wasmExports["Z"]); return wasmExports; }
+        var ___wasm_call_ctors = () => (___wasm_call_ctors = wasmExports["ma"])();
+        var _wllama_start = Module["_wllama_start"] = () => (_wllama_start = Module["_wllama_start"] = wasmExports["na"])();
+        var _wllama_action = Module["_wllama_action"] = (a0, a1) => (_wllama_action = Module["_wllama_action"] = wasmExports["oa"])(a0, a1);
+        var _wllama_exit = Module["_wllama_exit"] = () => (_wllama_exit = Module["_wllama_exit"] = wasmExports["pa"])();
+        var _wllama_decode_exception = Module["_wllama_decode_exception"] = a0 => (_wllama_decode_exception = Module["_wllama_decode_exception"] = wasmExports["qa"])(a0);
+        var _main = Module["_main"] = (a0, a1) => (_main = Module["_main"] = wasmExports["ra"])(a0, a1);
+        var ___cxa_free_exception = a0 => (___cxa_free_exception = wasmExports["sa"])(a0);
+        var _pthread_self = Module["_pthread_self"] = () => (_pthread_self = Module["_pthread_self"] = wasmExports["ta"])();
+        var __emscripten_tls_init = Module["__emscripten_tls_init"] = () => (__emscripten_tls_init = Module["__emscripten_tls_init"] = wasmExports["ua"])();
+        var _emscripten_builtin_memalign = (a0, a1) => (_emscripten_builtin_memalign = wasmExports["va"])(a0, a1);
+        var __emscripten_thread_init = Module["__emscripten_thread_init"] = (a0, a1, a2, a3, a4, a5) => (__emscripten_thread_init = Module["__emscripten_thread_init"] = wasmExports["xa"])(a0, a1, a2, a3, a4, a5);
+        var __emscripten_thread_crashed = Module["__emscripten_thread_crashed"] = () => (__emscripten_thread_crashed = Module["__emscripten_thread_crashed"] = wasmExports["ya"])();
+        var _emscripten_main_thread_process_queued_calls = () => (_emscripten_main_thread_process_queued_calls = wasmExports["za"])();
+        var _emscripten_main_runtime_thread_id = () => (_emscripten_main_runtime_thread_id = wasmExports["Aa"])();
+        var __emscripten_run_on_main_thread_js = (a0, a1, a2, a3, a4) => (__emscripten_run_on_main_thread_js = wasmExports["Ba"])(a0, a1, a2, a3, a4);
+        var __emscripten_thread_free_data = a0 => (__emscripten_thread_free_data = wasmExports["Ca"])(a0);
+        var __emscripten_thread_exit = Module["__emscripten_thread_exit"] = a0 => (__emscripten_thread_exit = Module["__emscripten_thread_exit"] = wasmExports["Da"])(a0);
+        var __emscripten_check_mailbox = () => (__emscripten_check_mailbox = wasmExports["Ea"])();
+        var _setThrew = (a0, a1) => (_setThrew = wasmExports["Fa"])(a0, a1);
+        var setTempRet0 = a0 => (setTempRet0 = wasmExports["Ga"])(a0);
+        var _emscripten_stack_set_limits = (a0, a1) => (_emscripten_stack_set_limits = wasmExports["Ha"])(a0, a1);
+        var stackSave = () => (stackSave = wasmExports["Ia"])();
+        var stackRestore = a0 => (stackRestore = wasmExports["Ja"])(a0);
+        var stackAlloc = a0 => (stackAlloc = wasmExports["Ka"])(a0);
+        var ___cxa_decrement_exception_refcount = a0 => (___cxa_decrement_exception_refcount = wasmExports["La"])(a0);
+        var ___cxa_increment_exception_refcount = a0 => (___cxa_increment_exception_refcount = wasmExports["Ma"])(a0);
+        var ___cxa_can_catch = (a0, a1, a2) => (___cxa_can_catch = wasmExports["Na"])(a0, a1, a2);
+        var ___cxa_is_pointer_type = a0 => (___cxa_is_pointer_type = wasmExports["Oa"])(a0);
+        var dynCall_iiiiiiiiiiiiijiiifii = Module["dynCall_iiiiiiiiiiiiijiiifii"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20) => (dynCall_iiiiiiiiiiiiijiiifii = Module["dynCall_iiiiiiiiiiiiijiiifii"] = wasmExports["Pa"])(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
+        var dynCall_j = Module["dynCall_j"] = a0 => (dynCall_j = Module["dynCall_j"] = wasmExports["Qa"])(a0);
+        var dynCall_jiji = Module["dynCall_jiji"] = (a0, a1, a2, a3, a4) => (dynCall_jiji = Module["dynCall_jiji"] = wasmExports["Ra"])(a0, a1, a2, a3, a4);
+        var dynCall_iiij = Module["dynCall_iiij"] = (a0, a1, a2, a3, a4) => (dynCall_iiij = Module["dynCall_iiij"] = wasmExports["Sa"])(a0, a1, a2, a3, a4);
+        var dynCall_viijii = Module["dynCall_viijii"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_viijii = Module["dynCall_viijii"] = wasmExports["Ta"])(a0, a1, a2, a3, a4, a5, a6);
+        var dynCall_iiiiij = Module["dynCall_iiiiij"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_iiiiij = Module["dynCall_iiiiij"] = wasmExports["Ua"])(a0, a1, a2, a3, a4, a5, a6);
+        var dynCall_iiiiijj = Module["dynCall_iiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8) => (dynCall_iiiiijj = Module["dynCall_iiiiijj"] = wasmExports["Va"])(a0, a1, a2, a3, a4, a5, a6, a7, a8);
+        var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) => (dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = wasmExports["Wa"])(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
+        function invoke_vii(index, a1, a2) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iii(index, a1, a2) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_ii(index, a1) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viii(index, a1, a2, a3) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_v(index) { var sp = stackSave(); try {
+            getWasmTableEntry(index)();
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiii(index, a1, a2, a3) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_vi(index, a1) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiii(index, a1, a2, a3, a4) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiii(index, a1, a2, a3, a4, a5) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiii(index, a1, a2, a3, a4, a5, a6) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiii(index, a1, a2, a3, a4) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viifi(index, a1, a2, a3, a4) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_i(index) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)();
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiii(index, a1, a2, a3, a4, a5) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiiii(index, a1, a2, a3, a4, a5, a6) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_ifi(index, a1, a2) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiii(index, a1, a2, a3, a4, a5, a6, a7) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiifiiii(index, a1, a2, a3, a4, a5, a6, a7) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiiiii(index, a1, a2, a3, a4, a5, a6, a7) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiiiiiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viif(index, a1, a2, a3) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viid(index, a1, a2, a3) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiiiiiiiijiiifii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20) { var sp = stackSave(); try {
+            return dynCall_iiiiiiiiiiiiijiiifii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_j(index) { var sp = stackSave(); try {
+            return dynCall_j(index);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiij(index, a1, a2, a3, a4) { var sp = stackSave(); try {
+            return dynCall_iiij(index, a1, a2, a3, a4);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function applySignatureConversions(wasmExports) { wasmExports = Object.assign({}, wasmExports); var makeWrapper_p = f => () => f() >>> 0; var makeWrapper_ppp = f => (a0, a1) => f(a0, a1) >>> 0; var makeWrapper_pp = f => a0 => f(a0) >>> 0; wasmExports["ta"] = makeWrapper_p(wasmExports["ta"]); wasmExports["va"] = makeWrapper_ppp(wasmExports["va"]); wasmExports["Aa"] = makeWrapper_p(wasmExports["Aa"]); wasmExports["Ia"] = makeWrapper_p(wasmExports["Ia"]); wasmExports["Ka"] = makeWrapper_pp(wasmExports["Ka"]); return wasmExports; }
         Module["addRunDependency"] = addRunDependency;
         Module["removeRunDependency"] = removeRunDependency;
         Module["FS_createPath"] = FS.createPath;

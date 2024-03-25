@@ -164,7 +164,7 @@ var Module = (() => {
         function instantiateAsync(binary, binaryFile, imports, callback) { if (!binary && typeof WebAssembly.instantiateStreaming == "function" && !isDataURI(binaryFile) && !isFileURI(binaryFile) && !ENVIRONMENT_IS_NODE && typeof fetch == "function") {
             return fetch(binaryFile, { credentials: "same-origin" }).then(response => { var result = WebAssembly.instantiateStreaming(response, imports); return result.then(callback, function (reason) { err(`wasm streaming compile failed: ${reason}`); err("falling back to ArrayBuffer instantiation"); return instantiateArrayBuffer(binaryFile, imports, callback); }); });
         } return instantiateArrayBuffer(binaryFile, imports, callback); }
-        function createWasm() { var info = { "a": wasmImports }; function receiveInstance(instance, module) { wasmExports = instance.exports; wasmExports = applySignatureConversions(wasmExports); wasmMemory = wasmExports["t"]; updateMemoryViews(); addOnInit(wasmExports["u"]); removeRunDependency("wasm-instantiate"); return wasmExports; } addRunDependency("wasm-instantiate"); function receiveInstantiationResult(result) { receiveInstance(result["instance"]); } if (Module["instantiateWasm"]) {
+        function createWasm() { var info = { "a": wasmImports }; function receiveInstance(instance, module) { wasmExports = instance.exports; wasmExports = applySignatureConversions(wasmExports); wasmMemory = wasmExports["ca"]; updateMemoryViews(); wasmTable = wasmExports["ka"]; addOnInit(wasmExports["da"]); removeRunDependency("wasm-instantiate"); return wasmExports; } addRunDependency("wasm-instantiate"); function receiveInstantiationResult(result) { receiveInstance(result["instance"]); } if (Module["instantiateWasm"]) {
             try {
                 return Module["instantiateWasm"](info, receiveInstance);
             }
@@ -223,6 +223,21 @@ var Module = (() => {
             default: abort(`invalid type for setValue: ${type}`);
         } }
         Module["setValue"] = setValue;
+        var exceptionCaught = [];
+        Module["exceptionCaught"] = exceptionCaught;
+        var uncaughtExceptionCount = 0;
+        Module["uncaughtExceptionCount"] = uncaughtExceptionCount;
+        var convertI32PairToI53Checked = (lo, hi) => hi + 2097152 >>> 0 < 4194305 - !!lo ? (lo >>> 0) + hi * 4294967296 : NaN;
+        Module["convertI32PairToI53Checked"] = convertI32PairToI53Checked;
+        function ___cxa_begin_catch(ptr) { ptr >>>= 0; var info = new ExceptionInfo(ptr); if (!info.get_caught()) {
+            info.set_caught(true);
+            uncaughtExceptionCount--;
+        } info.set_rethrown(false); exceptionCaught.push(info); ___cxa_increment_exception_refcount(info.excPtr); return info.get_exception_ptr(); }
+        Module["___cxa_begin_catch"] = ___cxa_begin_catch;
+        var exceptionLast = 0;
+        Module["exceptionLast"] = exceptionLast;
+        var ___cxa_end_catch = () => { _setThrew(0, 0); var info = exceptionCaught.pop(); ___cxa_decrement_exception_refcount(info.excPtr); exceptionLast = 0; };
+        Module["___cxa_end_catch"] = ___cxa_end_catch;
         class ExceptionInfo {
             constructor(excPtr) { this.excPtr = excPtr; this.ptr = excPtr - 24; }
             set_type(type) { HEAPU32[this.ptr + 4 >>> 2 >>> 0] = type; }
@@ -242,14 +257,45 @@ var Module = (() => {
                 return adjusted; return this.excPtr; }
         }
         Module["ExceptionInfo"] = ExceptionInfo;
-        var exceptionLast = 0;
-        Module["exceptionLast"] = exceptionLast;
-        var uncaughtExceptionCount = 0;
-        Module["uncaughtExceptionCount"] = uncaughtExceptionCount;
-        var convertI32PairToI53Checked = (lo, hi) => hi + 2097152 >>> 0 < 4194305 - !!lo ? (lo >>> 0) + hi * 4294967296 : NaN;
-        Module["convertI32PairToI53Checked"] = convertI32PairToI53Checked;
+        function ___resumeException(ptr) { ptr >>>= 0; if (!exceptionLast) {
+            exceptionLast = ptr;
+        } throw exceptionLast; }
+        Module["___resumeException"] = ___resumeException;
+        var findMatchingCatch = args => { var thrown = exceptionLast; if (!thrown) {
+            setTempRet0(0);
+            return 0;
+        } var info = new ExceptionInfo(thrown); info.set_adjusted_ptr(thrown); var thrownType = info.get_type(); if (!thrownType) {
+            setTempRet0(0);
+            return thrown;
+        } for (var arg in args) {
+            var caughtType = args[arg];
+            if (caughtType === 0 || caughtType === thrownType) {
+                break;
+            }
+            var adjusted_ptr_addr = info.ptr + 16;
+            if (___cxa_can_catch(caughtType, thrownType, adjusted_ptr_addr)) {
+                setTempRet0(caughtType);
+                return thrown;
+            }
+        } setTempRet0(thrownType); return thrown; };
+        Module["findMatchingCatch"] = findMatchingCatch;
+        function ___cxa_find_matching_catch_2() { return findMatchingCatch([]); }
+        Module["___cxa_find_matching_catch_2"] = ___cxa_find_matching_catch_2;
+        function ___cxa_find_matching_catch_3(arg0) { arg0 >>>= 0; return findMatchingCatch([arg0]); }
+        Module["___cxa_find_matching_catch_3"] = ___cxa_find_matching_catch_3;
+        var ___cxa_rethrow = () => { var info = exceptionCaught.pop(); if (!info) {
+            abort("no exception to throw");
+        } var ptr = info.excPtr; if (!info.get_rethrown()) {
+            exceptionCaught.push(info);
+            info.set_rethrown(true);
+            info.set_caught(false);
+            uncaughtExceptionCount++;
+        } exceptionLast = ptr; throw exceptionLast; };
+        Module["___cxa_rethrow"] = ___cxa_rethrow;
         function ___cxa_throw(ptr, type, destructor) { ptr >>>= 0; type >>>= 0; destructor >>>= 0; var info = new ExceptionInfo(ptr); info.init(type, destructor); exceptionLast = ptr; uncaughtExceptionCount++; throw exceptionLast; }
         Module["___cxa_throw"] = ___cxa_throw;
+        var ___cxa_uncaught_exceptions = () => uncaughtExceptionCount;
+        Module["___cxa_uncaught_exceptions"] = ___cxa_uncaught_exceptions;
         var PATH = { isAbs: path => path.charAt(0) === "/", splitPath: filename => { var splitPathRe = /^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/; return splitPathRe.exec(filename).slice(1); }, normalizeArray: (parts, allowAboveRoot) => { var up = 0; for (var i = parts.length - 1; i >= 0; i--) {
                 var last = parts[i];
                 if (last === ".") {
@@ -1648,6 +1694,8 @@ var Module = (() => {
             return e.errno;
         } }
         Module["_fd_write"] = _fd_write;
+        function _llvm_eh_typeid_for(type) { type >>>= 0; return type; }
+        Module["_llvm_eh_typeid_for"] = _llvm_eh_typeid_for;
         var isLeapYear = year => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
         Module["isLeapYear"] = isLeapYear;
         var arraySum = (array, index) => { var sum = 0; for (var i = 0; i <= index; sum += array[i++]) { } return sum; };
@@ -1743,6 +1791,16 @@ var Module = (() => {
             return EXITSTATUS;
         } quit_(1, e); };
         Module["handleException"] = handleException;
+        var wasmTableMirror = [];
+        Module["wasmTableMirror"] = wasmTableMirror;
+        var wasmTable;
+        Module["wasmTable"] = wasmTable;
+        var getWasmTableEntry = funcPtr => { var func = wasmTableMirror[funcPtr]; if (!func) {
+            if (funcPtr >= wasmTableMirror.length)
+                wasmTableMirror.length = funcPtr + 1;
+            wasmTableMirror[funcPtr] = func = wasmTable.get(funcPtr);
+        } return func; };
+        Module["getWasmTableEntry"] = getWasmTableEntry;
         var getCFunc = ident => { var func = Module["_" + ident]; return func; };
         Module["getCFunc"] = getCFunc;
         var stringToUTF8 = (str, outPtr, maxBytesToWrite) => stringToUTF8Array(str, HEAPU8, outPtr, maxBytesToWrite);
@@ -1783,27 +1841,295 @@ var Module = (() => {
         Module["FS_unlink"] = FS.unlink;
         Module["FS_createLazyFile"] = FS.createLazyFile;
         Module["FS_createDevice"] = FS.createDevice;
-        var wasmImports = { b: ___cxa_throw, e: ___syscall_fcntl64, j: ___syscall_ioctl, k: ___syscall_openat, l: __emscripten_get_now_is_monotonic, m: __mmap_js, n: __munmap_js, a: _abort, f: _emscripten_date_now, d: _emscripten_get_now, s: _emscripten_memcpy_js, p: _emscripten_resize_heap, q: _environ_get, r: _environ_sizes_get, g: _fd_close, i: _fd_read, o: _fd_seek, h: _fd_write, c: _strftime_l };
+        var wasmImports = { t: ___cxa_begin_catch, x: ___cxa_end_catch, a: ___cxa_find_matching_catch_2, j: ___cxa_find_matching_catch_3, J: ___cxa_rethrow, s: ___cxa_throw, W: ___cxa_uncaught_exceptions, k: ___resumeException, G: ___syscall_fcntl64, ba: ___syscall_ioctl, L: ___syscall_openat, M: __emscripten_get_now_is_monotonic, Q: __mmap_js, R: __munmap_js, l: _abort, H: _emscripten_date_now, z: _emscripten_get_now, _: _emscripten_memcpy_js, X: _emscripten_resize_heap, Y: _environ_get, Z: _environ_sizes_get, K: _fd_close, aa: _fd_read, S: _fd_seek, $: _fd_write, D: invoke_i, I: invoke_ifi, b: invoke_ii, f: invoke_iii, p: invoke_iiifiiii, m: invoke_iiii, o: invoke_iiiii, h: invoke_iiiiii, u: invoke_iiiiiii, q: invoke_iiiiiiii, V: invoke_iiiiiiiiii, F: invoke_iiiiiiiiiiii, r: invoke_iiiiiiiiiiiii, P: invoke_iiiiiiiiiiiiijiiifii, N: invoke_iiij, O: invoke_j, i: invoke_v, n: invoke_vi, c: invoke_vii, T: invoke_viid, U: invoke_viif, C: invoke_viifi, g: invoke_viii, d: invoke_viiii, e: invoke_viiiii, A: invoke_viiiiii, w: invoke_viiiiiii, B: invoke_viiiiiiiiii, E: invoke_viiiiiiiiiiiiiii, y: _llvm_eh_typeid_for, v: _strftime_l };
         var wasmExports = createWasm();
-        var ___wasm_call_ctors = () => (___wasm_call_ctors = wasmExports["u"])();
-        var _wllama_start = Module["_wllama_start"] = () => (_wllama_start = Module["_wllama_start"] = wasmExports["v"])();
-        var _wllama_action = Module["_wllama_action"] = (a0, a1) => (_wllama_action = Module["_wllama_action"] = wasmExports["w"])(a0, a1);
-        var _wllama_exit = Module["_wllama_exit"] = () => (_wllama_exit = Module["_wllama_exit"] = wasmExports["x"])();
-        var _wllama_decode_exception = Module["_wllama_decode_exception"] = a0 => (_wllama_decode_exception = Module["_wllama_decode_exception"] = wasmExports["y"])(a0);
-        var _main = Module["_main"] = (a0, a1) => (_main = Module["_main"] = wasmExports["z"])(a0, a1);
-        var _emscripten_builtin_memalign = (a0, a1) => (_emscripten_builtin_memalign = wasmExports["B"])(a0, a1);
-        var setTempRet0 = a0 => (setTempRet0 = wasmExports["C"])(a0);
-        var stackSave = () => (stackSave = wasmExports["D"])();
-        var stackRestore = a0 => (stackRestore = wasmExports["E"])(a0);
-        var stackAlloc = a0 => (stackAlloc = wasmExports["F"])(a0);
-        var ___cxa_increment_exception_refcount = a0 => (___cxa_increment_exception_refcount = wasmExports["G"])(a0);
-        var ___cxa_is_pointer_type = a0 => (___cxa_is_pointer_type = wasmExports["H"])(a0);
-        var dynCall_jiji = Module["dynCall_jiji"] = (a0, a1, a2, a3, a4) => (dynCall_jiji = Module["dynCall_jiji"] = wasmExports["I"])(a0, a1, a2, a3, a4);
-        var dynCall_viijii = Module["dynCall_viijii"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_viijii = Module["dynCall_viijii"] = wasmExports["J"])(a0, a1, a2, a3, a4, a5, a6);
-        var dynCall_iiiiij = Module["dynCall_iiiiij"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_iiiiij = Module["dynCall_iiiiij"] = wasmExports["K"])(a0, a1, a2, a3, a4, a5, a6);
-        var dynCall_iiiiijj = Module["dynCall_iiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8) => (dynCall_iiiiijj = Module["dynCall_iiiiijj"] = wasmExports["L"])(a0, a1, a2, a3, a4, a5, a6, a7, a8);
-        var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) => (dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = wasmExports["M"])(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
-        function applySignatureConversions(wasmExports) { wasmExports = Object.assign({}, wasmExports); var makeWrapper_ppp = f => (a0, a1) => f(a0, a1) >>> 0; var makeWrapper_p = f => () => f() >>> 0; var makeWrapper_pp = f => a0 => f(a0) >>> 0; wasmExports["B"] = makeWrapper_ppp(wasmExports["B"]); wasmExports["D"] = makeWrapper_p(wasmExports["D"]); wasmExports["F"] = makeWrapper_pp(wasmExports["F"]); return wasmExports; }
+        var ___wasm_call_ctors = () => (___wasm_call_ctors = wasmExports["da"])();
+        var _wllama_start = Module["_wllama_start"] = () => (_wllama_start = Module["_wllama_start"] = wasmExports["ea"])();
+        var _wllama_action = Module["_wllama_action"] = (a0, a1) => (_wllama_action = Module["_wllama_action"] = wasmExports["fa"])(a0, a1);
+        var _wllama_exit = Module["_wllama_exit"] = () => (_wllama_exit = Module["_wllama_exit"] = wasmExports["ga"])();
+        var _wllama_decode_exception = Module["_wllama_decode_exception"] = a0 => (_wllama_decode_exception = Module["_wllama_decode_exception"] = wasmExports["ha"])(a0);
+        var _main = Module["_main"] = (a0, a1) => (_main = Module["_main"] = wasmExports["ia"])(a0, a1);
+        var ___cxa_free_exception = a0 => (___cxa_free_exception = wasmExports["ja"])(a0);
+        var _emscripten_builtin_memalign = (a0, a1) => (_emscripten_builtin_memalign = wasmExports["la"])(a0, a1);
+        var _setThrew = (a0, a1) => (_setThrew = wasmExports["ma"])(a0, a1);
+        var setTempRet0 = a0 => (setTempRet0 = wasmExports["na"])(a0);
+        var stackSave = () => (stackSave = wasmExports["oa"])();
+        var stackRestore = a0 => (stackRestore = wasmExports["pa"])(a0);
+        var stackAlloc = a0 => (stackAlloc = wasmExports["qa"])(a0);
+        var ___cxa_decrement_exception_refcount = a0 => (___cxa_decrement_exception_refcount = wasmExports["ra"])(a0);
+        var ___cxa_increment_exception_refcount = a0 => (___cxa_increment_exception_refcount = wasmExports["sa"])(a0);
+        var ___cxa_can_catch = (a0, a1, a2) => (___cxa_can_catch = wasmExports["ta"])(a0, a1, a2);
+        var ___cxa_is_pointer_type = a0 => (___cxa_is_pointer_type = wasmExports["ua"])(a0);
+        var dynCall_iiiiiiiiiiiiijiiifii = Module["dynCall_iiiiiiiiiiiiijiiifii"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20) => (dynCall_iiiiiiiiiiiiijiiifii = Module["dynCall_iiiiiiiiiiiiijiiifii"] = wasmExports["va"])(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
+        var dynCall_j = Module["dynCall_j"] = a0 => (dynCall_j = Module["dynCall_j"] = wasmExports["wa"])(a0);
+        var dynCall_jiji = Module["dynCall_jiji"] = (a0, a1, a2, a3, a4) => (dynCall_jiji = Module["dynCall_jiji"] = wasmExports["xa"])(a0, a1, a2, a3, a4);
+        var dynCall_iiij = Module["dynCall_iiij"] = (a0, a1, a2, a3, a4) => (dynCall_iiij = Module["dynCall_iiij"] = wasmExports["ya"])(a0, a1, a2, a3, a4);
+        var dynCall_viijii = Module["dynCall_viijii"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_viijii = Module["dynCall_viijii"] = wasmExports["za"])(a0, a1, a2, a3, a4, a5, a6);
+        var dynCall_iiiiij = Module["dynCall_iiiiij"] = (a0, a1, a2, a3, a4, a5, a6) => (dynCall_iiiiij = Module["dynCall_iiiiij"] = wasmExports["Aa"])(a0, a1, a2, a3, a4, a5, a6);
+        var dynCall_iiiiijj = Module["dynCall_iiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8) => (dynCall_iiiiijj = Module["dynCall_iiiiijj"] = wasmExports["Ba"])(a0, a1, a2, a3, a4, a5, a6, a7, a8);
+        var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) => (dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = wasmExports["Ca"])(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
+        function invoke_vii(index, a1, a2) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iii(index, a1, a2) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_ii(index, a1) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viii(index, a1, a2, a3) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_v(index) { var sp = stackSave(); try {
+            getWasmTableEntry(index)();
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiii(index, a1, a2, a3) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_vi(index, a1) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiii(index, a1, a2, a3, a4) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiii(index, a1, a2, a3, a4, a5) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiii(index, a1, a2, a3, a4, a5, a6) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiii(index, a1, a2, a3, a4) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viifi(index, a1, a2, a3, a4) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_i(index) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)();
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiii(index, a1, a2, a3, a4, a5) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiiii(index, a1, a2, a3, a4, a5, a6) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_ifi(index, a1, a2) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiii(index, a1, a2, a3, a4, a5, a6, a7) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiifiiii(index, a1, a2, a3, a4, a5, a6, a7) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiiiii(index, a1, a2, a3, a4, a5, a6, a7) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11) { var sp = stackSave(); try {
+            return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viiiiiiiiiiiiiii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viif(index, a1, a2, a3) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_viid(index, a1, a2, a3) { var sp = stackSave(); try {
+            getWasmTableEntry(index)(a1, a2, a3);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiiiiiiiiiiiijiiifii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20) { var sp = stackSave(); try {
+            return dynCall_iiiiiiiiiiiiijiiifii(index, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_j(index) { var sp = stackSave(); try {
+            return dynCall_j(index);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function invoke_iiij(index, a1, a2, a3, a4) { var sp = stackSave(); try {
+            return dynCall_iiij(index, a1, a2, a3, a4);
+        }
+        catch (e) {
+            stackRestore(sp);
+            if (e !== e + 0)
+                throw e;
+            _setThrew(1, 0);
+        } }
+        function applySignatureConversions(wasmExports) { wasmExports = Object.assign({}, wasmExports); var makeWrapper_ppp = f => (a0, a1) => f(a0, a1) >>> 0; var makeWrapper_p = f => () => f() >>> 0; var makeWrapper_pp = f => a0 => f(a0) >>> 0; wasmExports["la"] = makeWrapper_ppp(wasmExports["la"]); wasmExports["oa"] = makeWrapper_p(wasmExports["oa"]); wasmExports["qa"] = makeWrapper_pp(wasmExports["qa"]); return wasmExports; }
         Module["addRunDependency"] = addRunDependency;
         Module["removeRunDependency"] = removeRunDependency;
         Module["FS_createPath"] = FS.createPath;

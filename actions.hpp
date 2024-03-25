@@ -114,6 +114,12 @@ json action_load(app_t &app, json &body)
 {
   std::string model_path = body["model_path"];
   auto mparams = llama_model_default_params();
+  if (body.count("use_mmap") > 0)
+    mparams.use_mmap = body["use_mmap"];
+  if (body.count("use_mlock") > 0)
+    mparams.use_mlock = body["use_mlock"];
+  if (body.count("n_gpu_layers") > 0)
+    mparams.n_gpu_layers = body["n_gpu_layers"];
   auto cparams = llama_context_default_params();
   cparams.seed = body["seed"];
   cparams.n_ctx = body["n_ctx"];
