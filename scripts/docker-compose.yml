@@ -19,7 +19,7 @@ services:
         mkdir -p wasm/single-thread
         cd wasm/single-thread
 
-        export SHARED_EMCC_CFLAGS="--no-entry -O3 -msimd128 -fno-rtti -DNDEBUG -flto=full -sEXPORT_ALL=1 -sEXPORT_ES6=1 -sMODULARIZE=1 -sINITIAL_MEMORY=800MB -sMAXIMUM_MEMORY=4GB -sALLOW_MEMORY_GROWTH -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_start,_wllama_action,_wllama_exit,_wllama_decode_exception -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sNO_EXIT_RUNTIME=1"
+        export SHARED_EMCC_CFLAGS="--no-entry -O3 -msimd128 -fno-rtti -DNDEBUG -flto=full -fexceptions -sEXPORT_ALL=1 -sEXPORT_ES6=1 -sMODULARIZE=1 -sINITIAL_MEMORY=800MB -sMAXIMUM_MEMORY=4GB -sALLOW_MEMORY_GROWTH -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_start,_wllama_action,_wllama_exit,_wllama_decode_exception -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sNO_EXIT_RUNTIME=1"
 
         # emcc --clear-cache
 

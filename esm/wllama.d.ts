@@ -77,11 +77,15 @@ export declare class Wllama {
      */
     loadModel(ggufBuffer: Uint8Array, config: LoadModelConfig): Promise<void>;
     /**
-     * Calculate embedding vector for a given text
+     * Calculate embedding vector for a given text.
+     * By default, BOS and EOS tokens will be added automatically. You can use the "skipBOS" and "skipEOS" option to disable it.
      * @param text Input text
      * @returns An embedding vector
      */
-    createEmbedding(text: string): Promise<number[]>;
+    createEmbedding(text: string, options?: {
+        skipBOS?: boolean;
+        skipEOS?: boolean;
+    }): Promise<number[]>;
     /**
      * Make completion for a given text
      * @param prompt Input text

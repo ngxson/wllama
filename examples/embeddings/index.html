@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wllama.cpp demo</title>
+
+  <style>
+    body {
+      background-color: rgb(55, 55, 55);
+      color: rgb(222, 222, 222);
+      font-family: 'Courier New', Courier, monospace;
+      padding: 1em;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="output"></div>
+
+  <script type="module">
+    import { Wllama } from '../../esm/index.js';
+
+    const CONFIG_PATHS = {
+      'single-thread/wllama.wasm'     : '../../esm/single-thread/wllama.wasm',
+      'multi-thread/wllama.wasm'      : '../../esm/multi-thread/wllama.wasm',
+      'multi-thread/wllama.worker.mjs': '../../esm/multi-thread/wllama.worker.mjs',
+    };
+    const MODEL = 'https://huggingface.co/CompendiumLabs/bge-base-en-v1.5-gguf/resolve/main/bge-base-en-v1.5-q4_k_m.gguf';
+    const TEXTS = [
+      'Taking advantage of the perfect weather, I went out for a leisurely walk through the park.',
+      'A stunning sunny day inspired me to get outside and enjoy the beauty of nature while going for a walk.',
+      'French is one of her strong points when it comes to languages. Speaking French comes naturally to her.',
+      'Represent this sentence for searching relevant passages: Does anyone here speak French?',
+    ];
+
+    async function main() {
+      let res, tokens, elapsed, buffer;
+      const wllama = new Wllama(CONFIG_PATHS);
+
+      print(`DEMO EMBEDDINGS`);
+      print(`Loading model ${MODEL}`);
+      timeStart();
+      await wllama.loadModelFromUrl(MODEL, {
+        embeddings: true,
+        n_ctx: 1024,
+        n_batch: 1024,
+        n_ubatch: 1024,
+        pooling_type: 'LLAMA_POOLING_TYPE_MEAN',
+      });
+      print(`Loaded, take ${timeEnd()} ms`);
+      print(`BOS token = ${wllama.getBOS()}`);
+      print(`EOS token = ${wllama.getEOS()}`);
+  
+      print(`\n--------------\n`);
+
+      const embeddings = [];
+      let i = 0;
+      for (const sentence of TEXTS) {
+        i++;
+        print(`Calculating embedding for sentence #${i}: "${sentence}"`);
+        timeStart();
+        const vector = await wllama.createEmbedding(sentence);
+        print(`OK, take ${timeEnd()} ms`);
+        embeddings.push(vector);
+      }
+
+      print(`\n--------------\n`);
+
+      const vecDot = (a, b) => a.reduce((acc, _, i) => acc + a[i]*b[i], 0);
+      for (let i = 0; i < TEXTS.length - 1; i++) {
+        print(`Cosine similarity of sentence #${i+1} and #${i+2} = ${vecDot(embeddings[i], embeddings[i+1])}`);
+      }
+      
+    }
+
+    /////////////////////////////////////////////////////////////////////
+
+    const elemOutput = document.getElementById('output');
+    function print(message, bold) {
+      const elem = document.createElement('div');
+      if (bold) {
+        const b = document.createElement('b');
+        b.innerText = message;
+        elem.appendChild(b);
+      } else {
+        elem.innerText = message;
+      }
+      elemOutput.appendChild(elem);
+      // scroll to bottom
+      setTimeout(() => window.scrollTo({
+        top: document.documentElement.scrollHeight - window.innerHeight,
+        left: 0,
+        behavior: 'smooth',
+      }), 10);
+    }
+    let __startTime = 0;
+    function timeStart() {
+      __startTime = Date.now();
+    }
+    function timeEnd() {
+      return Date.now() - __startTime;
+    }
+
+    main();
+  </script>
+</body>
+</html>
