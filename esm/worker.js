@@ -16,6 +16,9 @@ const msg = (data) => postMessage(data);
 
 // Get module config that forwards stdout/err to main thread
 const getWModuleConfig = (pathConfig) => {
+  if (!pathConfig['wllama.js']) {
+    throw new Error('"wllama.js" is missing in pathConfig');
+  }
   return {
     noInitialRun: true,
     print: function(text) {
@@ -28,9 +31,11 @@ const getWModuleConfig = (pathConfig) => {
     },
     locateFile: function (filename, basePath) {
       const p = pathConfig[filename];
-      msg({ verb: 'console.log', args: [\`Loading "\${filename}" from "\${p}"\`] });
+      const truncate = (str) => str.length > 128 ? \`\${str.substr(0, 128)}...\` : str;
+      msg({ verb: 'console.log', args: [\`Loading "\${filename}" from "\${truncate(p)}"\`] });
       return p;
     },
+    mainScriptUrlOrBlob: pathConfig['wllama.js'],
   };
 };
 
