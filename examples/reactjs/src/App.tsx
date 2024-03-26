@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { Wllama } from '@wllama/wllama';
 
 // See: https://vitejs.dev/guide/assets#explicit-url-imports
+import wllamaSingleJS from '@wllama/wllama/src/single-thread/wllama.js?url';
 import wllamaSingle from '@wllama/wllama/src/single-thread/wllama.wasm?url';
+import wllamaMultiJS from '@wllama/wllama/src/multi-thread/wllama.js?url';
 import wllamaMulti from '@wllama/wllama/src/multi-thread/wllama.wasm?url';
 import wllamaMultiWorker from '@wllama/wllama/src/multi-thread/wllama.worker.mjs?url';
 
 const CONFIG_PATHS = {
+  'single-thread/wllama.js'       : wllamaSingleJS,
   'single-thread/wllama.wasm'     : wllamaSingle,
+  'multi-thread/wllama.js'        : wllamaMultiJS,
   'multi-thread/wllama.wasm'      : wllamaMulti,
   'multi-thread/wllama.worker.mjs': wllamaMultiWorker,
 };
@@ -38,6 +42,7 @@ function App() {
         top_k: 40,
         top_p: 0.9,
       },
+      // @ts-ignore
       onNewToken: (token, piece, currentText) => {
         setOutput(currentText);
       },

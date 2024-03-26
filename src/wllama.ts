@@ -2,7 +2,9 @@ import { ProxyToWorker } from './worker';
 import { absoluteUrl, bufToText, isSupportMultiThread, joinBuffers, loadBinaryResource } from './utils';
 
 export interface AssetsPathConfig {
+  'single-thread/wllama.js': string,
   'single-thread/wllama.wasm': string,
+  'multi-thread/wllama.js'?: string,
   'multi-thread/wllama.wasm'?: string,
   'multi-thread/wllama.worker.mjs'?: string,
 };
@@ -122,20 +124,23 @@ export class Wllama {
     if (!supportMultiThread) {
       console.warn('Multi-threads are not supported in this environment, falling back to single-thread');
     }
-    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm']
+    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.js']
+      && !!this.pathConfig['multi-thread/wllama.wasm']
       && !!this.pathConfig['multi-thread/wllama.worker.mjs'];
     if (!hasPathMultiThread) {
-      console.warn('Missing paths to "wllama.wasm" and "wllama.worker.mjs", falling back to single-thread');
+      console.warn('Missing paths to "wllama.js", "wllama.wasm" or "wllama.worker.mjs", falling back to single-thread');
     }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
     const nbThreads = config.n_threads ?? hwConccurency;
     this.useMultiThread = supportMultiThread && hasPathMultiThread && nbThreads > 1;
     const mPathConfig = this.useMultiThread
       ? {
+        'wllama.js': absoluteUrl(this.pathConfig['multi-thread/wllama.js']!!),
         'wllama.wasm': absoluteUrl(this.pathConfig['multi-thread/wllama.wasm']!!),
         'wllama.worker.mjs': absoluteUrl(this.pathConfig['multi-thread/wllama.worker.mjs']!!),
       }
       : {
+        'wllama.js': absoluteUrl(this.pathConfig['single-thread/wllama.js']),
         'wllama.wasm': absoluteUrl(this.pathConfig['single-thread/wllama.wasm']),
       };
     this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread);

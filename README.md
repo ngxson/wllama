@@ -4,6 +4,12 @@
 
 Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp). Inspired by [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm), but unlike it, **Wllama** aims to supports **low-level API** like (de)tokenization, embeddings,...
 
+## Breaking changes
+
+- Version 1.4.0
+  - Add `single-thread/wllama.js` and `multi-thread/wllama.js` to the list of `CONFIG_PATHS`
+  - `createEmbedding` is now adding BOS and EOS token by default
+
 ## Features
 
 - Typescript support
@@ -28,6 +34,7 @@ Limitations:
 Demo:
 - Basic usages with completions and embeddings: https://ngxson.github.io/wllama/examples/basic/
 - Advanced example using low-level API: https://ngxson.github.io/wllama/examples/advanced/
+- Embedding and cosine distance: https://ngxson.github.io/wllama/examples/embeddings/
 
 ## How to use
 
@@ -41,7 +48,7 @@ npm i @wllama/wllama
 
 For complete code, see [examples/reactjs](./examples/reactjs)
 
-NOTE: this example only covers completions usage. For embeddings, please see [examples/basic/index.html](./examples/basic/index.html)
+NOTE: this example only covers completions usage. For embeddings, please see [examples/embeddings/index.html](./examples/embeddings/index.html)
 
 ### Simple usage with ES6 module
 
@@ -52,7 +59,9 @@ import { Wllama } from './esm/index.js';
 
 (async () => {
   const CONFIG_PATHS = {
+    'single-thread/wllama.js'       : './esm/single-thread/wllama.js',
     'single-thread/wllama.wasm'     : './esm/single-thread/wllama.wasm',
+    'multi-thread/wllama.js'        : './esm/multi-thread/wllama.js',
     'multi-thread/wllama.wasm'      : './esm/multi-thread/wllama.wasm',
     'multi-thread/wllama.worker.mjs': './esm/multi-thread/wllama.worker.mjs',
   };
@@ -80,7 +89,7 @@ This repository already come with pre-built binary. But if you want to build it 
 # Require having docker compose installed
 # Firstly, build llama.cpp into wasm
 npm run build:wasm
-# (Optionally) Build ES6 module
+# (Optionally) Build ES module
 npm run build
 ```
 

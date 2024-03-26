@@ -1,5 +1,7 @@
 export interface AssetsPathConfig {
+    'single-thread/wllama.js': string;
     'single-thread/wllama.wasm': string;
+    'multi-thread/wllama.js'?: string;
     'multi-thread/wllama.wasm'?: string;
     'multi-thread/wllama.worker.mjs'?: string;
 }

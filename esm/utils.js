@@ -88,6 +88,7 @@ export const getWModuleConfig = (pathConfig) => {
                 text = Array.prototype.slice.call(arguments).join(' ');
             console.warn(text);
         },
+        // @ts-ignore
         locateFile: function (filename, basePath) {
             const p = pathConfig[filename];
             console.log(`Loading "${filename}" from "${p}"`);

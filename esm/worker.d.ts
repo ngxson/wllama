@@ -1,3 +1,15 @@
+/**
+ * Module code will be copied into worker.
+ *
+ * Messages between main <==> worker:
+ *
+ * From main thread to worker:
+ * - Send direction: { verb, args, callbackId }
+ * - Result direction: { callbackId, result } or { callbackId, err }
+ *
+ * Signal from worker to main:
+ * - Unidirection: { verb, args }
+ */
 interface TaskParam {
     verb: 'module.init' | 'wllama.start' | 'wllama.action' | 'wllama.exit';
     args: any[];
@@ -13,7 +25,9 @@ export declare class ProxyToWorker {
     taskId: number;
     resultQueue: Task[];
     busy: boolean;
-    worker: Worker;
+    worker?: Worker;
+    pathConfig: any;
+    multiThread: boolean;
     constructor(pathConfig: any, multiThread?: boolean);
     moduleInit(ggufBuffer: Uint8Array): Promise<void>;
     wllamaStart(): Promise<number>;

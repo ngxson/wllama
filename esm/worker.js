@@ -1,5 +1,3 @@
-import ModuleSingleThread from './single-thread/wllama.js';
-import ModuleMultiThread from './multi-thread/wllama.js';
 /**
  * Module code will be copied into worker.
  *
@@ -132,14 +130,24 @@ export class ProxyToWorker {
     resultQueue = [];
     busy = false; // is the work loop is running?
     worker;
+    pathConfig;
+    multiThread;
     constructor(pathConfig, multiThread = false) {
-        let moduleCode = multiThread ? ModuleMultiThread.toString() : ModuleSingleThread.toString();
+        this.pathConfig = pathConfig;
+        this.multiThread = multiThread;
+    }
+    async moduleInit(ggufBuffer) {
+        if (!this.pathConfig['wllama.js']) {
+            throw new Error('"single-thread/wllama.js" or "multi-thread/wllama.js" is missing from pathConfig');
+        }
+        const Module = await import(this.pathConfig['wllama.js']);
+        let moduleCode = Module.default.toString();
         // monkey-patch: remove all "import.meta"
         // FIXME: this monkey-patch will remove support for nodejs
         moduleCode = moduleCode.replace(/import\.meta/g, 'importMeta');
         const completeCode = [
             'const importMeta = {}',
-            `const pathConfig = ${JSON.stringify(pathConfig)}`,
+            `const pathConfig = ${JSON.stringify(this.pathConfig)}`,
             `function ModuleWrapper() {
         const _scriptDir = ${JSON.stringify(window.location.href)};
         return ${moduleCode};
@@ -151,9 +159,7 @@ export class ProxyToWorker {
         this.worker = new Worker(workerURL);
         this.worker.onmessage = this.onRecvMsg.bind(this);
         this.worker.onerror = console.error;
-    }
-    moduleInit(ggufBuffer) {
-        return this.pushTask({
+        return await this.pushTask({
             verb: 'module.init',
             args: [ggufBuffer],
             callbackId: this.taskId++,
