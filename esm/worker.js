@@ -46,6 +46,11 @@ let wllamaStart;
 let wllamaAction;
 let wllamaExit;
 
+// utility function
+function padDigits(number, digits) {
+  return Array(Math.max(digits - String(number).length + 1, 0)).join(0) + number;
+}
+
 const callWrapper = (name, ret, args) => {
   const fn = wModule.cwrap(name, ret, args);
   const decodeException = wModule.cwrap('wllama_decode_exception', 'string', ['number']);
@@ -76,18 +81,28 @@ onmessage = async (e) => {
   }
 
   if (verb === 'module.init') {
-    const argGGUFBuffer = args[0]; // buffer for model
+    const argGGUFBuffers = args[0]; // buffers for model
     try {
       const Module = ModuleWrapper();
       wModule = await Module(getWModuleConfig(pathConfig));
+
       // init FS
       wModule['FS_createPath']('/', 'models', true, true);
-      wModule['FS_createDataFile']('/models', 'model.bin', argGGUFBuffer, true, true, true);
+      if (argGGUFBuffers.length === 1) {
+        wModule['FS_createDataFile']('/models', 'model.gguf', argGGUFBuffers[0], true, true, true);
+      } else {
+        for (let i = 0; i < argGGUFBuffers.length; i++) {
+          const fname = 'model-' + padDigits(i + 1, 5) + '-of-' + padDigits(argGGUFBuffers.length, 5) + '.gguf';
+          wModule['FS_createDataFile']('/models', fname, argGGUFBuffers[i], true, true, true);
+        }
+      }
+
       // init cwrap
       wllamaStart  = callWrapper('wllama_start' , 'number', []);
       wllamaAction = callWrapper('wllama_action', 'string', ['string', 'string']);
       wllamaExit   = callWrapper('wllama_exit'  , 'number', []);
       msg({ callbackId, result: null });
+
     } catch (err) {
       msg({ callbackId, err });
     }
@@ -141,7 +156,7 @@ export class ProxyToWorker {
         this.pathConfig = pathConfig;
         this.multiThread = multiThread;
     }
-    async moduleInit(ggufBuffer) {
+    async moduleInit(ggufBuffers) {
         if (!this.pathConfig['wllama.js']) {
             throw new Error('"single-thread/wllama.js" or "multi-thread/wllama.js" is missing from pathConfig');
         }
@@ -166,7 +181,7 @@ export class ProxyToWorker {
         this.worker.onerror = console.error;
         return await this.pushTask({
             verb: 'module.init',
-            args: [ggufBuffer],
+            args: [ggufBuffers],
             callbackId: this.taskId++,
         });
     }

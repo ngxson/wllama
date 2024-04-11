@@ -29,7 +29,7 @@ export declare class ProxyToWorker {
     pathConfig: any;
     multiThread: boolean;
     constructor(pathConfig: any, multiThread?: boolean);
-    moduleInit(ggufBuffer: Uint8Array): Promise<void>;
+    moduleInit(ggufBuffers: Uint8Array[]): Promise<void>;
     wllamaStart(): Promise<number>;
     wllamaAction(name: string, body: any): Promise<any>;
     wllamaExit(): Promise<number>;

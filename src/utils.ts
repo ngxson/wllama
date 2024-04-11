@@ -55,17 +55,40 @@ export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
  * Load a resource as byte array. If multiple URLs is given, we will assume that the resource is splitted into small files
  * @param url URL (or list of URLs) to resource
  */
-export const loadBinaryResource = async (url: string | string[]): Promise<Uint8Array> => {
-  if (Array.isArray(url)) {
-    const urls = url as string[];
-    if (urls.length === 0) {
-      throw Error('The given list of URLs is empty');
+export const loadBinaryResource = async (url: string | string[], nMaxParallel: number): Promise<Uint8Array | Uint8Array[]> => {
+  const urls: string[] = Array.isArray(url)
+    ? [...url] as string[]
+    : [url as string];
+
+  const tasks: {
+    url: string,
+    result: Uint8Array,
+    started: boolean,
+  }[] = urls.map(u => ({
+    url: u,
+    result: new Uint8Array(),
+    started: false,
+  }));
+
+  // This is not multi-thread, but just a simple naming to borrow the idea
+  const threads: Promise<void>[] = [];
+  const runDownloadThread = async () => {
+    while (true) {
+      const task = tasks.find(t => !t.started);
+      if (!task) return;
+      task.started = true;
+      task.result = await _loadBinaryResource(task.url);
     }
-    const buffers = await Promise.all(urls.map(u => _loadBinaryResource(u)));
-    return joinBuffers(buffers);
-  } else {
-    return _loadBinaryResource(url as string);
+  };
+  for (let i = 0; i < nMaxParallel; i++) {
+    threads.push(runDownloadThread());
   }
+  // wait until all downloads finish
+  await Promise.all(threads);
+
+  return tasks.length === 1
+    ? tasks[0].result
+    : tasks.map(r => r.result);
 };
 
 const textDecoder = new TextDecoder();
@@ -111,3 +134,7 @@ export const isSupportMultiThread = () => (async e => {try {return "undefined" !
 export const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export const absoluteUrl = (relativePath: string) => new URL(relativePath, document.baseURI).href;
+
+export const padDigits = (number: number, digits: number) => {
+  return Array(Math.max(digits - String(number).length + 1, 0)).join('0') + number;
+}

@@ -50,18 +50,34 @@ export const joinBuffers = (buffers) => {
  * Load a resource as byte array. If multiple URLs is given, we will assume that the resource is splitted into small files
  * @param url URL (or list of URLs) to resource
  */
-export const loadBinaryResource = async (url) => {
-    if (Array.isArray(url)) {
-        const urls = url;
-        if (urls.length === 0) {
-            throw Error('The given list of URLs is empty');
+export const loadBinaryResource = async (url, nMaxParallel) => {
+    const urls = Array.isArray(url)
+        ? [...url]
+        : [url];
+    const tasks = urls.map(u => ({
+        url: u,
+        result: new Uint8Array(),
+        started: false,
+    }));
+    // This is not multi-thread, but just a simple naming to borrow the idea
+    const threads = [];
+    const runDownloadThread = async () => {
+        while (true) {
+            const task = tasks.find(t => !t.started);
+            if (!task)
+                return;
+            task.started = true;
+            task.result = await _loadBinaryResource(task.url);
         }
-        const buffers = await Promise.all(urls.map(u => _loadBinaryResource(u)));
-        return joinBuffers(buffers);
+    };
+    for (let i = 0; i < nMaxParallel; i++) {
+        threads.push(runDownloadThread());
     }
-    else {
-        return _loadBinaryResource(url);
-    }
+    // wait until all downloads finish
+    await Promise.all(threads);
+    return tasks.length === 1
+        ? tasks[0].result
+        : tasks.map(r => r.result);
 };
 const textDecoder = new TextDecoder();
 /**
@@ -108,4 +124,7 @@ catch (e) {
 } })(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3, 1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11]));
 export const delay = (ms) => new Promise(r => setTimeout(r, ms));
 export const absoluteUrl = (relativePath) => new URL(relativePath, document.baseURI).href;
+export const padDigits = (number, digits) => {
+    return Array(Math.max(digits - String(number).length + 1, 0)).join('0') + number;
+};
 //# sourceMappingURL=utils.js.map

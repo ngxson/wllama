@@ -3,7 +3,7 @@ export declare const joinBuffers: (buffers: Uint8Array[]) => Uint8Array;
  * Load a resource as byte array. If multiple URLs is given, we will assume that the resource is splitted into small files
  * @param url URL (or list of URLs) to resource
  */
-export declare const loadBinaryResource: (url: string | string[]) => Promise<Uint8Array>;
+export declare const loadBinaryResource: (url: string | string[], nMaxParallel: number) => Promise<Uint8Array | Uint8Array[]>;
 /**
  * Convert list of bytes (number) to text
  * @param buffer
@@ -28,3 +28,4 @@ export declare const getWModuleConfig: (pathConfig: {
 export declare const isSupportMultiThread: () => Promise<boolean>;
 export declare const delay: (ms: number) => Promise<unknown>;
 export declare const absoluteUrl: (relativePath: string) => string;
+export declare const padDigits: (number: number, digits: number) => string;

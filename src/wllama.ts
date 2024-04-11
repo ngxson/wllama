@@ -1,5 +1,5 @@
 import { ProxyToWorker } from './worker';
-import { absoluteUrl, bufToText, isSupportMultiThread, joinBuffers, loadBinaryResource } from './utils';
+import { absoluteUrl, bufToText, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils';
 
 export interface AssetsPathConfig {
   'single-thread/wllama.js': string,
@@ -37,6 +37,8 @@ export interface LoadModelConfig {
   // optimizations
   cache_type_k?: 'f16' | 'q8_0' | 'q4_0',
   cache_type_v?: 'f16',
+  // download-specific params
+  n_download_parallel?: number,
 };
 
 export interface SamplingConfig {
@@ -103,8 +105,11 @@ export class Wllama {
    * @param config 
    */
   async loadModelFromUrl(modelUrl: string | string[], config: LoadModelConfig): Promise<void> {
-    const ggufBuffer = await loadBinaryResource(modelUrl);
-    return await this.loadModel(ggufBuffer, config);
+    if (modelUrl.length === 0) {
+      throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
+    }
+    const ggufBuffers = await loadBinaryResource(modelUrl, config.n_download_parallel ?? 3);
+    return await this.loadModel(ggufBuffers, config);
   }
 
   /**
@@ -112,9 +117,12 @@ export class Wllama {
    * @param ggufBuffer Uint8Array holds data of gguf file
    * @param config 
    */
-  async loadModel(ggufBuffer: Uint8Array, config: LoadModelConfig): Promise<void> {
-    if (!ggufBuffer.byteLength) {
-      throw new Error('Input model must be a non-empty Uint8Array');
+  async loadModel(ggufBuffer: Uint8Array | Uint8Array[], config: LoadModelConfig): Promise<void> {
+    const buffers: Uint8Array[] = Array.isArray(ggufBuffer)
+      ? ggufBuffer as Uint8Array[]
+      : [ggufBuffer as Uint8Array];
+    if (buffers.length === 0 || buffers.some(buf => buf.byteLength === 0)) {
+      throw new Error('Input model (or splits) must be non-empty Uint8Array');
     }
     if (this.proxy) {
       throw new Error('Module is already initialized');
@@ -144,7 +152,7 @@ export class Wllama {
         'wllama.wasm': absoluteUrl(this.pathConfig['single-thread/wllama.wasm']),
       };
     this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread);
-    await this.proxy.moduleInit(ggufBuffer);
+    await this.proxy.moduleInit(buffers);
     // run it
     const startResult: number = await this.proxy.wllamaStart();
     if (startResult !== 0) {
@@ -159,7 +167,9 @@ export class Wllama {
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
-      model_path: '/models/model.bin',
+      model_path: buffers.length > 1
+        ? `/models/model-00001-of-${padDigits(buffers.length, 5)}.gguf`
+        : '/models/model.gguf',
     });
     this.bosToken = loadResult.token_bos;
     this.eosToken = loadResult.token_eos;

@@ -24,6 +24,7 @@ export interface LoadModelConfig {
     yarn_orig_ctx?: number;
     cache_type_k?: 'f16' | 'q8_0' | 'q4_0';
     cache_type_v?: 'f16';
+    n_download_parallel?: number;
 }
 export interface SamplingConfig {
     mirostat?: number;
@@ -77,7 +78,7 @@ export declare class Wllama {
      * @param ggufBuffer Uint8Array holds data of gguf file
      * @param config
      */
-    loadModel(ggufBuffer: Uint8Array, config: LoadModelConfig): Promise<void>;
+    loadModel(ggufBuffer: Uint8Array | Uint8Array[], config: LoadModelConfig): Promise<void>;
     /**
      * Calculate embedding vector for a given text.
      * By default, BOS and EOS tokens will be added automatically. You can use the "skipBOS" and "skipEOS" option to disable it.

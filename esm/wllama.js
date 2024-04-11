@@ -1,5 +1,5 @@
 import { ProxyToWorker } from './worker.js';
-import { absoluteUrl, bufToText, isSupportMultiThread, joinBuffers, loadBinaryResource } from './utils.js';
+import { absoluteUrl, bufToText, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils.js';
 ;
 ;
 ;
@@ -44,8 +44,11 @@ export class Wllama {
      * @param config
      */
     async loadModelFromUrl(modelUrl, config) {
-        const ggufBuffer = await loadBinaryResource(modelUrl);
-        return await this.loadModel(ggufBuffer, config);
+        if (modelUrl.length === 0) {
+            throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
+        }
+        const ggufBuffers = await loadBinaryResource(modelUrl, config.n_download_parallel ?? 3);
+        return await this.loadModel(ggufBuffers, config);
     }
     /**
      * Load model from a given buffer
@@ -53,8 +56,11 @@ export class Wllama {
      * @param config
      */
     async loadModel(ggufBuffer, config) {
-        if (!ggufBuffer.byteLength) {
-            throw new Error('Input model must be a non-empty Uint8Array');
+        const buffers = Array.isArray(ggufBuffer)
+            ? ggufBuffer
+            : [ggufBuffer];
+        if (buffers.length === 0 || buffers.some(buf => buf.byteLength === 0)) {
+            throw new Error('Input model (or splits) must be non-empty Uint8Array');
         }
         if (this.proxy) {
             throw new Error('Module is already initialized');
@@ -84,7 +90,7 @@ export class Wllama {
                 'wllama.wasm': absoluteUrl(this.pathConfig['single-thread/wllama.wasm']),
             };
         this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread);
-        await this.proxy.moduleInit(ggufBuffer);
+        await this.proxy.moduleInit(buffers);
         // run it
         const startResult = await this.proxy.wllamaStart();
         if (startResult !== 0) {
@@ -96,7 +102,9 @@ export class Wllama {
             seed: config.seed || Math.floor(Math.random() * 100000),
             n_ctx: config.n_ctx || 1024,
             n_threads: this.useMultiThread ? nbThreads : 1,
-            model_path: '/models/model.bin',
+            model_path: buffers.length > 1
+                ? `/models/model-00001-of-${padDigits(buffers.length, 5)}.gguf`
+                : '/models/model.gguf',
         });
         this.bosToken = loadResult.token_bos;
         this.eosToken = loadResult.token_eos;

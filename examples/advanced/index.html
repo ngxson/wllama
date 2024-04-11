@@ -29,6 +29,11 @@
       'multi-thread/wllama.worker.mjs': '../../esm/multi-thread/wllama.worker.mjs',
     };
     const MODEL = 'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
+    const MODEL_SPLITS = [
+      'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf',
+      'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00002-of-00003.gguf',
+      'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00003-of-00003.gguf',
+    ];
 
     async function main() {
       let res, tokens, elapsed, buffer;
@@ -121,6 +126,23 @@
         print(`Token ID ${candidate.token}, probability = ${candidate.p} ==> "${word}"`);
       }
 
+      print(`\n--------------\n`);
+
+      const wllamaSplits = new Wllama(CONFIG_PATHS);
+
+      print(`Loading split model...`);
+      timeStart();
+      await wllamaSplits.loadModelFromUrl(MODEL_SPLITS, {
+        embeddings: true,
+        n_ctx: 1024,
+        n_download_parallel: 5,
+      });
+      print(`Loaded, take ${timeEnd()} ms`);
+      print(`Test generating text...`);
+      const output = await wllamaSplits.createCompletion(TEXT_TO_TOKENIZE, {
+        nPredict: 20,
+      });
+      print(output);
     }
 
     /////////////////////////////////////////////////////////////////////

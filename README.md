@@ -6,6 +6,8 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 
 ## Breaking changes
 
+- Version 1.5.0
+  - Support split model using [gguf-split tool](https://github.com/ggerganov/llama.cpp/tree/master/examples/gguf-split)
 - Version 1.4.0
   - Add `single-thread/wllama.js` and `multi-thread/wllama.js` to the list of `CONFIG_PATHS`
   - `createEmbedding` is now adding BOS and EOS token by default
@@ -25,7 +27,7 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
 - No WebGL support, but maybe possible in the future
-- Max model size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length)
+- Max file size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length). If your model is bigger than 2GB, please follow the **Split model** section below.
 
 ## Demo and documentations
 
@@ -81,9 +83,42 @@ import { Wllama } from './esm/index.js';
 })();
 ```
 
-## How to build
+### Split model
 
-This repository already come with pre-built binary. But if you want to build it yourself, you can use the commands below:
+Cases where we want to split the model:
+- Due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length), the size limitation of a file is 2GB. If your model is bigger than 2GB, you can split the model into small files.
+- Even with a small model, splitting into chunks allows the browser to download multiple chunks in parallel, thus making downloading process faster.
+
+We use [gguf-split tool](https://github.com/ggerganov/llama.cpp/tree/master/examples/gguf-split) to split a big gguf file into smaller files:
+
+```bash
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+make gguf-split
+# Split the model into chunks of 1GB
+./gguf-split --split-max-size 1G ./my_model.gguf ./my_model
+```
+
+This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`,...
+
+You can then give a list of uplaoded files to `loadModelFromUrl`:
+
+```js
+await wllama.loadModelFromUrl(
+  [
+    'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf',
+    'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00002-of-00003.gguf',
+    'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00003-of-00003.gguf',
+  ],
+  {
+    n_download_parallel: 5, // optional: maximum files to download in parallel
+  },
+);
+```
+
+## How to compile the binary yourself
+
+This repository already come with pre-built binary from llama.cpp source code. But if you want to compile it yourself, you can use the commands below:
 
 ```shell
 # Require having docker compose installed
@@ -96,9 +131,9 @@ npm run build
 ## TODO
 
 Short term:
-- Guide: How to split gguf file into smaller one?
 - Add a more pratical embedding example (using a better model)
 - Maybe doing a full RAG-in-browser example using tinyllama?
+- Add load progress callback
 
 Long term:
 - Support GPU inference via WebGL
