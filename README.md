@@ -4,7 +4,7 @@
 
 Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp). Inspired by [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm), but unlike it, **Wllama** aims to supports **low-level API** like (de)tokenization, embeddings,...
 
-## Breaking changes
+## Recent changes
 
 - Version 1.5.0
   - Support split model using [gguf-split tool](https://github.com/ggerganov/llama.cpp/tree/master/examples/gguf-split)
@@ -87,7 +87,7 @@ import { Wllama } from './esm/index.js';
 
 Cases where we want to split the model:
 - Due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length), the size limitation of a file is 2GB. If your model is bigger than 2GB, you can split the model into small files.
-- Even with a small model, splitting into chunks allows the browser to download multiple chunks in parallel, thus making downloading process faster.
+- Even with a small model, splitting into chunks allows the browser to download multiple chunks in parallel, thus making the download process a bit faster.
 
 We use [gguf-split tool](https://github.com/ggerganov/llama.cpp/tree/master/examples/gguf-split) to split a big gguf file into smaller files:
 
@@ -95,13 +95,13 @@ We use [gguf-split tool](https://github.com/ggerganov/llama.cpp/tree/master/exam
 git clone https://github.com/ggerganov/llama.cpp
 cd llama.cpp
 make gguf-split
-# Split the model into chunks of 1GB
-./gguf-split --split-max-size 1G ./my_model.gguf ./my_model
+# Split the model into chunks of 512 Megabytes
+./gguf-split --split-max-size 512M ./my_model.gguf ./my_model
 ```
 
 This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`,...
 
-You can then give a list of uplaoded files to `loadModelFromUrl`:
+You can then give a list of uploaded files to `loadModelFromUrl`:
 
 ```js
 await wllama.loadModelFromUrl(
@@ -111,7 +111,7 @@ await wllama.loadModelFromUrl(
     'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00003-of-00003.gguf',
   ],
   {
-    n_download_parallel: 5, // optional: maximum files to download in parallel
+    n_download_parallel: 5, // optional: maximum files to download in parallel (default: 3)
   },
 );
 ```
