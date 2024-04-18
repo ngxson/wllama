@@ -114,53 +114,53 @@ json action_load(app_t &app, json &body)
 {
   std::string model_path = body["model_path"];
   auto mparams = llama_model_default_params();
-  if (body.count("use_mmap") > 0)
+  if (body.contains("use_mmap"))
     mparams.use_mmap = body["use_mmap"];
-  if (body.count("use_mlock") > 0)
+  if (body.contains("use_mlock"))
     mparams.use_mlock = body["use_mlock"];
-  if (body.count("n_gpu_layers") > 0)
+  if (body.contains("n_gpu_layers"))
     mparams.n_gpu_layers = body["n_gpu_layers"];
   auto cparams = llama_context_default_params();
   cparams.seed = body["seed"];
   cparams.n_ctx = body["n_ctx"];
   cparams.n_threads = body["n_threads"];
   cparams.n_threads_batch = cparams.n_threads;
-  if (body.count("embeddings") > 0)
+  if (body.contains("embeddings"))
     cparams.embeddings = body["embeddings"];
-  if (body.count("offload_kqv") > 0)
+  if (body.contains("offload_kqv"))
     cparams.offload_kqv = body["offload_kqv"];
-  if (body.count("n_batch") > 0)
+  if (body.contains("n_batch"))
     cparams.n_batch = body["n_batch"];
-  if (body.count("n_seq_max") > 0)
+  if (body.contains("n_seq_max"))
     cparams.n_seq_max = body["n_seq_max"];
-  if (body.count("pooling_type") > 0)
+  if (body.contains("pooling_type"))
     cparams.pooling_type = pooling_type_from_str(body["pooling_type"]);
   // context extending: https://github.com/ggerganov/llama.cpp/pull/2054
-  if (body.count("rope_scaling_type") > 0)
+  if (body.contains("rope_scaling_type"))
     cparams.rope_scaling_type = rope_scaling_type_from_str(body["rope_scaling_type"]);
-  if (body.count("rope_freq_base") > 0)
+  if (body.contains("rope_freq_base"))
     cparams.rope_freq_base = body["rope_freq_base"];
-  if (body.count("rope_freq_scale") > 0)
+  if (body.contains("rope_freq_scale"))
     cparams.rope_freq_scale = body["rope_freq_scale"];
-  if (body.count("yarn_ext_factor") > 0)
+  if (body.contains("yarn_ext_factor"))
     cparams.yarn_ext_factor = body["yarn_ext_factor"];
-  if (body.count("yarn_attn_factor") > 0)
+  if (body.contains("yarn_attn_factor"))
     cparams.yarn_attn_factor = body["yarn_attn_factor"];
-  if (body.count("yarn_beta_fast") > 0)
+  if (body.contains("yarn_beta_fast"))
     cparams.yarn_beta_fast = body["yarn_beta_fast"];
-  if (body.count("yarn_beta_slow") > 0)
+  if (body.contains("yarn_beta_slow"))
     cparams.yarn_beta_slow = body["yarn_beta_slow"];
-  if (body.count("yarn_orig_ctx") > 0)
+  if (body.contains("yarn_orig_ctx"))
     cparams.yarn_orig_ctx = body["yarn_orig_ctx"];
   // group attention
-  if (body.count("grp_attn_n") > 0)
+  if (body.contains("grp_attn_n"))
     app.ga_n = body["grp_attn_n"];
-  if (body.count("grp_attn_w") > 0)
+  if (body.contains("grp_attn_w"))
     app.ga_w = body["grp_attn_w"];
   // optimizations
-  if (body.count("cache_type_k") > 0)
+  if (body.contains("cache_type_k"))
     cparams.type_k = kv_cache_type_from_str(body["cache_type_k"]);
-  if (body.count("cache_type_v") > 0)
+  if (body.contains("cache_type_v"))
     cparams.type_k = kv_cache_type_from_str(body["cache_type_v"]);
   app.model = llama_load_model_from_file(model_path.c_str(), mparams);
   app.ctx = llama_new_context_with_model(app.model, cparams);
@@ -177,47 +177,64 @@ json action_sampling_init(app_t &app, json &body)
 {
   // sampling
   llama_sampling_params sparams;
-  if (body.count("mirostat") > 0)
+  if (body.contains("mirostat"))
     sparams.mirostat = body["mirostat"];
-  if (body.count("mirostat_tau") > 0)
+  if (body.contains("mirostat_tau"))
     sparams.mirostat_tau = body["mirostat_tau"];
-  if (body.count("mirostat_eta") > 0)
+  if (body.contains("mirostat_eta"))
     sparams.mirostat_eta = body["mirostat_eta"];
-  if (body.count("temp") > 0)
+  if (body.contains("temp"))
     sparams.temp = body["temp"];
-  if (body.count("top_p") > 0)
+  if (body.contains("top_p"))
     sparams.top_p = body["top_p"];
-  if (body.count("top_k") > 0)
+  if (body.contains("top_k"))
     sparams.top_k = body["top_k"];
-  if (body.count("penalty_last_n") > 0)
+  if (body.contains("penalty_last_n"))
     sparams.penalty_last_n = body["penalty_last_n"];
-  if (body.count("penalty_repeat") > 0)
+  if (body.contains("penalty_repeat"))
     sparams.penalty_repeat = body["penalty_repeat"];
-  if (body.count("penalty_freq") > 0)
+  if (body.contains("penalty_freq"))
     sparams.penalty_freq = body["penalty_freq"];
-  if (body.count("penalty_present") > 0)
+  if (body.contains("penalty_present"))
     sparams.penalty_present = body["penalty_present"];
-  // if (body.count("samplers_sequence") > 0)
+  if (body.contains("penalize_nl"))
+    sparams.penalize_nl = body["penalize_nl"];
+  if (body.contains("dynatemp_range"))
+    sparams.dynatemp_range = body["dynatemp_range"];
+  if (body.contains("dynatemp_exponent"))
+    sparams.dynatemp_exponent = body["dynatemp_exponent"];
+  // if (body.contains("samplers_sequence"))
   //   sparams.samplers_sequence = body["samplers_sequence"];
-  if (body.count("grammar") > 0)
+  if (body.contains("grammar"))
     sparams.grammar = body["grammar"];
-  if (body.count("n_prev") > 0)
+  if (body.contains("n_prev"))
     sparams.n_prev = body["n_prev"];
-  if (body.count("n_probs") > 0)
+  if (body.contains("n_probs"))
     sparams.n_probs = body["n_probs"];
-  if (body.count("min_p") > 0)
+  if (body.contains("min_p"))
     sparams.min_p = body["min_p"];
-  if (body.count("tfs_z") > 0)
+  if (body.contains("tfs_z"))
     sparams.tfs_z = body["tfs_z"];
-  if (body.count("typical_p") > 0)
+  if (body.contains("typical_p"))
     sparams.typical_p = body["typical_p"];
+  // logit bias
+  if (body.contains("logit_bias"))
+  {
+    std::vector<json> logit_bias = body["logit_bias"];
+    for (json &item : logit_bias)
+    {
+      llama_token token = item["token"];
+      float bias = item["bias"];
+      sparams.logit_bias[token] = bias;
+    }
+  }
   // maybe free before creating a new one
   if (app.ctx_sampling != nullptr)
   {
     llama_sampling_free(app.ctx_sampling);
   }
   app.ctx_sampling = llama_sampling_init(sparams);
-  if (body.count("tokens") > 0)
+  if (body.contains("tokens"))
   {
     std::vector<llama_token> tokens = body["tokens"];
     for (auto id : tokens)
@@ -268,7 +285,7 @@ json action_lookup_token(app_t &app, json &body)
 json action_tokenize(app_t &app, json &body)
 {
   std::string text = body["text"];
-  bool special = body.count("special") > 0;
+  bool special = body.contains("special");
   std::vector<llama_token> tokens_list;
   tokens_list = ::llama_tokenize(app.model, text, false, special);
   return json{
@@ -297,7 +314,7 @@ json action_detokenize(app_t &app, json &body)
 json action_decode(app_t &app, json &body)
 {
   std::vector<llama_token> tokens_list = body["tokens"];
-  bool skip_logits = body.count("skip_logits") > 0;
+  bool skip_logits = body.contains("skip_logits");
   /*bool grp_attn_enabled = app.ga_n > 1;
   if (grp_attn_enabled)
   {
@@ -412,7 +429,7 @@ json action_embeddings(app_t &app, json &body)
   // decode
   json req = json{{"tokens", tokens_list}};
   json res = action_decode(app, req);
-  if (res.count("error"))
+  if (res.contains("error"))
   {
     return res;
   }
