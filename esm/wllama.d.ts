@@ -115,12 +115,19 @@ export declare class Wllama {
         penalty_repeat?: number;
         penalty_freq?: number;
         penalty_present?: number;
+        penalize_nl?: boolean;
+        dynatemp_range?: number;
+        dynatemp_exponent?: number;
         grammar?: string;
         n_prev?: number;
         n_probs?: number;
         min_p?: number;
         tfs_z?: number;
         typical_p?: number;
+        logit_bias?: {
+            token: number;
+            bias: number;
+        }[];
     }, pastTokens?: number[]): Promise<void>;
     /**
      * Get a list of pieces in vocab.
