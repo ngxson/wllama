@@ -1,5 +1,5 @@
 import { ProxyToWorker } from './worker.js';
-import { absoluteUrl, bufToText, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils.js';
+import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils.js';
 ;
 ;
 ;
@@ -13,6 +13,7 @@ export class Wllama {
     eosToken = -1;
     samplingConfig = {};
     constructor(config) {
+        checkEnvironmentCompatible();
         if (!config)
             throw new Error('AssetsPathConfig is required');
         this.pathConfig = config;

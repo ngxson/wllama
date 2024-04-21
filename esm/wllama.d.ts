@@ -36,12 +36,19 @@ export interface SamplingConfig {
     penalty_repeat?: number;
     penalty_freq?: number;
     penalty_present?: number;
+    penalize_nl?: boolean;
+    dynatemp_range?: number;
+    dynatemp_exponent?: number;
     grammar?: string;
     n_prev?: number;
     n_probs?: number;
     min_p?: number;
     tfs_z?: number;
     typical_p?: number;
+    logit_bias?: {
+        token: number;
+        bias: number;
+    }[];
 }
 export declare class Wllama {
     private proxy;
@@ -105,30 +112,7 @@ export declare class Wllama {
      * @param config
      * @param pastTokens In case re-initializing the ctx_sampling, you can re-import past tokens into the new context
      */
-    samplingInit(config: {
-        mirostat?: number;
-        mirostat_tau?: number;
-        temp?: number;
-        top_p?: number;
-        top_k?: number;
-        penalty_last_n?: number;
-        penalty_repeat?: number;
-        penalty_freq?: number;
-        penalty_present?: number;
-        penalize_nl?: boolean;
-        dynatemp_range?: number;
-        dynatemp_exponent?: number;
-        grammar?: string;
-        n_prev?: number;
-        n_probs?: number;
-        min_p?: number;
-        tfs_z?: number;
-        typical_p?: number;
-        logit_bias?: {
-            token: number;
-            bias: number;
-        }[];
-    }, pastTokens?: number[]): Promise<void>;
+    samplingInit(config: SamplingConfig, pastTokens?: number[]): Promise<void>;
     /**
      * Get a list of pieces in vocab.
      * NOTE: This function is slow, should only be used once.

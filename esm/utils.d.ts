@@ -21,11 +21,18 @@ export declare const getWModuleConfig: (pathConfig: {
     printErr: (text: any) => void;
     locateFile: (filename: string, basePath: string) => string;
 };
-/**
- * https://unpkg.com/wasm-feature-detect?module
- * @returns true if browser support multi-threads
- */
-export declare const isSupportMultiThread: () => Promise<boolean>;
 export declare const delay: (ms: number) => Promise<unknown>;
 export declare const absoluteUrl: (relativePath: string) => string;
 export declare const padDigits: (number: number, digits: number) => string;
+/**
+ * Browser feature detection
+ * Copied from https://unpkg.com/wasm-feature-detect?module (Apache License)
+ */
+/**
+ * @returns true if browser support multi-threads
+ */
+export declare const isSupportMultiThread: () => Promise<boolean>;
+/**
+ * Throws an error if the environment is not compatible
+ */
+export declare const checkEnvironmentCompatible: () => Promise<void>;
