@@ -125,12 +125,6 @@ export const getWModuleConfig = (pathConfig: { [filename: string]: string }) => 
   };
 }
 
-/**
- * https://unpkg.com/wasm-feature-detect?module
- * @returns true if browser support multi-threads
- */
-export const isSupportMultiThread = () => (async e => {try {return "undefined" != typeof MessageChannel && new MessageChannel().port1.postMessage(new SharedArrayBuffer(1)), WebAssembly.validate(e);} catch (e) {return !1;}})(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3, 1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11]))
-
 export const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export const absoluteUrl = (relativePath: string) => new URL(relativePath, document.baseURI).href;
@@ -138,3 +132,35 @@ export const absoluteUrl = (relativePath: string) => new URL(relativePath, docum
 export const padDigits = (number: number, digits: number) => {
   return Array(Math.max(digits - String(number).length + 1, 0)).join('0') + number;
 }
+
+/**
+ * Browser feature detection
+ * Copied from https://unpkg.com/wasm-feature-detect?module (Apache License)
+ */
+
+/**
+ * @returns true if browser support multi-threads
+ */
+export const isSupportMultiThread = () => (async e => {try {return "undefined" != typeof MessageChannel && new MessageChannel().port1.postMessage(new SharedArrayBuffer(1)), WebAssembly.validate(e);} catch (e) {return !1;}})(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3, 1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11]));
+
+/**
+ * @returns true if browser support wasm "native" exception handler
+ */
+const isSupportExceptions = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 8, 1, 6, 0, 6, 64, 25, 11, 11]));
+
+/**
+ * @returns true if browser support wasm SIMD
+ */
+const isSupportSIMD = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
+
+/**
+ * Throws an error if the environment is not compatible
+ */
+export const checkEnvironmentCompatible = async (): Promise<void> => {
+  if (!(await isSupportExceptions())) {
+    throw new Error('WebAssembly runtime does not support exception handling');
+  }
+  if (!(await isSupportSIMD())) {
+    throw new Error('WebAssembly runtime does not support SIMD');
+  }
+};

@@ -1,5 +1,5 @@
 import { ProxyToWorker } from './worker';
-import { absoluteUrl, bufToText, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils';
+import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils';
 
 export interface AssetsPathConfig {
   'single-thread/wllama.js': string,
@@ -75,6 +75,7 @@ export class Wllama {
   private samplingConfig: SamplingConfig = {};
 
   constructor(config: AssetsPathConfig) {
+    checkEnvironmentCompatible();
     if (!config) throw new Error('AssetsPathConfig is required');
     this.pathConfig = config;
   }
