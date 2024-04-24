@@ -80,7 +80,7 @@ inline static ggml_type kv_cache_type_from_str(const std::string &s)
   throw std::runtime_error("Invalid cache type: " + s);
 }
 
-inline static llama_pooling_type pooling_type_from_str(const std::string &s)
+inline static enum llama_pooling_type pooling_type_from_str(const std::string &s)
 {
   if (s == "LLAMA_POOLING_TYPE_UNSPECIFIED")
     return LLAMA_POOLING_TYPE_UNSPECIFIED;
