@@ -74,6 +74,7 @@ export class Wllama {
   private bosToken: number = -1;
   private eosToken: number = -1;
   private samplingConfig: SamplingConfig = {};
+  private interrupt: boolean = false;
 
   constructor(config: AssetsPathConfig) {
     checkEnvironmentCompatible();
@@ -237,12 +238,17 @@ export class Wllama {
     await this.decode(tokens, {});
     let outBuf = new Uint8Array();
     // predict next tokens
+    this.interrupt = false;
     for (let i = 0; i < (options.nPredict ?? Infinity); i++) {
       const sampled = await this.samplingSample();
       // TODO: add support stop sequence
       if (sampled.token === this.eosToken) {
         break; // EOS token
       }
+      if (this.interrupt) {
+				this.interrupt = false;
+				break
+			}
       outBuf = joinBuffers([outBuf, sampled.piece]);
       if (options.onNewToken) {
         options.onNewToken(sampled.token, sampled.piece, bufToText(outBuf));
