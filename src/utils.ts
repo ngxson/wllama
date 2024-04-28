@@ -1,94 +1,86 @@
-const _loadBinaryResource = async (url: string): Promise<Uint8Array> => {
-  let cache: Cache | null = null;
-  const window = self;
-
-  // Try to find if the model data is cached in Web Worker memory.
-  if (typeof window === 'undefined') {
-    console.debug('`window` is not defined');
-  } else if (window && window.caches) {
-    cache = await window.caches.open('wllama_cache');
-    const cachedResponse = await cache.match(url);
-
-    if (cachedResponse) {
-      const data = await cachedResponse.arrayBuffer();
-      const byteArray = new Uint8Array(data);
-      return byteArray;
+const _loadBinaryResource = async (url,progressCallback) => {
+    let cache = null;
+    const window = self;
+    // Try to find if the model data is cached in Web Worker memory.
+    if (typeof window === 'undefined') {
+        console.debug('`window` is not defined');
     }
-  }
-
-
-  // Download model and store in cache
-  const _promise = new Promise<Uint8Array>((resolve, reject) => {
-    const req = new XMLHttpRequest();
-    req.open('GET', url, true);
-    req.responseType = 'arraybuffer';
-    req.onload = async (_) => {
-      const arrayBuffer = req.response; // Note: not req.responseText
-      if (arrayBuffer) {
-        const byteArray = new Uint8Array(arrayBuffer);
-        if (cache) {
-          await cache.put(url, new Response(arrayBuffer))
+    else if (window && window.caches) {
+        cache = await window.caches.open('wllama_cache');
+        const cachedResponse = await cache.match(url);
+        if (cachedResponse) {
+            const data = await cachedResponse.arrayBuffer();
+            const byteArray = new Uint8Array(data);
+            return byteArray;
+        }
+    }
+    // Download model and store in cache
+    const _promise = new Promise((resolve, reject) => {
+        const req = new XMLHttpRequest();
+        req.open('GET', url, true);
+        req.responseType = 'arraybuffer';
+		if(typeof progressCallback == 'function'){
+			req.onprogress = (progress) => progressCallback(url,progress);
+		}
+        req.onload = async (_) => {
+            const arrayBuffer = req.response; // Note: not req.responseText
+            if (arrayBuffer) {
+                const byteArray = new Uint8Array(arrayBuffer);
+                if (cache) {
+                    await cache.put(url, new Response(arrayBuffer));
+                }
+                ;
+                resolve(byteArray);
+            }
         };
-        resolve(byteArray);
-      }
-    };
-    req.onerror = (err) => {
-      reject(err);
-    };
-    req.send(null);
-  });
-
-  return await _promise;
-}
-
-export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
-  const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
-  const output = new Uint8Array(totalSize);
-  output.set(buffers[0], 0);
-  for (let i = 1; i < buffers.length; i++) {
-    output.set(buffers[i], buffers[i - 1].length);
-  }
-  return output;
+        req.onerror = (err) => {
+            reject(err);
+        };
+        req.send(null);
+    });
+    return await _promise;
 };
-
+export const joinBuffers = (buffers) => {
+    const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
+    const output = new Uint8Array(totalSize);
+    output.set(buffers[0], 0);
+    for (let i = 1; i < buffers.length; i++) {
+        output.set(buffers[i], buffers[i - 1].length);
+    }
+    return output;
+};
 /**
  * Load a resource as byte array. If multiple URLs is given, we will assume that the resource is splitted into small files
  * @param url URL (or list of URLs) to resource
  */
-export const loadBinaryResource = async (url: string | string[], nMaxParallel: number): Promise<Uint8Array | Uint8Array[]> => {
-  const urls: string[] = Array.isArray(url)
-    ? [...url] as string[]
-    : [url as string];
-
-  const tasks: {
-    url: string,
-    result: Uint8Array,
-    started: boolean,
-  }[] = urls.map(u => ({
-    url: u,
-    result: new Uint8Array(),
-    started: false,
-  }));
-
-  // This is not multi-thread, but just a simple naming to borrow the idea
-  const threads: Promise<void>[] = [];
-  const runDownloadThread = async () => {
-    while (true) {
-      const task = tasks.find(t => !t.started);
-      if (!task) return;
-      task.started = true;
-      task.result = await _loadBinaryResource(task.url);
+export const loadBinaryResource = async (url, nMaxParallel,progressCallback) => {
+    const urls = Array.isArray(url)
+        ? [...url]
+        : [url];
+    const tasks = urls.map(u => ({
+        url: u,
+        result: new Uint8Array(),
+        started: false,
+    }));
+    // This is not multi-thread, but just a simple naming to borrow the idea
+    const threads = [];
+    const runDownloadThread = async () => {
+        while (true) {
+            const task = tasks.find(t => !t.started);
+            if (!task)
+                return;
+            task.started = true;
+            task.result = await _loadBinaryResource(task.url,progressCallback);
+        }
+    };
+    for (let i = 0; i < nMaxParallel; i++) {
+        threads.push(runDownloadThread());
     }
-  };
-  for (let i = 0; i < nMaxParallel; i++) {
-    threads.push(runDownloadThread());
-  }
-  // wait until all downloads finish
-  await Promise.all(threads);
-
-  return tasks.length === 1
-    ? tasks[0].result
-    : tasks.map(r => r.result);
+    // wait until all downloads finish
+    await Promise.all(threads);
+    return tasks.length === 1
+        ? tasks[0].result
+        : tasks.map(r => r.result);
 };
 
 const textDecoder = new TextDecoder();
