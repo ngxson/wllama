@@ -113,7 +113,7 @@ export class Wllama {
     if (modelUrl.length === 0) {
       throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
     }
-    const ggufBuffers = await loadBinaryResource(modelUrl, config.n_download_parallel ?? 3);
+    const ggufBuffers = await loadBinaryResource(modelUrl, config.n_download_parallel ?? 3, config.progressCallback ?? function(url,progress){console.log("Wllama download progress:", url, progress)});
     return await this.loadModel(ggufBuffers, config);
   }
 
