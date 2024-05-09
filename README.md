@@ -111,7 +111,7 @@ await wllama.loadModelFromUrl(
     'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00003-of-00003.gguf',
   ],
   {
-    n_download_parallel: 5, // optional: maximum files to download in parallel (default: 3)
+    parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
   },
 );
 ```

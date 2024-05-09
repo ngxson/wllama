@@ -48,7 +48,6 @@ export const getBinarySize = (url) => {
         const req = new XMLHttpRequest();
         req.open('GET', url, true);
         req.onreadystatechange = () => {
-            console.log('state', req.readyState);
             if (req.readyState === 2) { // HEADERS_RECEIVED
                 const value = req.getResponseHeader('Content-Length') ?? '';
                 req.abort();
@@ -96,7 +95,6 @@ export const loadBinaryResource = async (url, nMaxParallel, progressCallback) =>
     if (reportProgress) {
         const sizeArr = await Promise.all(urls.map(u => getBinarySize(u)));
         totalSize = sumArr(sizeArr);
-        console.log({ totalSize });
     }
     // This is not multi-thread, but just a simple naming to borrow the idea
     const threads = [];
