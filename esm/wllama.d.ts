@@ -24,7 +24,13 @@ export interface LoadModelConfig {
     yarn_orig_ctx?: number;
     cache_type_k?: 'f16' | 'q8_0' | 'q4_0';
     cache_type_v?: 'f16';
-    n_download_parallel?: number;
+}
+export interface DownloadModelConfig extends LoadModelConfig {
+    parallelDownloads?: number;
+    progressCallback?: (opts: {
+        loaded: number;
+        total: number;
+    }) => any;
 }
 export interface SamplingConfig {
     mirostat?: number;
@@ -79,7 +85,7 @@ export declare class Wllama {
      * @param modelUrl URL or list of URLs (in the correct order)
      * @param config
      */
-    loadModelFromUrl(modelUrl: string | string[], config: LoadModelConfig): Promise<void>;
+    loadModelFromUrl(modelUrl: string | string[], config: DownloadModelConfig): Promise<void>;
     /**
      * Load model from a given buffer
      * @param ggufBuffer Uint8Array holds data of gguf file

@@ -1,4 +1,4 @@
-const _loadBinaryResource = async (url) => {
+const _loadBinaryResource = async (url, progressCallback) => {
     let cache = null;
     const window = self;
     // Try to find if the model data is cached in Web Worker memory.
@@ -30,12 +30,41 @@ const _loadBinaryResource = async (url) => {
                 resolve(byteArray);
             }
         };
+        if (progressCallback && typeof progressCallback === 'function') {
+            req.onprogress = progressCallback;
+        }
         req.onerror = (err) => {
             reject(err);
         };
         req.send(null);
     });
     return await _promise;
+};
+/**
+ * Return file size in bytes
+ */
+export const getBinarySize = (url) => {
+    return new Promise((resolve, reject) => {
+        const req = new XMLHttpRequest();
+        req.open('GET', url, true);
+        req.onreadystatechange = () => {
+            console.log('state', req.readyState);
+            if (req.readyState === 2) { // HEADERS_RECEIVED
+                const value = req.getResponseHeader('Content-Length') ?? '';
+                req.abort();
+                if (isNaN(+value)) {
+                    reject(new Error('Content-Length is not a number'));
+                }
+                else {
+                    resolve(parseInt(value));
+                }
+            }
+        };
+        req.onerror = (err) => {
+            reject(err);
+        };
+        req.send(null);
+    });
 };
 export const joinBuffers = (buffers) => {
     const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
@@ -50,7 +79,8 @@ export const joinBuffers = (buffers) => {
  * Load a resource as byte array. If multiple URLs is given, we will assume that the resource is splitted into small files
  * @param url URL (or list of URLs) to resource
  */
-export const loadBinaryResource = async (url, nMaxParallel) => {
+export const loadBinaryResource = async (url, nMaxParallel, progressCallback) => {
+    const reportProgress = progressCallback && typeof progressCallback === 'function';
     const urls = Array.isArray(url)
         ? [...url]
         : [url];
@@ -58,7 +88,16 @@ export const loadBinaryResource = async (url, nMaxParallel) => {
         url: u,
         result: new Uint8Array(),
         started: false,
+        sizeTotal: 0,
+        sizeLoaded: 0,
     }));
+    // Get the total length of all files
+    let totalSize = -1;
+    if (reportProgress) {
+        const sizeArr = await Promise.all(urls.map(u => getBinarySize(u)));
+        totalSize = sumArr(sizeArr);
+        console.log({ totalSize });
+    }
     // This is not multi-thread, but just a simple naming to borrow the idea
     const threads = [];
     const runDownloadThread = async () => {
@@ -67,7 +106,17 @@ export const loadBinaryResource = async (url, nMaxParallel) => {
             if (!task)
                 return;
             task.started = true;
-            task.result = await _loadBinaryResource(task.url);
+            task.result = await _loadBinaryResource(task.url, (progress) => {
+                task.sizeTotal = progress.total;
+                task.sizeLoaded = progress.loaded;
+                if (reportProgress) {
+                    // report aggregated progress across all files
+                    progressCallback({
+                        loaded: sumArr(tasks.map(t => t.sizeLoaded)),
+                        total: totalSize,
+                    });
+                }
+            });
         }
     };
     for (let i = 0; i < nMaxParallel; i++) {
@@ -117,6 +166,7 @@ export const absoluteUrl = (relativePath) => new URL(relativePath, document.base
 export const padDigits = (number, digits) => {
     return Array(Math.max(digits - String(number).length + 1, 0)).join('0') + number;
 };
+export const sumArr = (arr) => arr.reduce((prev, curr) => prev + curr, 0);
 /**
  * Browser feature detection
  * Copied from https://unpkg.com/wasm-feature-detect?module (Apache License)

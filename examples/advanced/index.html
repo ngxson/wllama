@@ -44,6 +44,7 @@
       await wllama.loadModelFromUrl(MODEL, {
         embeddings: true,
         n_ctx: 1024,
+        progressCallback: ({ loaded, total }) => console.log(`Downloading... ${Math.round(loaded/total*100)}%`),
       });
       print(`Loaded, take ${timeEnd()} ms`);
       print(`BOS token = ${wllama.getBOS()}`);
@@ -135,7 +136,8 @@
       await wllamaSplits.loadModelFromUrl(MODEL_SPLITS, {
         embeddings: true,
         n_ctx: 1024,
-        n_download_parallel: 5,
+        parallelDownloads: 5,
+        progressCallback: ({ loaded, total }) => console.log(`Downloading... ${Math.round(loaded/total*100)}%`),
       });
       print(`Loaded, take ${timeEnd()} ms`);
       print(`Test generating text...`);
