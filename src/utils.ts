@@ -1,4 +1,7 @@
-const _loadBinaryResource = async (url: string): Promise<Uint8Array> => {
+const _loadBinaryResource = async (
+  url: string,
+  progressCallback?: typeof XMLHttpRequest['prototype']['onprogress']
+): Promise<Uint8Array> => {
   let cache: Cache | null = null;
   const window = self;
 
@@ -32,6 +35,9 @@ const _loadBinaryResource = async (url: string): Promise<Uint8Array> => {
         resolve(byteArray);
       }
     };
+    if (progressCallback && typeof progressCallback === 'function') {
+      req.onprogress = progressCallback;
+    }
     req.onerror = (err) => {
       reject(err);
     };
@@ -40,6 +46,31 @@ const _loadBinaryResource = async (url: string): Promise<Uint8Array> => {
 
   return await _promise;
 }
+
+/**
+ * Return file size in bytes
+ */
+export const getBinarySize = (url: string): Promise<number> => {
+  return new Promise<number>((resolve, reject) => {
+    const req = new XMLHttpRequest();
+    req.open('GET', url, true);
+    req.onreadystatechange = () => {
+      if (req.readyState === 2) { // HEADERS_RECEIVED
+        const value = req.getResponseHeader('Content-Length') ?? '';
+        req.abort();
+        if (isNaN(+value)) {
+          reject(new Error('Content-Length is not a number'));
+        } else {
+          resolve(parseInt(value));
+        }
+      }
+    };
+    req.onerror = (err) => {
+      reject(err);
+    };
+    req.send(null);
+  });
+};
 
 export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
@@ -55,7 +86,12 @@ export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
  * Load a resource as byte array. If multiple URLs is given, we will assume that the resource is splitted into small files
  * @param url URL (or list of URLs) to resource
  */
-export const loadBinaryResource = async (url: string | string[], nMaxParallel: number): Promise<Uint8Array | Uint8Array[]> => {
+export const loadBinaryResource = async (
+  url: string | string[],
+  nMaxParallel: number,
+  progressCallback?: (opts: { loaded: number, total: number }) => any,
+): Promise<Uint8Array | Uint8Array[]> => {
+  const reportProgress = progressCallback && typeof progressCallback === 'function';
   const urls: string[] = Array.isArray(url)
     ? [...url] as string[]
     : [url as string];
@@ -64,11 +100,22 @@ export const loadBinaryResource = async (url: string | string[], nMaxParallel: n
     url: string,
     result: Uint8Array,
     started: boolean,
+    sizeTotal: number,
+    sizeLoaded: number,
   }[] = urls.map(u => ({
     url: u,
     result: new Uint8Array(),
     started: false,
+    sizeTotal: 0,
+    sizeLoaded: 0,
   }));
+
+  // Get the total length of all files
+  let totalSize = -1;
+  if (reportProgress) {
+    const sizeArr = await Promise.all(urls.map(u => getBinarySize(u)));
+    totalSize = sumArr(sizeArr);
+  }
 
   // This is not multi-thread, but just a simple naming to borrow the idea
   const threads: Promise<void>[] = [];
@@ -77,7 +124,17 @@ export const loadBinaryResource = async (url: string | string[], nMaxParallel: n
       const task = tasks.find(t => !t.started);
       if (!task) return;
       task.started = true;
-      task.result = await _loadBinaryResource(task.url);
+      task.result = await _loadBinaryResource(task.url, (progress: ProgressEvent) => {
+        task.sizeTotal = progress.total;
+        task.sizeLoaded = progress.loaded;
+        if (reportProgress) {
+          // report aggregated progress across all files
+          progressCallback({
+            loaded: sumArr(tasks.map(t => t.sizeLoaded)),
+            total: totalSize,
+          });
+        }
+      });
     }
   };
   for (let i = 0; i < nMaxParallel; i++) {
@@ -132,6 +189,8 @@ export const absoluteUrl = (relativePath: string) => new URL(relativePath, docum
 export const padDigits = (number: number, digits: number) => {
   return Array(Math.max(digits - String(number).length + 1, 0)).join('0') + number;
 }
+
+export const sumArr = (arr: number[]) => arr.reduce((prev, curr) => prev + curr, 0);
 
 /**
  * Browser feature detection

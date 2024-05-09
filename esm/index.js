@@ -1,3 +1,2 @@
-import { Wllama } from './wllama.js';
-export { Wllama };
+export * from './wllama.js';
 //# sourceMappingURL=index.js.map

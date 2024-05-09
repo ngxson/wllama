@@ -3,6 +3,7 @@ import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThrea
 ;
 ;
 ;
+;
 export class Wllama {
     proxy = null;
     pathConfig;
@@ -48,7 +49,7 @@ export class Wllama {
         if (modelUrl.length === 0) {
             throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
         }
-        const ggufBuffers = await loadBinaryResource(modelUrl, config.n_download_parallel ?? 3);
+        const ggufBuffers = await loadBinaryResource(modelUrl, config.parallelDownloads ?? 3, config.progressCallback);
         return await this.loadModel(ggufBuffers, config);
     }
     /**

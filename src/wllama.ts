@@ -37,8 +37,12 @@ export interface LoadModelConfig {
   // optimizations
   cache_type_k?: 'f16' | 'q8_0' | 'q4_0',
   cache_type_v?: 'f16',
+};
+
+export interface DownloadModelConfig extends LoadModelConfig {
   // download-specific params
-  n_download_parallel?: number,
+  parallelDownloads?: number,
+  progressCallback?: (opts: { loaded: number, total: number }) => any,
 };
 
 export interface SamplingConfig {
@@ -109,11 +113,15 @@ export class Wllama {
    * @param modelUrl URL or list of URLs (in the correct order)
    * @param config 
    */
-  async loadModelFromUrl(modelUrl: string | string[], config: LoadModelConfig): Promise<void> {
+  async loadModelFromUrl(modelUrl: string | string[], config: DownloadModelConfig): Promise<void> {
     if (modelUrl.length === 0) {
       throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
     }
-    const ggufBuffers = await loadBinaryResource(modelUrl, config.n_download_parallel ?? 3);
+    const ggufBuffers = await loadBinaryResource(
+      modelUrl,
+      config.parallelDownloads ?? 3,
+      config.progressCallback,
+    );
     return await this.loadModel(ggufBuffers, config);
   }
 
