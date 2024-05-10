@@ -10,13 +10,13 @@ export declare const joinBuffers: (buffers: Uint8Array[]) => Uint8Array;
 export declare const loadBinaryResource: (url: string | string[], nMaxParallel: number, progressCallback?: ((opts: {
     loaded: number;
     total: number;
-}) => any) | undefined) => Promise<Uint8Array | Uint8Array[]>;
+}) => any) | undefined) => Promise<ArrayBuffer | ArrayBuffer[]>;
 /**
  * Convert list of bytes (number) to text
  * @param buffer
  * @returns a string
  */
-export declare const bufToText: (buffer: Uint8Array) => string;
+export declare const bufToText: (buffer: ArrayBuffer) => string;
 /**
  * Get default stdout/stderr config for wasm module
  */

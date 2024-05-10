@@ -127,15 +127,16 @@ export class Wllama {
 
   /**
    * Load model from a given buffer
-   * @param ggufBuffer Uint8Array holds data of gguf file
+   * @param ggufBuffer ArrayBuffer holds data of gguf file. Buffers will be freed after being used.
    * @param config 
    */
-  async loadModel(ggufBuffer: Uint8Array | Uint8Array[], config: LoadModelConfig): Promise<void> {
-    const buffers: Uint8Array[] = Array.isArray(ggufBuffer)
-      ? ggufBuffer as Uint8Array[]
-      : [ggufBuffer as Uint8Array];
+  async loadModel(ggufBuffer: ArrayBuffer | ArrayBuffer[], config: LoadModelConfig): Promise<void> {
+    const buffers: ArrayBuffer[] = Array.isArray(ggufBuffer)
+      ? ggufBuffer as ArrayBuffer[]
+      : [ggufBuffer as ArrayBuffer];
+    const hasMultipleBuffers = buffers.length > 1;
     if (buffers.length === 0 || buffers.some(buf => buf.byteLength === 0)) {
-      throw new Error('Input model (or splits) must be non-empty Uint8Array');
+      throw new Error('Input model (or splits) must be non-empty ArrayBuffer');
     }
     if (this.proxy) {
       throw new Error('Module is already initialized');
@@ -180,7 +181,7 @@ export class Wllama {
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
-      model_path: buffers.length > 1
+      model_path: hasMultipleBuffers
         ? `/models/model-00001-of-${padDigits(buffers.length, 5)}.gguf`
         : '/models/model.gguf',
     });

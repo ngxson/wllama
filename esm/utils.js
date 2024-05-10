@@ -1,17 +1,25 @@
 const _loadBinaryResource = async (url, progressCallback) => {
-    let cache = null;
+    const reportProgress = progressCallback && typeof progressCallback === 'function';
+    // @ts-ignore
     const window = self;
+    const isInsideBrowser = (typeof window !== 'undefined');
+    let cache = null;
     // Try to find if the model data is cached in Web Worker memory.
-    if (typeof window === 'undefined') {
-        console.debug('`window` is not defined');
-    }
-    else if (window && window.caches) {
+    // @ts-ignore
+    if (isInsideBrowser && window.caches) {
+        // @ts-ignore
         cache = await window.caches.open('wllama_cache');
+        // @ts-ignore
         const cachedResponse = await cache.match(url);
         if (cachedResponse) {
             const data = await cachedResponse.arrayBuffer();
-            const byteArray = new Uint8Array(data);
-            return byteArray;
+            if (reportProgress) {
+                progressCallback({
+                    total: data.byteLength,
+                    loaded: data.byteLength,
+                });
+            }
+            return data;
         }
     }
     // Download model and store in cache
@@ -22,15 +30,14 @@ const _loadBinaryResource = async (url, progressCallback) => {
         req.onload = async (_) => {
             const arrayBuffer = req.response; // Note: not req.responseText
             if (arrayBuffer) {
-                const byteArray = new Uint8Array(arrayBuffer);
                 if (cache) {
                     await cache.put(url, new Response(arrayBuffer));
                 }
                 ;
-                resolve(byteArray);
+                resolve(arrayBuffer);
             }
         };
-        if (progressCallback && typeof progressCallback === 'function') {
+        if (reportProgress) {
             req.onprogress = progressCallback;
         }
         req.onerror = (err) => {
@@ -85,7 +92,7 @@ export const loadBinaryResource = async (url, nMaxParallel, progressCallback) =>
         : [url];
     const tasks = urls.map(u => ({
         url: u,
-        result: new Uint8Array(),
+        result: new ArrayBuffer(0),
         started: false,
         sizeTotal: 0,
         sizeLoaded: 0,
