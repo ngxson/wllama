@@ -1,41 +1,51 @@
+type ProgressCallback = (opts: { loaded: number, total: number }) => any;
+
 const _loadBinaryResource = async (
   url: string,
-  progressCallback?: typeof XMLHttpRequest['prototype']['onprogress']
-): Promise<Uint8Array> => {
-  let cache: Cache | null = null;
+  progressCallback?: ProgressCallback,
+): Promise<ArrayBuffer> => {
+  const reportProgress = progressCallback && typeof progressCallback === 'function';
+  // @ts-ignore
   const window = self;
+  const isInsideBrowser = (typeof window !== 'undefined');
+  let cache: Cache | null = null;
 
   // Try to find if the model data is cached in Web Worker memory.
-  if (typeof window === 'undefined') {
-    console.debug('`window` is not defined');
-  } else if (window && window.caches) {
+  // @ts-ignore
+  if (isInsideBrowser && window.caches) {
+    // @ts-ignore
     cache = await window.caches.open('wllama_cache');
+    // @ts-ignore
     const cachedResponse = await cache.match(url);
 
     if (cachedResponse) {
       const data = await cachedResponse.arrayBuffer();
-      const byteArray = new Uint8Array(data);
-      return byteArray;
+      if (reportProgress) {
+        progressCallback({
+          total: data.byteLength,
+          loaded: data.byteLength,
+        })
+      }
+      return data;
     }
   }
 
 
   // Download model and store in cache
-  const _promise = new Promise<Uint8Array>((resolve, reject) => {
+  const _promise = new Promise<ArrayBuffer>((resolve, reject) => {
     const req = new XMLHttpRequest();
     req.open('GET', url, true);
     req.responseType = 'arraybuffer';
     req.onload = async (_) => {
       const arrayBuffer = req.response; // Note: not req.responseText
       if (arrayBuffer) {
-        const byteArray = new Uint8Array(arrayBuffer);
         if (cache) {
-          await cache.put(url, new Response(arrayBuffer))
+          await cache.put(url, new Response(arrayBuffer));
         };
-        resolve(byteArray);
+        resolve(arrayBuffer);
       }
     };
-    if (progressCallback && typeof progressCallback === 'function') {
+    if (reportProgress) {
       req.onprogress = progressCallback;
     }
     req.onerror = (err) => {
@@ -90,7 +100,7 @@ export const loadBinaryResource = async (
   url: string | string[],
   nMaxParallel: number,
   progressCallback?: (opts: { loaded: number, total: number }) => any,
-): Promise<Uint8Array | Uint8Array[]> => {
+): Promise<ArrayBuffer | ArrayBuffer[]> => {
   const reportProgress = progressCallback && typeof progressCallback === 'function';
   const urls: string[] = Array.isArray(url)
     ? [...url] as string[]
@@ -98,13 +108,13 @@ export const loadBinaryResource = async (
 
   const tasks: {
     url: string,
-    result: Uint8Array,
+    result: ArrayBuffer,
     started: boolean,
     sizeTotal: number,
     sizeLoaded: number,
   }[] = urls.map(u => ({
     url: u,
-    result: new Uint8Array(),
+    result: new ArrayBuffer(0),
     started: false,
     sizeTotal: 0,
     sizeLoaded: 0,
@@ -124,7 +134,7 @@ export const loadBinaryResource = async (
       const task = tasks.find(t => !t.started);
       if (!task) return;
       task.started = true;
-      task.result = await _loadBinaryResource(task.url, (progress: ProgressEvent) => {
+      task.result = await _loadBinaryResource(task.url, (progress) => {
         task.sizeTotal = progress.total;
         task.sizeLoaded = progress.loaded;
         if (reportProgress) {
@@ -155,7 +165,7 @@ const textDecoder = new TextDecoder();
  * @param buffer 
  * @returns a string
  */
-export const bufToText = (buffer: Uint8Array): string => {
+export const bufToText = (buffer: ArrayBuffer): string => {
   return textDecoder.decode(buffer);
 };
 

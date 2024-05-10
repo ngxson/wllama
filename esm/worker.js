@@ -46,11 +46,6 @@ let wllamaStart;
 let wllamaAction;
 let wllamaExit;
 
-// utility function
-function padDigits(number, digits) {
-  return Array(Math.max(digits - String(number).length + 1, 0)).join(0) + number;
-}
-
 const callWrapper = (name, ret, args) => {
   const fn = wModule.cwrap(name, ret, args);
   const decodeException = wModule.cwrap('wllama_decode_exception', 'string', ['number']);
@@ -81,21 +76,12 @@ onmessage = async (e) => {
   }
 
   if (verb === 'module.init') {
-    const argGGUFBuffers = args[0]; // buffers for model
     try {
       const Module = ModuleWrapper();
       wModule = await Module(getWModuleConfig(pathConfig));
 
       // init FS
       wModule['FS_createPath']('/', 'models', true, true);
-      if (argGGUFBuffers.length === 1) {
-        wModule['FS_createDataFile']('/models', 'model.gguf', argGGUFBuffers[0], true, true, true);
-      } else {
-        for (let i = 0; i < argGGUFBuffers.length; i++) {
-          const fname = 'model-' + padDigits(i + 1, 5) + '-of-' + padDigits(argGGUFBuffers.length, 5) + '.gguf';
-          wModule['FS_createDataFile']('/models', fname, argGGUFBuffers[i], true, true, true);
-        }
-      }
 
       // init cwrap
       wllamaStart  = callWrapper('wllama_start' , 'number', []);
@@ -103,6 +89,18 @@ onmessage = async (e) => {
       wllamaExit   = callWrapper('wllama_exit'  , 'number', []);
       msg({ callbackId, result: null });
 
+    } catch (err) {
+      msg({ callbackId, err });
+    }
+    return;
+  }
+
+  if (verb === 'module.upload') {
+    const argFilename = args[0]; // file name
+    const argBuffer   = args[1]; // buffer for file data
+    try {
+      wModule['FS_createDataFile']('/models', argFilename, argBuffer, true, true, true);
+      msg({ callbackId, result: true });
     } catch (err) {
       msg({ callbackId, err });
     }
@@ -179,11 +177,26 @@ export class ProxyToWorker {
         this.worker = new Worker(workerURL);
         this.worker.onmessage = this.onRecvMsg.bind(this);
         this.worker.onerror = console.error;
-        return await this.pushTask({
+        const res = await this.pushTask({
             verb: 'module.init',
-            args: [ggufBuffers],
+            args: [],
             callbackId: this.taskId++,
         });
+        // copy buffer to worker
+        for (let i = 0; i < ggufBuffers.length; i++) {
+            await this.pushTask({
+                verb: 'module.upload',
+                args: [
+                    ggufBuffers.length === 1
+                        ? 'model.gguf'
+                        : `model-${padDigits(i + 1, 5)}-of-${padDigits(ggufBuffers.length, 5)}.gguf`,
+                    new Uint8Array(ggufBuffers[i]),
+                ],
+                callbackId: this.taskId++,
+            });
+            freeBuffer(ggufBuffers[i]);
+        }
+        return res;
     }
     wllamaStart() {
         return this.pushTask({
@@ -255,5 +268,28 @@ export class ProxyToWorker {
             }
         }
     }
+}
+/**
+ * Utility functions
+ */
+// Free ArrayBuffer by resizing them to 0. This is needed because sometimes we run into OOM issue.
+function freeBuffer(buf) {
+    // @ts-ignore
+    if (ArrayBuffer.prototype.transfer) {
+        // @ts-ignore
+        buf.transfer(0);
+        // @ts-ignore
+    }
+    else if (ArrayBuffer.prototype.resize && buf.resizable) {
+        // @ts-ignore
+        buf.resize(0);
+    }
+    else {
+        console.warn('Cannot free buffer. You may run into out-of-memory issue.');
+    }
+}
+// Zero-padding numbers
+function padDigits(number, digits) {
+    return Array(Math.max(digits - String(number).length + 1, 0)).join('0') + number;
 }
 //# sourceMappingURL=worker.js.map

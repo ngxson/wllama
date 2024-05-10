@@ -11,7 +11,7 @@
  * - Unidirection: { verb, args }
  */
 interface TaskParam {
-    verb: 'module.init' | 'wllama.start' | 'wllama.action' | 'wllama.exit';
+    verb: 'module.init' | 'module.upload' | 'wllama.start' | 'wllama.action' | 'wllama.exit';
     args: any[];
     callbackId: number;
 }
@@ -29,7 +29,7 @@ export declare class ProxyToWorker {
     pathConfig: any;
     multiThread: boolean;
     constructor(pathConfig: any, multiThread?: boolean);
-    moduleInit(ggufBuffers: Uint8Array[]): Promise<void>;
+    moduleInit(ggufBuffers: ArrayBuffer[]): Promise<void>;
     wllamaStart(): Promise<number>;
     wllamaAction(name: string, body: any): Promise<any>;
     wllamaExit(): Promise<number>;

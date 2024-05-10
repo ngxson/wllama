@@ -88,10 +88,10 @@ export declare class Wllama {
     loadModelFromUrl(modelUrl: string | string[], config: DownloadModelConfig): Promise<void>;
     /**
      * Load model from a given buffer
-     * @param ggufBuffer Uint8Array holds data of gguf file
+     * @param ggufBuffer ArrayBuffer holds data of gguf file. Buffers will be freed after being used.
      * @param config
      */
-    loadModel(ggufBuffer: Uint8Array | Uint8Array[], config: LoadModelConfig): Promise<void>;
+    loadModel(ggufBuffer: ArrayBuffer | ArrayBuffer[], config: LoadModelConfig): Promise<void>;
     /**
      * Calculate embedding vector for a given text.
      * By default, BOS and EOS tokens will be added automatically. You can use the "skipBOS" and "skipEOS" option to disable it.

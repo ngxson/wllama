@@ -35,6 +35,15 @@
       'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00003-of-00003.gguf',
     ];
 
+    // Or, try loading a bigger model (1.3GB in total)
+    /*const MODEL_SPLITS = [
+      'https://huggingface.co/ngxson/test_gguf_models/resolve/main/neuralreyna-mini-1.8b-v0.3.q4_k_m-00001-of-00005.gguf',
+      'https://huggingface.co/ngxson/test_gguf_models/resolve/main/neuralreyna-mini-1.8b-v0.3.q4_k_m-00002-of-00005.gguf',
+      'https://huggingface.co/ngxson/test_gguf_models/resolve/main/neuralreyna-mini-1.8b-v0.3.q4_k_m-00003-of-00005.gguf',
+      'https://huggingface.co/ngxson/test_gguf_models/resolve/main/neuralreyna-mini-1.8b-v0.3.q4_k_m-00004-of-00005.gguf',
+      'https://huggingface.co/ngxson/test_gguf_models/resolve/main/neuralreyna-mini-1.8b-v0.3.q4_k_m-00005-of-00005.gguf',
+    ];*/
+
     async function main() {
       let res, tokens, elapsed, buffer;
       const wllama = new Wllama(CONFIG_PATHS);
