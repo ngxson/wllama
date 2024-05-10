@@ -79,7 +79,19 @@ import { Wllama } from './esm/index.js';
   // Automatically switch between single-thread and multi-thread version based on browser support
   // If you want to enforce single-thread, add { "n_threads": 1 } to LoadModelConfig
   const wllama = new Wllama(CONFIG_PATHS);
-  await wllama.loadModelFromUrl('https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf', {});
+  // Define a function for tracking the model download progress
+  const progressCallback =  ({ loaded, total }) => {
+    // Calculate the progress as a percentage
+    const progressPercentage = Math.round((loaded / total) * 100);
+    // Log the progress in a user-friendly format
+    console.log(`Downloading... ${progressPercentage}%`);
+  };
+  await wllama.loadModelFromUrl(
+    "https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf",
+    {
+      progressCallback,
+    }
+  );
   const outputText = await wllama.createCompletion(elemInput.value, {
     nPredict: 50,
     sampling: {
