@@ -18,12 +18,21 @@
 static std::string result;
 static app_t app;
 
-extern "C" int wllama_start()
+extern "C" const char *wllama_start()
 {
-  log_disable();
-  llama_backend_init();
-  std::cerr << llama_print_system_info() << "\n";
-  return 0;
+  try
+  {
+    log_disable();
+    llama_backend_init();
+    std::cerr << llama_print_system_info() << "\n";
+    return "{\"success\":true}";
+  }
+  catch (std::exception &e)
+  {
+    json ex{{"__exception", std::string(e.what())}};
+    result = std::string(ex.dump());
+    return result.c_str();
+  }
 }
 
 extern "C" const char *wllama_action(const char *name, const char *body)
@@ -55,17 +64,28 @@ extern "C" const char *wllama_action(const char *name, const char *body)
   }
   catch (std::exception &e)
   {
-    result = std::string(e.what());
+    json ex{{"__exception", std::string(e.what())}};
+    result = std::string(ex.dump());
     return result.c_str();
   }
 }
 
-extern "C" void wllama_exit()
+extern "C" const char *wllama_exit()
 {
-  llama_free(app.ctx);
-  llama_free_model(app.model);
-  llama_sampling_free(app.ctx_sampling);
-  llama_backend_free();
+  try
+  {
+    llama_free(app.ctx);
+    llama_free_model(app.model);
+    llama_sampling_free(app.ctx_sampling);
+    llama_backend_free();
+    return "{\"success\":true}";
+  }
+  catch (std::exception &e)
+  {
+    json ex{{"__exception", std::string(e.what())}};
+    result = std::string(ex.dump());
+    return result.c_str();
+  }
 }
 
 extern "C" const char *wllama_decode_exception(int exception_ptr)
