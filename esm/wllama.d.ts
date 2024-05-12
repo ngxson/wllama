@@ -66,18 +66,27 @@ export declare class Wllama {
     private samplingConfig;
     constructor(config: AssetsPathConfig);
     /**
-     * Get token ID associated to BOS (begin of sentence) token
+     * Get token ID associated to BOS (begin of sentence) token.
+     *
+     * NOTE: This can only being used after `loadModel` is called.
+     *
      * @returns -1 if the model is not loaded.
      */
     getBOS(): number;
     /**
-     * Get token ID associated to EOS (end of sentence) token
+     * Get token ID associated to EOS (end of sentence) token.
+     *
+     * NOTE: This can only being used after `loadModel` is called.
+     *
      * @returns -1 if the model is not loaded.
      */
     getEOS(): number;
     /**
-     * Check if we're currently using multi-thread build
-     * @returns true if multi-thread is used
+     * Check if we're currently using multi-thread build.
+     *
+     * NOTE: This can only being used after `loadModel` is called.
+     *
+     * @returns true if multi-thread is used.
      */
     isMultithread(): boolean;
     /**

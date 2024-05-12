@@ -13,6 +13,7 @@ export interface LoadModelConfig {
   seed?: number,
   n_ctx?: number,
   n_batch?: number,
+  // by default, on multi-thread build, we take half number of available threads (hardwareConcurrency / 2)
   n_threads?: number,
   embeddings?: boolean,
   offload_kqv?: boolean,
@@ -85,7 +86,10 @@ export class Wllama {
   }
 
   /**
-   * Get token ID associated to BOS (begin of sentence) token
+   * Get token ID associated to BOS (begin of sentence) token.
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
    * @returns -1 if the model is not loaded.
    */
   getBOS(): number {
@@ -93,7 +97,10 @@ export class Wllama {
   }
 
   /**
-   * Get token ID associated to EOS (end of sentence) token
+   * Get token ID associated to EOS (end of sentence) token.
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
    * @returns -1 if the model is not loaded.
    */
   getEOS(): number {
@@ -101,8 +108,11 @@ export class Wllama {
   }
 
   /**
-   * Check if we're currently using multi-thread build
-   * @returns true if multi-thread is used
+   * Check if we're currently using multi-thread build.
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
+   * @returns true if multi-thread is used.
    */
   isMultithread(): boolean {
     return this.useMultiThread;
@@ -165,7 +175,7 @@ export class Wllama {
         'wllama.js': absoluteUrl(this.pathConfig['single-thread/wllama.js']),
         'wllama.wasm': absoluteUrl(this.pathConfig['single-thread/wllama.wasm']),
       };
-    this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread);
+    this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread ? nbThreads : 1);
     await this.proxy.moduleInit(buffers);
     // run it
     const startResult: number = await this.proxy.wllamaStart();

@@ -16,7 +16,7 @@ const WORKER_CODE = `
 const msg = (data) => postMessage(data);
 
 // Get module config that forwards stdout/err to main thread
-const getWModuleConfig = (pathConfig) => {
+const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
   if (!pathConfig['wllama.js']) {
     throw new Error('"wllama.js" is missing in pathConfig');
   }
@@ -37,6 +37,7 @@ const getWModuleConfig = (pathConfig) => {
       return p;
     },
     mainScriptUrlOrBlob: pathConfig['wllama.js'],
+    pthreadPoolSize,
   };
 };
 
@@ -77,9 +78,14 @@ onmessage = async (e) => {
   }
 
   if (verb === 'module.init') {
+    const argPathConfig     = args[0];
+    const argPThreadPoolSize = args[1];
     try {
       const Module = ModuleWrapper();
-      wModule = await Module(getWModuleConfig(pathConfig));
+      wModule = await Module(getWModuleConfig(
+        argPathConfig,
+        argPThreadPoolSize,
+      ));
 
       // init FS
       wModule['FS_createPath']('/', 'models', true, true);
@@ -162,10 +168,12 @@ export class ProxyToWorker {
   worker?: Worker;
   pathConfig: any;
   multiThread: boolean;
+  nbThread: number;
 
-  constructor(pathConfig: any, multiThread: boolean = false) {
+  constructor(pathConfig: any, nbThread: number = 1) {
     this.pathConfig = pathConfig;
-    this.multiThread = multiThread;
+    this.nbThread = nbThread;
+    this.multiThread = nbThread > 1;
   }
 
   async moduleInit(ggufBuffers: ArrayBuffer[]): Promise<void> {
@@ -179,7 +187,6 @@ export class ProxyToWorker {
     moduleCode = moduleCode.replace(/import\.meta/g, 'importMeta');
     const completeCode = [
       'const importMeta = {}',
-      `const pathConfig = ${JSON.stringify(this.pathConfig)}`,
       `function ModuleWrapper() {
         const _scriptDir = ${JSON.stringify(window.location.href)};
         return ${moduleCode};
@@ -194,7 +201,10 @@ export class ProxyToWorker {
 
     const res = await this.pushTask({
       verb: 'module.init',
-      args: [],
+      args: [
+        this.pathConfig,
+        this.nbThread,
+      ],
       callbackId: this.taskId++,
     });
 
