@@ -92,7 +92,7 @@ export class Wllama {
                 'wllama.js': absoluteUrl(this.pathConfig['single-thread/wllama.js']),
                 'wllama.wasm': absoluteUrl(this.pathConfig['single-thread/wllama.wasm']),
             };
-        this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread);
+        this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread ? nbThreads : 1);
         await this.proxy.moduleInit(buffers);
         // run it
         const startResult = await this.proxy.wllamaStart();
