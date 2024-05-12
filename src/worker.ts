@@ -38,9 +38,33 @@ const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
     },
     mainScriptUrlOrBlob: pathConfig['wllama.js'],
     pthreadPoolSize,
+    wasmMemory: pthreadPoolSize > 1 ? getWasmMemory() : null,
   };
 };
 
+// Get the memory to be used by wasm. (Only used in multi-thread mode)
+// Because we have a weird OOM issue on iOS, we need to try some values
+// See: https://github.com/emscripten-core/emscripten/issues/19144
+//      https://github.com/godotengine/godot/issues/70621
+const getWasmMemory = () => {
+  let minBytes = 128 * 1024 * 1024;
+  let maxBytes = 4096 * 1024 * 1024;
+  let stepBytes = 128 * 1024 * 1024;
+  while (maxBytes > minBytes) {
+    try {
+      const wasmMemory = new WebAssembly.Memory({
+        initial: minBytes / 65536,
+        maximum: maxBytes / 65536,
+        shared: true,
+      });
+      return wasmMemory;
+    } catch (e) {
+      maxBytes -= stepBytes;
+      continue; // retry
+    }
+  }
+  throw new Error('Cannot allocate WebAssembly.Memory');
+};
 
 // Start the main llama.cpp
 let wModule;
