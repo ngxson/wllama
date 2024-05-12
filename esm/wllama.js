@@ -20,22 +20,31 @@ export class Wllama {
         this.pathConfig = config;
     }
     /**
-     * Get token ID associated to BOS (begin of sentence) token
+     * Get token ID associated to BOS (begin of sentence) token.
+     *
+     * NOTE: This can only being used after `loadModel` is called.
+     *
      * @returns -1 if the model is not loaded.
      */
     getBOS() {
         return this.bosToken;
     }
     /**
-     * Get token ID associated to EOS (end of sentence) token
+     * Get token ID associated to EOS (end of sentence) token.
+     *
+     * NOTE: This can only being used after `loadModel` is called.
+     *
      * @returns -1 if the model is not loaded.
      */
     getEOS() {
         return this.bosToken;
     }
     /**
-     * Check if we're currently using multi-thread build
-     * @returns true if multi-thread is used
+     * Check if we're currently using multi-thread build.
+     *
+     * NOTE: This can only being used after `loadModel` is called.
+     *
+     * @returns true if multi-thread is used.
      */
     isMultithread() {
         return this.useMultiThread;
