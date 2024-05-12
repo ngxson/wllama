@@ -34,12 +34,12 @@ Limitations:
 
 ## Demo and documentations
 
-**Documentation:** https://ngxson.github.io/wllama/docs/
+**Documentation:** https://github.ngxson.com/wllama/docs/
 
 Demo:
-- Basic usages with completions and embeddings: https://ngxson.github.io/wllama/examples/basic/
-- Advanced example using low-level API: https://ngxson.github.io/wllama/examples/advanced/
-- Embedding and cosine distance: https://ngxson.github.io/wllama/examples/embeddings/
+- Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/
+- Advanced example using low-level API: https://github.ngxson.com/wllama/examples/advanced/
+- Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/
 
 ## How to use
 
