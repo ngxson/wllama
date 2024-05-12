@@ -119,7 +119,9 @@ export declare class Wllama {
      */
     createCompletion(prompt: string, options: {
         nPredict?: number;
-        onNewToken?(token: number, piece: Uint8Array, currentText: string): any;
+        onNewToken?(token: number, piece: Uint8Array, currentText: string, optionals: {
+            abortSignal: () => any;
+        }): any;
         sampling?: SamplingConfig;
     }): Promise<string>;
     /**
