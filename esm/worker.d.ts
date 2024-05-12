@@ -34,6 +34,7 @@ export declare class ProxyToWorker {
     wllamaStart(): Promise<number>;
     wllamaAction(name: string, body: any): Promise<any>;
     wllamaExit(): Promise<number>;
+    private parseResult;
     private pushTask;
     private runTaskLoop;
     private onRecvMsg;

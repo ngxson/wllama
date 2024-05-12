@@ -105,12 +105,14 @@ export class Wllama {
         await this.proxy.moduleInit(buffers);
         // run it
         const startResult = await this.proxy.wllamaStart();
-        if (startResult !== 0) {
+        if (!startResult.success) {
             throw new Error(`Error while calling start function, result = ${startResult}`);
         }
         // load the model
         const loadResult = await this.proxy.wllamaAction('load', {
             ...config,
+            use_mmap: true,
+            use_mlock: true,
             seed: config.seed || Math.floor(Math.random() * 100000),
             n_ctx: config.n_ctx || 1024,
             n_threads: this.useMultiThread ? nbThreads : 1,

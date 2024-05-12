@@ -73,7 +73,6 @@ let wllamaExit;
 
 const callWrapper = (name, ret, args) => {
   const fn = wModule.cwrap(name, ret, args);
-  const decodeException = wModule.cwrap('wllama_decode_exception', 'string', ['number']);
   return async (action, req) => {
     let result;
     try {
@@ -83,9 +82,8 @@ const callWrapper = (name, ret, args) => {
         result = fn();
       }
     } catch (ex) {
-      const what = await decodeException(ex);
-      console.error(what);
-      throw new Error(what);
+      console.error(ex);
+      throw ex;
     }
     return result;
   };
@@ -114,9 +112,9 @@ onmessage = async (e) => {
       wModule['FS_createPath']('/', 'models', true, true);
 
       // init cwrap
-      wllamaStart  = callWrapper('wllama_start' , 'number', []);
+      wllamaStart  = callWrapper('wllama_start' , 'string', []);
       wllamaAction = callWrapper('wllama_action', 'string', ['string', 'string']);
-      wllamaExit   = callWrapper('wllama_exit'  , 'number', []);
+      wllamaExit   = callWrapper('wllama_exit'  , 'string', []);
       msg({ callbackId, result: null });
 
     } catch (err) {
@@ -232,12 +230,14 @@ export class ProxyToWorker {
         }
         return res;
     }
-    wllamaStart() {
-        return this.pushTask({
+    async wllamaStart() {
+        const result = await this.pushTask({
             verb: 'wllama.start',
             args: [],
             callbackId: this.taskId++,
         });
+        const parsedResult = this.parseResult(result);
+        return parsedResult;
     }
     async wllamaAction(name, body) {
         const result = await this.pushTask({
@@ -245,14 +245,24 @@ export class ProxyToWorker {
             args: [name, JSON.stringify(body)],
             callbackId: this.taskId++,
         });
-        return JSON.parse(result);
+        const parsedResult = this.parseResult(result);
+        return parsedResult;
     }
-    wllamaExit() {
-        return this.pushTask({
+    async wllamaExit() {
+        const result = await this.pushTask({
             verb: 'wllama.exit',
             args: [],
             callbackId: this.taskId++,
         });
+        const parsedResult = this.parseResult(result);
+        return parsedResult;
+    }
+    parseResult(result) {
+        const parsedResult = JSON.parse(result);
+        if (parsedResult && parsedResult['__exception']) {
+            throw new Error(parsedResult['__exception']);
+        }
+        return parsedResult;
     }
     pushTask(param) {
         return new Promise((resolve, reject) => {
