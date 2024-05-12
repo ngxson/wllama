@@ -70,6 +70,7 @@ let wModule;
 let wllamaStart;
 let wllamaAction;
 let wllamaExit;
+let workDir = []; // to be used by workerfs
 
 const callWrapper = (name, ret, args) => {
   const fn = wModule.cwrap(name, ret, args);
@@ -110,9 +111,6 @@ onmessage = async (e) => {
         argPThreadPoolSize,
       ));
 
-      // init FS
-      wModule['FS_createPath']('/', 'models', true, true);
-
       // init cwrap
       wllamaStart  = callWrapper('wllama_start' , 'number', []);
       wllamaAction = callWrapper('wllama_action', 'string', ['string', 'string']);
@@ -129,7 +127,10 @@ onmessage = async (e) => {
     const argFilename = args[0]; // file name
     const argBuffer   = args[1]; // buffer for file data
     try {
-      wModule['FS_createDataFile']('/models', argFilename, argBuffer, true, true, true);
+      workDir.push({
+        name: argFilename,
+        data: new Blob([argBuffer]),
+      });
       msg({ callbackId, result: true });
     } catch (err) {
       msg({ callbackId, err });
@@ -139,6 +140,13 @@ onmessage = async (e) => {
 
   if (verb === 'wllama.start') {
     try {
+      // init FS
+      wModule['FS_createPath']('/', 'models', true, true);
+      wModule['FS'].mount(wModule['WORKERFS'], {
+        blobs: workDir,
+      }, '/models');
+
+      // call start
       const result = await wllamaStart();
       msg({ callbackId, result });
     } catch (err) {

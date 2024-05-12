@@ -111,6 +111,8 @@ export class Wllama {
         // load the model
         const loadResult = await this.proxy.wllamaAction('load', {
             ...config,
+            use_mmap: false,
+            use_mlock: false,
             seed: config.seed || Math.floor(Math.random() * 100000),
             n_ctx: config.n_ctx || 1024,
             n_threads: this.useMultiThread ? nbThreads : 1,
