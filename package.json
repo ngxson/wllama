@@ -10,7 +10,7 @@
   "scripts": {
     "serve": "node ./scripts/http_server.js",
     "serve:mt": "MULTITHREAD=1 node ./scripts/http_server.js",
-    "clean": "rm -rf ./esm",
+    "clean": "rm -rf ./esm && rm -rf ./docs && rm -rf ./wasm",
     "build:wasm": "./scripts/build_wasm.sh",
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "postbuild": "./scripts/post_build.sh && npm run docs",
