@@ -39,6 +39,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Remove .gitignore and node_modules
+        run: |
+          rm .gitignore
+          rm -rf node_modules
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
