@@ -166,6 +166,9 @@ export class Wllama {
         await this.samplingAccept(tokens);
         await this.decode(tokens, {});
         let outBuf = new Uint8Array();
+        // abort signal
+        let abort = false;
+        const abortSignal = () => { abort = true; };
         // predict next tokens
         for (let i = 0; i < (options.nPredict ?? Infinity); i++) {
             const sampled = await this.samplingSample();
@@ -175,7 +178,12 @@ export class Wllama {
             }
             outBuf = joinBuffers([outBuf, sampled.piece]);
             if (options.onNewToken) {
-                options.onNewToken(sampled.token, sampled.piece, bufToText(outBuf));
+                options.onNewToken(sampled.token, sampled.piece, bufToText(outBuf), {
+                    abortSignal,
+                });
+            }
+            if (abort) {
+                break; // abort signal is set
             }
             // decode next token
             await this.samplingAccept([sampled.token]);
