@@ -6,6 +6,10 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 
 ## Recent changes
 
+- Version 1.8.0
+  - Docs & demo address changed from `ngxson.github.io` to `github.ngxson.com`. This allows adding COOP/COEP headers (required to run multi-thread examples)
+  - Added `abortSignal`, see [#26](https://github.com/ngxson/wllama/pull/26)
+  - For more details, see [releases page](https://github.com/ngxson/wllama/releases)
 - Version 1.7.0
   - When downloading, `n_downloads_parallel` is changed to `parallelDownloads`
   - Added support for `progressCallback` when downloading. See [advanced example](./examples/advanced/index.html)
