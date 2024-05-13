@@ -123,7 +123,7 @@ export class Wllama {
    * @param modelUrl URL or list of URLs (in the correct order)
    * @param config 
    */
-  async loadModelFromUrl(modelUrl: string | string[], config: DownloadModelConfig): Promise<void> {
+  async loadModelFromUrl(modelUrl: string | string[], config: DownloadModelConfig = {}): Promise<void> {
     if (modelUrl.length === 0) {
       throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
     }

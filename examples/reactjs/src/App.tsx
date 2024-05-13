@@ -27,7 +27,7 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      await wllama.loadModelFromUrl(CMPL_MODEL, {});
+      await wllama.loadModelFromUrl(CMPL_MODEL);
       setReady(true);
     })();
   }, [wllama]);
