@@ -15,7 +15,7 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "postbuild": "./scripts/post_build.sh && npm run docs",
     "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts",
-    "upload": "npm publish --access public"
+    "upload": "npm run build && npm publish --access public"
   },
   "repository": {
     "type": "git",
