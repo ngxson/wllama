@@ -4,6 +4,11 @@
 #include <sstream>
 #include <stdio.h>
 
+#include <stdlib.h>
+#include <unistd.h>
+#include <malloc.h>
+#include <emscripten/emscripten.h>
+
 #include "llama.h"
 #include "json.hpp"
 #include "common.h"
@@ -86,9 +91,26 @@ extern "C" const char *wllama_exit()
   }
 }
 
-extern "C" const char *wllama_decode_exception(int exception_ptr)
+extern "C" const char *wllama_debug()
 {
-  return reinterpret_cast<std::exception *>(exception_ptr)->what();
+  auto get_mem_total = [&]()
+  {
+    return EM_ASM_INT(return HEAP8.length);
+  };
+  auto get_mem_free = [&]()
+  {
+    auto i = mallinfo();
+    unsigned int total_mem = get_mem_total();
+    unsigned int dynamic_top = (unsigned int)sbrk(0);
+    return total_mem - dynamic_top + i.fordblks;
+  };
+  json res = json{
+      {"mem_total_MB", get_mem_total() / 1024 / 1024},
+      {"mem_free_MB", get_mem_free() / 1024 / 1024},
+      {"mem_used_MB", (get_mem_total() - get_mem_free()) / 1024 / 1024},
+  };
+  result = std::string(res.dump());
+  return result.c_str();
 }
 
 int main()

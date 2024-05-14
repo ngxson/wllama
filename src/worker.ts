@@ -74,6 +74,7 @@ let wModule;
 let wllamaStart;
 let wllamaAction;
 let wllamaExit;
+let wllamaDebug;
 
 const callWrapper = (name, ret, args) => {
   const fn = wModule.cwrap(name, ret, args);
@@ -119,6 +120,7 @@ onmessage = async (e) => {
       wllamaStart  = callWrapper('wllama_start' , 'string', []);
       wllamaAction = callWrapper('wllama_action', 'string', ['string', 'string']);
       wllamaExit   = callWrapper('wllama_exit'  , 'string', []);
+      wllamaDebug  = callWrapper('wllama_debug' , 'string', []);
       msg({ callbackId, result: null });
 
     } catch (err) {
@@ -170,6 +172,16 @@ onmessage = async (e) => {
     }
     return;
   }
+
+  if (verb === 'wllama.debug') {
+    try {
+      const result = await wllamaDebug();
+      msg({ callbackId, result });
+    } catch (err) {
+      msg({ callbackId, err });
+    }
+    return;
+  }
 };
 `;
 
@@ -178,7 +190,8 @@ interface TaskParam {
   | 'module.upload'
   | 'wllama.start'
   | 'wllama.action'
-  | 'wllama.exit',
+  | 'wllama.exit'
+  | 'wllama.debug',
   args: any[],
   callbackId: number,
 };
@@ -271,7 +284,7 @@ export class ProxyToWorker {
     return parsedResult;
   }
 
-  async wllamaExit(): Promise<number> {
+  async wllamaExit(): Promise<{ success: boolean }> {
     const result = await this.pushTask({
       verb: 'wllama.exit',
       args: [],
@@ -279,6 +292,15 @@ export class ProxyToWorker {
     });
     const parsedResult = this.parseResult(result);
     return parsedResult;
+  }
+
+  async wllamaDebug(): Promise<any> {
+    const result = await this.pushTask({
+      verb: 'wllama.debug',
+      args: [],
+      callbackId: this.taskId++,
+    });
+    return JSON.parse(result);
   }
 
   private parseResult(result: any): any {
