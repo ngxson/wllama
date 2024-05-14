@@ -94,7 +94,7 @@ export declare class Wllama {
      * @param modelUrl URL or list of URLs (in the correct order)
      * @param config
      */
-    loadModelFromUrl(modelUrl: string | string[], config: DownloadModelConfig): Promise<void>;
+    loadModelFromUrl(modelUrl: string | string[], config?: DownloadModelConfig): Promise<void>;
     /**
      * Load model from a given buffer
      * @param ggufBuffer ArrayBuffer holds data of gguf file. Buffers will be freed after being used.

@@ -84,7 +84,7 @@
 
     async function startCompletions(modelUrl) {
       const wllama = new Wllama(CONFIG_PATHS);
-      await wllama.loadModelFromUrl(modelUrl, {});
+      await wllama.loadModelFromUrl(modelUrl);
       setCmplDisable(false);
 
       elemBtnCompletions.onclick = async () => {
