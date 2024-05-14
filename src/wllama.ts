@@ -17,7 +17,6 @@ export interface LoadModelConfig {
   n_threads?: number,
   embeddings?: boolean,
   offload_kqv?: boolean,
-  n_seq_max?: number,
   pooling_type?: 'LLAMA_POOLING_TYPE_UNSPECIFIED'
     | 'LLAMA_POOLING_TYPE_NONE'
     | 'LLAMA_POOLING_TYPE_MEAN'
