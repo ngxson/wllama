@@ -74,9 +74,7 @@ extern "C" const char *wllama_exit()
 {
   try
   {
-    llama_free(app.ctx);
-    llama_free_model(app.model);
-    llama_sampling_free(app.ctx_sampling);
+    free_all(app);
     llama_backend_free();
     return "{\"success\":true}";
   }

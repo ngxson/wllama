@@ -22,11 +22,11 @@ const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
   }
   return {
     noInitialRun: true,
-    print: function(text) {
+    print: function (text) {
       if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
       msg({ verb: 'console.log', args: [text] });
     },
-    printErr: function(text) {
+    printErr: function (text) {
       if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
       msg({ verb: 'console.warn', args: [text] });
     },
@@ -39,6 +39,9 @@ const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
     mainScriptUrlOrBlob: pathConfig['wllama.js'],
     pthreadPoolSize,
     wasmMemory: pthreadPoolSize > 1 ? getWasmMemory() : null,
+    onAbort: function (text) {
+      msg({ verb: 'signal.abort', args: [text] });
+    },
   };
 };
 
@@ -172,10 +175,10 @@ onmessage = async (e) => {
 
 interface TaskParam {
   verb: 'module.init'
-    | 'module.upload'
-    | 'wllama.start'
-    | 'wllama.action'
-    | 'wllama.exit',
+  | 'module.upload'
+  | 'wllama.start'
+  | 'wllama.action'
+  | 'wllama.exit',
   args: any[],
   callbackId: number,
 };
@@ -216,7 +219,7 @@ export class ProxyToWorker {
       WORKER_CODE,
     ].join(';\n\n');
     // https://stackoverflow.com/questions/5408406/web-workers-without-a-separate-javascript-file
-    const workerURL = window.URL.createObjectURL(new Blob([completeCode], {type: 'text/javascript'}));
+    const workerURL = window.URL.createObjectURL(new Blob([completeCode], { type: 'text/javascript' }));
     this.worker = new Worker(workerURL);
     this.worker.onmessage = this.onRecvMsg.bind(this);
     this.worker.onerror = console.error;
@@ -292,7 +295,7 @@ export class ProxyToWorker {
       this.runTaskLoop();
     });
   }
-  
+
   private async runTaskLoop() {
     if (this.busy) {
       return; // another loop is already running
@@ -315,6 +318,8 @@ export class ProxyToWorker {
       if (verb.endsWith('warn')) console.warn(...args);
       if (verb.endsWith('error')) console.error(...args);
       return;
+    } else if (verb === 'signal.abort') {
+      this.abort(args[0]);
     }
 
     const { callbackId, result, err } = e.data;
@@ -327,6 +332,14 @@ export class ProxyToWorker {
       } else {
         console.error(`Cannot find waiting task with callbackId = ${callbackId}`);
       }
+    }
+  }
+
+  private abort(text: string) {
+    while (this.resultQueue.length > 0) {
+      const waitingTask = this.resultQueue.pop();
+      if (!waitingTask) break;
+      waitingTask.reject(new Error(`Received abort signal from llama.cpp; Message: ${text || '(empty)'}`));
     }
   }
 }

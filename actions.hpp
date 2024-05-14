@@ -106,13 +106,36 @@ inline static llama_rope_scaling_type rope_scaling_type_from_str(const std::stri
   throw std::runtime_error("Invalid RoPE scaling type: " + s);
 }
 
+class app_exception : public std::exception
+{
+public:
+  app_exception(const std::string &msg) throw() : message(msg) {}
+  virtual ~app_exception() throw() {}
+  const char *what() const throw() { return message.c_str(); }
+
+private:
+  std::string message;
+};
+
+void free_all(app_t &app)
+{
+  if (app.ctx != nullptr)
+    llama_free(app.ctx);
+  if (app.model != nullptr)
+    llama_free_model(app.model);
+  if (app.ctx_sampling != nullptr)
+    llama_sampling_free(app.ctx_sampling);
+}
+
 //////////////////////////////////////////
 //////////////////////////////////////////
 //////////////////////////////////////////
 
 json action_load(app_t &app, json &body)
 {
+  free_all(app);
   std::string model_path = body["model_path"];
+  bool n_ctx_auto = body.contains("n_ctx_auto") ? body.at("n_ctx_auto").get<bool>() : false;
   auto mparams = llama_model_default_params();
   if (body.contains("use_mmap"))
     mparams.use_mmap = body["use_mmap"];
@@ -163,11 +186,39 @@ json action_load(app_t &app, json &body)
   if (body.contains("cache_type_v"))
     cparams.type_k = kv_cache_type_from_str(body["cache_type_v"]);
   app.model = llama_load_model_from_file(model_path.c_str(), mparams);
-  app.ctx = llama_new_context_with_model(app.model, cparams);
+  if (app.model == nullptr)
+  {
+    free_all(app);
+    throw app_exception("Error while loading model");
+  }
+  for (; cparams.n_ctx > 0; cparams.n_ctx -= 1024)
+  {
+    app.ctx = llama_new_context_with_model(app.model, cparams);
+    if (app.ctx != nullptr)
+    {
+      break; // OK
+    }
+    if (!n_ctx_auto)
+    {
+      free_all(app);
+      throw app_exception("Error while creating llama_context model");
+    }
+    else
+    {
+      std::cerr << "llama_context == nullptr, Retrying with n_ctx = " << cparams.n_ctx;
+      continue;
+    }
+  }
+  if (cparams.n_ctx < 0)
+  {
+    free_all(app);
+    throw app_exception("Out of memory, cannot create llama_context model");
+  }
   llama_batch_free(app.batch);
   app.batch = llama_batch_init(cparams.n_batch, 0, 1);
   return json{
       {"success", true},
+      {"n_ctx", cparams.n_ctx},
       {"token_bos", llama_token_bos(app.model)},
       {"token_eos", llama_token_eos(app.model)},
   };
@@ -484,11 +535,13 @@ json action_session_save(app_t &app, json &body)
 {
   std::string session_path = body["session_path"];
   std::vector<llama_token> dummy;
-  if (!llama_save_session_file(
+  if (!llama_state_seq_save_file(
           app.ctx,
           session_path.c_str(),
-          dummy.data(),
-          dummy.size()))
+          0,            // seq_id
+          dummy.data(), // tokens
+          dummy.size()  // n_token_count
+          ))
   {
     return json{{"error", "action_session_save failed"}};
   }
@@ -506,12 +559,14 @@ json action_session_load(app_t &app, json &body)
   auto n_ctx = llama_n_ctx(app.ctx);
   size_t n_token_count_out = 0;
   std::vector<llama_token> dummy;
-  if (!llama_load_session_file(
+  if (!llama_state_seq_load_file(
           app.ctx,
           session_path.c_str(),
-          dummy.data(),
-          dummy.capacity(),
-          &n_token_count_out))
+          0,                 // dest_seq_id
+          dummy.data(),      // tokens_out
+          dummy.capacity(),  // n_token_capacity
+          &n_token_count_out // n_token_count_out
+          ))
   {
     return json{{"error", "llama_load_session_file failed"}};
   }
