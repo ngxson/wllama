@@ -481,5 +481,12 @@ export class Wllama {
     await this.proxy.wllamaExit();
   }
 
+  /**
+   * get debug info
+   */
+  async _getDebugInfo(): Promise<any> {
+    return await this.proxy.wllamaDebug();
+  }
+
   // TODO: add current_status
 }
