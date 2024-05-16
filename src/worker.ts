@@ -11,7 +11,97 @@
  * - Unidirection: { verb, args }
  */
 
-const WORKER_CODE = `
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+
+/**
+ * By default, emscripten uses memfs. The way it works is by
+ * allocating new Uint8Array in javascript heap. This is not good
+ * because it requires files to be copied to wasm heap each time
+ * a file is read.
+ * 
+ * HeapFS is an alternative, which resolves this problem by
+ * allocating space for file directly inside wasm heap. This
+ * allows us to mmap without doing any copy.
+ * 
+ * For llama.cpp, this is great because we use MAP_SHARED
+ * 
+ * Ref: https://github.com/ngxson/wllama/pull/39
+ */
+const MEMFS_PATCH_TO_HEAPFS = `
+const fileToPtr = {};
+
+// Patch and redirect memfs calls to wllama
+const patchMEMFS = () => {
+  const m = wModule;
+  // save functions
+  m.MEMFS.stream_ops._read = m.MEMFS.stream_ops.read;
+  m.MEMFS.stream_ops._write = m.MEMFS.stream_ops.write;
+  m.MEMFS.stream_ops._llseek = m.MEMFS.stream_ops.llseek;
+  m.MEMFS.stream_ops._allocate = m.MEMFS.stream_ops.allocate;
+  m.MEMFS.stream_ops._mmap = m.MEMFS.stream_ops.mmap;
+  m.MEMFS.stream_ops._msync = m.MEMFS.stream_ops.msync;
+
+  const patchStream = (stream) => {
+    const name = stream.node.name;
+    if (fileToPtr[name]) {
+      const f = fileToPtr[name];
+      stream.node.contents = m.HEAPU8.subarray(f.ptr, f.ptr + f.size);
+      stream.node.usedBytes = f.size;
+    }
+  };
+
+  // replace "read" functions
+  m.MEMFS.stream_ops.read = function (stream, buffer, offset, length, position) {
+    patchStream(stream);
+    return m.MEMFS.stream_ops._read(stream, buffer, offset, length, position);
+  };
+  m.MEMFS.ops_table.file.stream.read = m.MEMFS.stream_ops.read;
+
+  // replace "llseek" functions
+  m.MEMFS.stream_ops.llseek = function (stream, offset, whence) {
+    patchStream(stream);
+    return m.MEMFS.stream_ops._llseek(stream, offset, whence);
+  };
+  m.MEMFS.ops_table.file.stream.llseek = m.MEMFS.stream_ops.llseek;
+
+  // replace "mmap" functions
+  m.MEMFS.stream_ops.mmap = function (stream, length, position, prot, flags) {
+    patchStream(stream);
+    const name = stream.node.name;
+    if (fileToPtr[name]) {
+      const f = fileToPtr[name];
+      return {
+        ptr: f.ptr + position,
+        allocated: false,
+      };
+    } else {
+      return m.MEMFS.stream_ops._mmap(stream, length, position, prot, flags);
+    }
+  };
+  m.MEMFS.ops_table.file.stream.mmap = m.MEMFS.stream_ops.mmap;
+
+  // mount FS
+  m.FS.mkdir('/models');
+  m.FS.mount(m.MEMFS, { root: '.' }, '/models');
+};
+
+// Add new file to wllama heapfs
+const heapfsWriteFile = async (name, buf) => {
+  const m = wModule;
+  const ptr = m.mmapAlloc(buf.byteLength);
+  m.HEAPU8.set(buf, ptr);
+  fileToPtr[name] = {
+    ptr: ptr,
+    size: buf.byteLength,
+  };
+};
+`;
+
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+
+const WORKER_UTILS = `
 // send message back to main thread
 const msg = (data) => postMessage(data);
 
@@ -68,13 +158,22 @@ const getWasmMemory = () => {
   }
   throw new Error('Cannot allocate WebAssembly.Memory');
 };
+`;
 
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+
+const WORKER_CODE = `
 // Start the main llama.cpp
 let wModule;
 let wllamaStart;
 let wllamaAction;
 let wllamaExit;
 let wllamaDebug;
+
+${WORKER_UTILS}
+
+${MEMFS_PATCH_TO_HEAPFS}
 
 const callWrapper = (name, ret, args) => {
   const fn = wModule.cwrap(name, ret, args);
@@ -114,7 +213,7 @@ onmessage = async (e) => {
       ));
 
       // init FS
-      wModule['FS_createPath']('/', 'models', true, true);
+      patchMEMFS();
 
       // init cwrap
       wllamaStart  = callWrapper('wllama_start' , 'string', []);
@@ -133,7 +232,11 @@ onmessage = async (e) => {
     const argFilename = args[0]; // file name
     const argBuffer   = args[1]; // buffer for file data
     try {
-      wModule['FS_createDataFile']('/models', argFilename, argBuffer, true, true, true);
+      // create blank file
+      const empty = new ArrayBuffer(0);
+      wModule['FS_createDataFile']('/models', argFilename, empty, true, true, true);
+      // write data to heap
+      await heapfsWriteFile(argFilename, argBuffer);
       msg({ callbackId, result: true });
     } catch (err) {
       msg({ callbackId, err });
