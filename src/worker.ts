@@ -90,7 +90,7 @@ const patchMEMFS = () => {
 const heapfsWriteFile = async (name, buf) => {
   const m = wModule;
   const ptr = m.mmapAlloc(buf.byteLength);
-  m.HEAPU8.set(new Uint8Array(buf), ptr);
+  m.HEAPU8.set(buf, ptr);
   fileToPtr[name] = {
     ptr: ptr,
     size: buf.byteLength,
