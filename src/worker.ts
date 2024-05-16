@@ -11,6 +11,23 @@
  * - Unidirection: { verb, args }
  */
 
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+
+/**
+ * By default, emscripten uses memfs. The way it works is by
+ * allocating new Uint8Array in javascript heap. This is not good
+ * because it requires files to be copied to wasm heap each time
+ * a file is read.
+ * 
+ * HeapFS is an alternative, which resolves this problem by
+ * allocating space for file directly inside wasm heap. This
+ * allows us to mmap without doing any copy.
+ * 
+ * For llama.cpp, this is great because we use MAP_SHARED
+ * 
+ * Ref: https://github.com/ngxson/wllama/pull/39
+ */
 const MEMFS_PATCH_TO_HEAPFS = `
 const fileToPtr = {};
 
@@ -84,7 +101,7 @@ const heapfsWriteFile = async (name, buf) => {
 //////////////////////////////////////////////////
 //////////////////////////////////////////////////
 
-const WORKER_CODE = `
+const WORKER_UTILS = `
 // send message back to main thread
 const msg = (data) => postMessage(data);
 
@@ -141,13 +158,20 @@ const getWasmMemory = () => {
   }
   throw new Error('Cannot allocate WebAssembly.Memory');
 };
+`;
 
+//////////////////////////////////////////////////
+//////////////////////////////////////////////////
+
+const WORKER_CODE = `
 // Start the main llama.cpp
 let wModule;
 let wllamaStart;
 let wllamaAction;
 let wllamaExit;
 let wllamaDebug;
+
+${WORKER_UTILS}
 
 ${MEMFS_PATCH_TO_HEAPFS}
 
