@@ -68,6 +68,19 @@ export interface SamplingConfig {
   logit_bias?: { token: number, bias: number }[],
 };
 
+export interface ChatCompletionOptions {
+  nPredict?: number,
+  onNewToken?(token: number, piece: Uint8Array, currentText: string, optionals: {
+    abortSignal: () => any,
+  }): any,
+  sampling?: SamplingConfig,
+  /**
+   * List of custom token IDs for stopping the generation.  
+   * Note: To convert from text to token ID, use lookupToken()
+   */
+  stopTokens?: number[],
+};
+
 export class Wllama {
   private proxy: ProxyToWorker = null as any;
   private pathConfig: AssetsPathConfig;
@@ -76,6 +89,7 @@ export class Wllama {
   // available when loaded
   private bosToken: number = -1;
   private eosToken: number = -1;
+  private eotToken: number = -1;
   private samplingConfig: SamplingConfig = {};
 
   constructor(config: AssetsPathConfig) {
@@ -103,7 +117,18 @@ export class Wllama {
    * @returns -1 if the model is not loaded.
    */
   getEOS(): number {
-    return this.bosToken;
+    return this.eosToken;
+  }
+
+  /**
+   * Get token ID associated to EOT (end of turn) token.
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
+   * @returns -1 if the model is not loaded.
+   */
+  getEOT(): number {
+    return this.eotToken;
   }
 
   /**
@@ -185,6 +210,7 @@ export class Wllama {
     const loadResult: {
       token_bos: number,
       token_eos: number,
+      token_eot: number,
     } = await this.proxy.wllamaAction('load', {
       ...config,
       use_mmap: true,
@@ -198,6 +224,7 @@ export class Wllama {
     });
     this.bosToken = loadResult.token_bos;
     this.eosToken = loadResult.token_eos;
+    this.eotToken = loadResult.token_eot;
     this.useEmbeddings = !!config.embeddings;
   }
 
@@ -236,21 +263,20 @@ export class Wllama {
   }
 
   /**
-   * Make completion for a given text
+   * Make completion for a given text.
    * @param prompt Input text
    * @param options 
    * @returns Output completion text (only the completion part)
    */
-  async createCompletion(prompt: string, options: {
-    nPredict?: number,
-    onNewToken?(token: number, piece: Uint8Array, currentText: string, optionals: {
-      abortSignal: () => any,
-    }): any,
-    sampling?: SamplingConfig,
-  }): Promise<string> {
+  async createCompletion(prompt: string, options: ChatCompletionOptions): Promise<string> {
     this.samplingConfig = options.sampling ?? {};
     await this.samplingInit(this.samplingConfig);
     await this.kvClear(); // TODO: maybe cache tokens?
+    const stopTokens = [
+      this.eosToken,
+      this.eotToken,
+      ...(options.stopTokens ?? []),
+    ]
     // process prompt
     const tokens = await this.tokenize(prompt, true);
     await this.samplingAccept(tokens);
@@ -262,9 +288,8 @@ export class Wllama {
     // predict next tokens
     for (let i = 0; i < (options.nPredict ?? Infinity); i++) {
       const sampled = await this.samplingSample();
-      // TODO: add support stop sequence
-      if (sampled.token === this.eosToken) {
-        break; // EOS token
+      if (stopTokens.includes(sampled.token)) {
+        break; // stop token
       }
       outBuf = joinBuffers([outBuf, sampled.piece]);
       if (options.onNewToken) {
