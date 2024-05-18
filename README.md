@@ -6,6 +6,10 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 
 ## Recent changes
 
+- Version 1.9.0
+  - Added custom logger
+  - Added `getModelMetadata()`
+  - Added support for EOT (end of turn) and `stopTokens` in `createCompletion()`
 - Version 1.8.0
   - Docs & demo address changed from `ngxson.github.io` to `github.ngxson.com`. This allows adding COOP/COEP headers (required to run multi-thread examples)
   - Added `abortSignal`, see [#26](https://github.com/ngxson/wllama/pull/26)
@@ -13,11 +17,8 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 - Version 1.7.0
   - When downloading, `n_downloads_parallel` is changed to `parallelDownloads`
   - Added support for `progressCallback` when downloading. See [advanced example](./examples/advanced/index.html)
-- Version 1.5.0
-  - Support split model using [gguf-split tool](https://github.com/ggerganov/llama.cpp/tree/master/examples/gguf-split)
-- Version 1.4.0
-  - Add `single-thread/wllama.js` and `multi-thread/wllama.js` to the list of `CONFIG_PATHS`
-  - `createEmbedding` is now adding BOS and EOS token by default
+
+For more details, see [releases](https://github.com/ngxson/wllama/releases)
 
 ## Features
 
