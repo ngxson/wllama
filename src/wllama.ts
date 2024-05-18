@@ -239,9 +239,12 @@ export class Wllama {
   }
 
   /**
-   * Load model from a given buffer
-   * @param ggufBuffer GGUFBuffer holds data of gguf file. Buffers will be freed after being used.
-   * @param config 
+   * Load model from a given buffer.
+   * 
+   * You can pass multiple buffers into the function (in case the model contains multiple shards). Buffers will be freed after being used.
+   * 
+   * @param ggufBuffer ArrayBuffer or Blob that holds data of gguf file. Can be multiple.
+   * @param config LoadModelConfig
    */
   async loadModel(ggufBuffer: GGUFBuffer | GGUFBuffer[], config: LoadModelConfig): Promise<void> {
     const buffers: GGUFBuffer[] = Array.isArray(ggufBuffer)
