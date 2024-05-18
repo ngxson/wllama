@@ -19,7 +19,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { Wllama } from '../../esm/index.js';
+    import { Wllama, LoggerWithoutDebug } from '../../esm/index.js';
 
     const CONFIG_PATHS = {
       'single-thread/wllama.js'       : '../../esm/single-thread/wllama.js',
@@ -45,7 +45,9 @@
     ];*/
     async function main() {
       let res, tokens, elapsed, buffer;
-      const wllama = new Wllama(CONFIG_PATHS);
+      const wllama = new Wllama(CONFIG_PATHS, {
+        logger: LoggerWithoutDebug,
+      });
 
       print(`Loading model ${MODEL}`);
       timeStart();

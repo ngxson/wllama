@@ -138,6 +138,34 @@ await wllama.loadModelFromUrl(
 );
 ```
 
+## Custom logger (suppress debug messages)
+
+When initializing Wllama, you wan pass a custom logger to Wllama.
+
+Example 1: Suppress debug message
+
+```js
+import { Wllama, LoggerWithoutDebug } from '@wllama/wllama';
+
+const wllama = new Wllama(pathConfig, {
+  // LoggerWithoutDebug is predefined inside wllama
+  logger: LoggerWithoutDebug,
+});
+```
+
+Example 2: Add emoji prefix to log messages
+
+```js
+const wllama = new Wllama(pathConfig, {
+  logger: {
+    debug: (...args) => console.debug('🔧', ...args),
+    log: (...args) => console.log('ℹ️', ...args),
+    warn: (...args) => console.warn('⚠️', ...args),
+    error: (...args) => console.error('☠️', ...args),
+  },
+});
+```
+
 ## How to compile the binary yourself
 
 This repository already come with pre-built binary from llama.cpp source code. However, in some cases you may want to compile it yourself:

@@ -20,6 +20,20 @@
     res = action_##name(app, body_json); \
   }
 
+static void llama_log_callback_logTee(ggml_log_level level, const char *text, void *user_data)
+{
+  (void)user_data;
+  const char *lvl = "@@DEBUG";
+  if (level == GGML_LOG_LEVEL_ERROR) {
+    lvl = "@@ERROR";
+  } else if (level == GGML_LOG_LEVEL_WARN) {
+    lvl = "@@WARN";
+  } else if (level == GGML_LOG_LEVEL_INFO) {
+    lvl = "@@INFO";
+  }
+  fprintf(stderr, "%s@@%s", lvl, text);
+}
+
 static std::string result;
 static app_t app;
 
@@ -29,7 +43,8 @@ extern "C" const char *wllama_start()
   {
     log_disable();
     llama_backend_init();
-    std::cerr << llama_print_system_info() << "\n";
+    // std::cerr << llama_print_system_info() << "\n";
+    llama_log_set(llama_log_callback_logTee, nullptr);
     return "{\"success\":true}";
   }
   catch (std::exception &e)
