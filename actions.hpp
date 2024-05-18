@@ -221,6 +221,7 @@ json action_load(app_t &app, json &body)
       {"n_ctx", cparams.n_ctx},
       {"token_bos", llama_token_bos(app.model)},
       {"token_eos", llama_token_eos(app.model)},
+      {"token_eot", llama_token_eot(app.model)},
   };
 }
 
