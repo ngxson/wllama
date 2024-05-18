@@ -139,9 +139,9 @@ await wllama.loadModelFromUrl(
 );
 ```
 
-## Custom logger (suppress debug messages)
+### Custom logger (suppress debug messages)
 
-When initializing Wllama, you wan pass a custom logger to Wllama.
+When initializing Wllama, you can pass a custom logger to Wllama.
 
 Example 1: Suppress debug message
 
