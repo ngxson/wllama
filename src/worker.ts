@@ -11,6 +11,13 @@
  * - Unidirection: { verb, args }
  */
 
+interface Logger {
+  debug: typeof console.debug,
+  log: typeof console.log,
+  warn: typeof console.warn,
+  error: typeof console.error,
+};
+
 //////////////////////////////////////////////////
 //////////////////////////////////////////////////
 
@@ -105,6 +112,17 @@ const WORKER_UTILS = `
 // send message back to main thread
 const msg = (data) => postMessage(data);
 
+// Convert CPP log into JS log
+const cppLogToJSLog = (line) => {
+  const matched = line.match(/@@(DEBUG|INFO|WARN|ERROR)@@(.*)/);
+  return !!matched
+    ? {
+      level: (matched[1] === 'INFO' ? 'debug' : matched[1]).toLowerCase(),
+      text: matched[2],
+    }
+    : { level: 'log', text: line };
+};
+
 // Get module config that forwards stdout/err to main thread
 const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
   if (!pathConfig['wllama.js']) {
@@ -118,12 +136,13 @@ const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
     },
     printErr: function (text) {
       if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-      msg({ verb: 'console.warn', args: [text] });
+      const logLine = cppLogToJSLog(text);
+      msg({ verb: 'console.' + logLine.level, args: [logLine.text] });
     },
     locateFile: function (filename, basePath) {
       const p = pathConfig[filename];
       const truncate = (str) => str.length > 128 ? \`\${str.substr(0, 128)}...\` : str;
-      msg({ verb: 'console.log', args: [\`Loading "\${filename}" from "\${truncate(p)}"\`] });
+      msg({ verb: 'console.debug', args: [\`Loading "\${filename}" from "\${truncate(p)}"\`] });
       return p;
     },
     mainScriptUrlOrBlob: pathConfig['wllama.js'],
@@ -302,6 +321,8 @@ interface TaskParam {
 interface Task { resolve: any, reject: any, param: TaskParam };
 
 export class ProxyToWorker {
+  logger: Logger;
+  suppressNativeLog: boolean;
   taskQueue: Task[] = [];
   taskId: number = 1;
   resultQueue: Task[] = [];
@@ -311,10 +332,17 @@ export class ProxyToWorker {
   multiThread: boolean;
   nbThread: number;
 
-  constructor(pathConfig: any, nbThread: number = 1) {
+  constructor(
+    pathConfig: any,
+    nbThread: number = 1,
+    suppressNativeLog: boolean,
+    logger: Logger,
+  ) {
     this.pathConfig = pathConfig;
     this.nbThread = nbThread;
     this.multiThread = nbThread > 1;
+    this.logger = logger;
+    this.suppressNativeLog = suppressNativeLog;
   }
 
   async moduleInit(ggufBuffers: ArrayBuffer[]): Promise<void> {
@@ -338,7 +366,7 @@ export class ProxyToWorker {
     const workerURL = window.URL.createObjectURL(new Blob([completeCode], { type: 'text/javascript' }));
     this.worker = new Worker(workerURL);
     this.worker.onmessage = this.onRecvMsg.bind(this);
-    this.worker.onerror = console.error;
+    this.worker.onerror = this.logger.error;
 
     const res = await this.pushTask({
       verb: 'module.init',
@@ -361,7 +389,7 @@ export class ProxyToWorker {
         ],
         callbackId: this.taskId++,
       });
-      freeBuffer(ggufBuffers[i]);
+      this.freeBuffer(ggufBuffers[i]);
     }
 
     return res;
@@ -439,9 +467,13 @@ export class ProxyToWorker {
     if (!e.data) return; // ignore
     const { verb, args } = e.data;
     if (verb && verb.startsWith('console.')) {
-      if (verb.endsWith('log')) console.log(...args);
-      if (verb.endsWith('warn')) console.warn(...args);
-      if (verb.endsWith('error')) console.error(...args);
+      if (this.suppressNativeLog) {
+        return;
+      }
+      if (verb.endsWith('debug')) this.logger.debug(...args);
+      if (verb.endsWith('log')) this.logger.log(...args);
+      if (verb.endsWith('warn')) this.logger.warn(...args);
+      if (verb.endsWith('error')) this.logger.error(...args);
       return;
     } else if (verb === 'signal.abort') {
       this.abort(args[0]);
@@ -455,7 +487,7 @@ export class ProxyToWorker {
         if (err) waitingTask.reject(err);
         else waitingTask.resolve(result);
       } else {
-        console.error(`Cannot find waiting task with callbackId = ${callbackId}`);
+        this.logger.error(`Cannot find waiting task with callbackId = ${callbackId}`);
       }
     }
   }
@@ -467,26 +499,26 @@ export class ProxyToWorker {
       waitingTask.reject(new Error(`Received abort signal from llama.cpp; Message: ${text || '(empty)'}`));
     }
   }
+
+  // Free ArrayBuffer by resizing them to 0. This is needed because sometimes we run into OOM issue.
+  private freeBuffer(buf: ArrayBuffer) {
+    // @ts-ignore
+    if (ArrayBuffer.prototype.transfer) {
+      // @ts-ignore
+      buf.transfer(0);
+      // @ts-ignore
+    } else if (ArrayBuffer.prototype.resize && buf.resizable) {
+      // @ts-ignore
+      buf.resize(0);
+    } else {
+      this.logger.warn('Cannot free buffer. You may run into out-of-memory issue.');
+    }
+  }
 }
 
 /**
  * Utility functions
  */
-
-// Free ArrayBuffer by resizing them to 0. This is needed because sometimes we run into OOM issue.
-function freeBuffer(buf: ArrayBuffer) {
-  // @ts-ignore
-  if (ArrayBuffer.prototype.transfer) {
-    // @ts-ignore
-    buf.transfer(0);
-    // @ts-ignore
-  } else if (ArrayBuffer.prototype.resize && buf.resizable) {
-    // @ts-ignore
-    buf.resize(0);
-  } else {
-    console.warn('Cannot free buffer. You may run into out-of-memory issue.');
-  }
-}
 
 // Zero-padding numbers
 function padDigits(number: number, digits: number) {

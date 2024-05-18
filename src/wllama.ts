@@ -1,6 +1,22 @@
 import { ProxyToWorker } from './worker';
 import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils';
 
+export interface WllamaConfig {
+  /**
+   * If true, suppress all log messages from native CPP code
+   */
+  suppressNativeLog?: boolean,
+  /**
+   * Custom logger functions
+   */
+  logger?: {
+    debug: typeof console.debug,
+    log: typeof console.log,
+    warn: typeof console.warn,
+    error: typeof console.error,
+  },
+};
+
 export interface AssetsPathConfig {
   'single-thread/wllama.js': string,
   'single-thread/wllama.wasm': string,
@@ -91,8 +107,17 @@ export interface ModelMetadata {
   meta: Record<string, string>,
 };
 
+/**
+ * Logger preset with debug messages suppressed
+ */
+export const LoggerWithoutDebug = {
+  ...console,
+  debug: () => {},
+};
+
 export class Wllama {
   private proxy: ProxyToWorker = null as any;
+  private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
   private useEmbeddings: boolean = false;
@@ -103,10 +128,15 @@ export class Wllama {
   private metadata?: ModelMetadata;
   private samplingConfig: SamplingConfig = {};
 
-  constructor(config: AssetsPathConfig) {
+  constructor(pathConfig: AssetsPathConfig, wllamaConfig: WllamaConfig = {}) {
     checkEnvironmentCompatible();
-    if (!config) throw new Error('AssetsPathConfig is required');
-    this.pathConfig = config;
+    if (!pathConfig) throw new Error('AssetsPathConfig is required');
+    this.pathConfig = pathConfig;
+    this.config = wllamaConfig;
+  }
+
+  private logger() {
+    return this.config.logger ?? console;
   }
 
   /**
@@ -203,13 +233,13 @@ export class Wllama {
     // detect if we can use multi-thread
     const supportMultiThread = await isSupportMultiThread();
     if (!supportMultiThread) {
-      console.warn('Multi-threads are not supported in this environment, falling back to single-thread');
+      this.logger().warn('Multi-threads are not supported in this environment, falling back to single-thread');
     }
     const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.js']
       && !!this.pathConfig['multi-thread/wllama.wasm']
       && !!this.pathConfig['multi-thread/wllama.worker.mjs'];
     if (!hasPathMultiThread) {
-      console.warn('Missing paths to "wllama.js", "wllama.wasm" or "wllama.worker.mjs", falling back to single-thread');
+      this.logger().warn('Missing paths to "wllama.js", "wllama.wasm" or "wllama.worker.mjs", falling back to single-thread');
     }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
     const nbThreads = config.n_threads ?? hwConccurency;
@@ -224,7 +254,12 @@ export class Wllama {
         'wllama.js': absoluteUrl(this.pathConfig['single-thread/wllama.js']),
         'wllama.wasm': absoluteUrl(this.pathConfig['single-thread/wllama.wasm']),
       };
-    this.proxy = new ProxyToWorker(mPathConfig, this.useMultiThread ? nbThreads : 1);
+    this.proxy = new ProxyToWorker(
+      mPathConfig,
+      this.useMultiThread ? nbThreads : 1,
+      this.config.suppressNativeLog ?? false,
+      this.logger(),
+    );
     await this.proxy.moduleInit(buffers);
     // run it
     const startResult: any = await this.proxy.wllamaStart();
