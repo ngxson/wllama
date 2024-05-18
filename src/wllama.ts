@@ -1,6 +1,8 @@
 import { ProxyToWorker } from './worker';
 import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils';
 
+export type GGUFBuffer = File | ArrayBuffer;
+
 export interface WllamaConfig {
   /**
    * If true, suppress all log messages from native CPP code
@@ -214,19 +216,39 @@ export class Wllama {
     return await this.loadModel(ggufBuffers, config);
   }
 
+  private checkInputModel(buffers: GGUFBuffer[]) {
+    const isArrBuf = buffers[0] instanceof ArrayBuffer;
+    const isBlob = buffers[0] instanceof Blob;
+    if (buffers.length === 0) {
+      throw new Error('Input model (or splits) must be non-empty');
+    }
+    if (isArrBuf) {
+      if (buffers.some(buf => (buf as ArrayBuffer).byteLength === 0)) {
+        throw new Error('Input model (or splits) must be non-empty ArrayBuffer');
+      } else if (buffers.some(buf => false === buf instanceof ArrayBuffer)) {
+        throw new Error('Cannot mix between Blob and ArrayBuffer');
+      }
+    }
+    if (isBlob) {
+      if (buffers.some(buf => (buf as Blob).size === 0)) {
+        throw new Error('Input model (or splits) must be non-empty Blob or File');
+      } else if (buffers.some(buf => false === buf instanceof Blob)) {
+        throw new Error('Cannot mix between Blob and ArrayBuffer');
+      }
+    }
+  }
+
   /**
    * Load model from a given buffer
-   * @param ggufBuffer ArrayBuffer holds data of gguf file. Buffers will be freed after being used.
+   * @param ggufBuffer GGUFBuffer holds data of gguf file. Buffers will be freed after being used.
    * @param config 
    */
-  async loadModel(ggufBuffer: ArrayBuffer | ArrayBuffer[], config: LoadModelConfig): Promise<void> {
-    const buffers: ArrayBuffer[] = Array.isArray(ggufBuffer)
-      ? ggufBuffer as ArrayBuffer[]
-      : [ggufBuffer as ArrayBuffer];
+  async loadModel(ggufBuffer: GGUFBuffer | GGUFBuffer[], config: LoadModelConfig): Promise<void> {
+    const buffers: GGUFBuffer[] = Array.isArray(ggufBuffer)
+      ? ggufBuffer as GGUFBuffer[]
+      : [ggufBuffer as GGUFBuffer];
     const hasMultipleBuffers = buffers.length > 1;
-    if (buffers.length === 0 || buffers.some(buf => buf.byteLength === 0)) {
-      throw new Error('Input model (or splits) must be non-empty ArrayBuffer');
-    }
+    this.checkInputModel(buffers);
     if (this.proxy) {
       throw new Error('Module is already initialized');
     }

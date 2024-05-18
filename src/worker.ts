@@ -94,13 +94,20 @@ const patchMEMFS = () => {
 };
 
 // Add new file to wllama heapfs
-const heapfsWriteFile = async (name, buf) => {
+const heapfsWriteFile = async (name, blob) => {
   const m = wModule;
-  const ptr = m.mmapAlloc(buf.byteLength);
-  m.HEAPU8.set(buf, ptr);
+  const reader = blob.stream().getReader();
+  const ptr = m.mmapAlloc(blob.size);
+  let usedBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    m.HEAPU8.set(value, ptr + usedBytes);
+    usedBytes += value.length;
+  }
   fileToPtr[name] = {
     ptr: ptr,
-    size: buf.byteLength,
+    size: blob.size,
   };
 };
 `;
@@ -249,13 +256,13 @@ onmessage = async (e) => {
 
   if (verb === 'module.upload') {
     const argFilename = args[0]; // file name
-    const argBuffer   = args[1]; // buffer for file data
+    const argBlob     = args[1]; // buffer for file data
     try {
       // create blank file
       const empty = new ArrayBuffer(0);
       wModule['FS_createDataFile']('/models', argFilename, empty, true, true, true);
       // write data to heap
-      await heapfsWriteFile(argFilename, argBuffer);
+      await heapfsWriteFile(argFilename, argBlob);
       msg({ callbackId, result: true });
     } catch (err) {
       msg({ callbackId, err });
@@ -345,7 +352,7 @@ export class ProxyToWorker {
     this.suppressNativeLog = suppressNativeLog;
   }
 
-  async moduleInit(ggufBuffers: ArrayBuffer[]): Promise<void> {
+  async moduleInit(ggufBuffers: (ArrayBuffer | Blob)[]): Promise<void> {
     if (!this.pathConfig['wllama.js']) {
       throw new Error('"single-thread/wllama.js" or "multi-thread/wllama.js" is missing from pathConfig');
     }
@@ -379,17 +386,22 @@ export class ProxyToWorker {
 
     // copy buffer to worker
     for (let i = 0; i < ggufBuffers.length; i++) {
+      const isArrBuf = ggufBuffers[i] instanceof ArrayBuffer;
       await this.pushTask({
         verb: 'module.upload',
         args: [
           ggufBuffers.length === 1
             ? 'model.gguf'
             : `model-${padDigits(i + 1, 5)}-of-${padDigits(ggufBuffers.length, 5)}.gguf`,
-          new Uint8Array(ggufBuffers[i]),
+          isArrBuf
+            ? new Blob([ggufBuffers[i] as ArrayBuffer])
+            : ggufBuffers[i] as Blob,
         ],
         callbackId: this.taskId++,
       });
-      this.freeBuffer(ggufBuffers[i]);
+      if (isArrBuf) {
+        this.freeBuffer(ggufBuffers[i] as ArrayBuffer);
+      }
     }
 
     return res;
