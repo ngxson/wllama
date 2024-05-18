@@ -81,6 +81,16 @@ export interface ChatCompletionOptions {
   stopTokens?: number[],
 };
 
+export interface ModelMetadata {
+  hparams: {
+    nVocab: number;
+    nCtxTrain: number;
+    nEmbd: number;
+    nLayer: number;
+  },
+  meta: Record<string, string>,
+};
+
 export class Wllama {
   private proxy: ProxyToWorker = null as any;
   private pathConfig: AssetsPathConfig;
@@ -90,6 +100,7 @@ export class Wllama {
   private bosToken: number = -1;
   private eosToken: number = -1;
   private eotToken: number = -1;
+  private metadata?: ModelMetadata;
   private samplingConfig: SamplingConfig = {};
 
   constructor(config: AssetsPathConfig) {
@@ -129,6 +140,20 @@ export class Wllama {
    */
   getEOT(): number {
     return this.eotToken;
+  }
+
+  /**
+   * Get model hyper-parameters and metadata
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
+   * @returns ModelMetadata
+   */
+  getModelMetadata(): ModelMetadata {
+    if (!this.metadata) {
+      throw new Error('loadModel() is not yet called');
+    }
+    return this.metadata;
   }
 
   /**
@@ -208,6 +233,11 @@ export class Wllama {
     }
     // load the model
     const loadResult: {
+      n_vocab: number,
+      n_ctx_train: number,
+      n_embd: number,
+      n_layer: number,
+      metadata: Record<string, string>,
       token_bos: number,
       token_eos: number,
       token_eot: number,
@@ -226,6 +256,15 @@ export class Wllama {
     this.eosToken = loadResult.token_eos;
     this.eotToken = loadResult.token_eot;
     this.useEmbeddings = !!config.embeddings;
+    this.metadata = {
+      hparams: {
+        nVocab: loadResult.n_vocab,
+        nCtxTrain: loadResult.n_ctx_train,
+        nEmbd: loadResult.n_embd,
+        nLayer: loadResult.n_layer,
+      },
+      meta: loadResult.metadata,
+    };
   }
 
   //////////////////////////////////////////////

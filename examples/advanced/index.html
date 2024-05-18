@@ -55,6 +55,7 @@
         progressCallback: ({ loaded, total }) => console.log(`Downloading... ${Math.round(loaded/total*100)}%`),
       });
       print(`Loaded, take ${timeEnd()} ms`);
+      print(`Metadata = ${JSON.stringify(wllama.getModelMetadata().meta, null, 2)}`);
       print(`BOS token = ${wllama.getBOS()}`);
       print(`EOS token = ${wllama.getEOS()}`);
   

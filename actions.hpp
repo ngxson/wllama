@@ -127,6 +127,39 @@ void free_all(app_t &app)
     llama_sampling_free(app.ctx_sampling);
 }
 
+json dump_metadata(app_t &app)
+{
+  json output;
+  int count = llama_model_meta_count(app.model);
+  std::string key;
+  std::string val;
+  std::vector<char> buf(1024);
+  int res = 0;
+  for (int i = 0; i < count; i++)
+  {
+    res = llama_model_meta_val_str_by_index(app.model, i, buf.data(), buf.size());
+    if (res < 0)
+      continue;
+    if (res > buf.size())
+    {
+      buf.resize(res);
+      res = llama_model_meta_val_str_by_index(app.model, i, buf.data(), buf.size());
+    }
+    val = std::string(buf.data(), res);
+    res = llama_model_meta_key_by_index(app.model, i, buf.data(), buf.size());
+    if (res < 0)
+      continue;
+    if (res > buf.size())
+    {
+      buf.resize(res);
+      res = llama_model_meta_key_by_index(app.model, i, buf.data(), buf.size());
+    }
+    key = std::string(buf.data(), res);
+    output[key] = val;
+  }
+  return output;
+}
+
 //////////////////////////////////////////
 //////////////////////////////////////////
 //////////////////////////////////////////
@@ -219,6 +252,11 @@ json action_load(app_t &app, json &body)
   return json{
       {"success", true},
       {"n_ctx", cparams.n_ctx},
+      {"n_vocab", llama_n_vocab(app.model)},
+      {"n_ctx_train", llama_n_ctx_train(app.model)},
+      {"n_embd", llama_n_embd(app.model)},
+      {"n_layer", llama_n_layer(app.model)},
+      {"metadata", dump_metadata(app)},
       {"token_bos", llama_token_bos(app.model)},
       {"token_eos", llama_token_eos(app.model)},
       {"token_eot", llama_token_eot(app.model)},
