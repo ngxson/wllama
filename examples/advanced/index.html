@@ -28,7 +28,19 @@
       'multi-thread/wllama.wasm'      : '../../esm/multi-thread/wllama.wasm',
       'multi-thread/wllama.worker.mjs': '../../esm/multi-thread/wllama.worker.mjs',
     };
-    const MODEL = 'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
+    //const MODEL = 'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
+    const MODEL = [
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00001-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00002-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00003-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00004-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00005-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00006-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00007-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00008-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00009-of-00010.gguf',
+      'http://' + window.location.host + '/models/dolphin-phi3.Q2_K-00010-of-00010.gguf',
+    ];
     const MODEL_SPLITS = [
       'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf',
       'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00002-of-00003.gguf',

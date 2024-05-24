@@ -243,7 +243,7 @@ onmessage = async (e) => {
   }
 
   if (verb === 'module.init') {
-    const argPathConfig     = args[0];
+    const argPathConfig      = args[0];
     const argPThreadPoolSize = args[1];
     try {
       const Module = ModuleWrapper();
@@ -273,7 +273,8 @@ onmessage = async (e) => {
     const argSize     = args[1];
     try {
       // create blank file
-      wModule['FS_createDataFile']('/models', argFilename, new ArrayBuffer(0), true, true, true);
+      const emptyBuffer = new ArrayBuffer(0);
+      wModule['FS_createDataFile']('/models', argFilename, emptyBuffer, true, true, true);
       // alloc data on heap
       const fileId = heapfsAlloc(argFilename, argSize);
       msg({ callbackId, result: { fileId } });
@@ -417,12 +418,11 @@ export class ProxyToWorker {
     });
 
     // allocate all files
-    const nativeFiles = await Promise.all(ggufFiles.map(async (file) => {
-      return {
-        id: await this.fileAlloc(file.name, file.blob.size),
-        ...file,
-      };
-    }));
+    const nativeFiles: ({ id: number } & typeof ggufFiles[number])[] = [];
+    for (const file of ggufFiles) {
+      const id = await this.fileAlloc(file.name, file.blob.size);
+      nativeFiles.push({ id, ...file });
+    }
 
     // stream files
     await Promise.all(nativeFiles.map(file => {
@@ -483,7 +483,7 @@ export class ProxyToWorker {
       args: [fileName, size],
       callbackId: this.taskId++,
     });
-    return JSON.parse(result).fileId;
+    return result.fileId;
   }
 
   /**
@@ -495,12 +495,13 @@ export class ProxyToWorker {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      offset += value.buffer.byteLength;
+      const size = value.byteLength;
       await this.pushTask({
         verb: 'fs.write',
-        args: [fileId, value.buffer, offset],
+        args: [fileId, value, offset],
         callbackId: this.taskId++,
       }, [value.buffer]);
+      offset += size;
     }
   }
 

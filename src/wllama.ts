@@ -1,7 +1,6 @@
 import { ProxyToWorker } from './worker';
-import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils';
-
-export type GGUFBuffer = File | ArrayBuffer;
+import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, padDigits } from './utils';
+import { WebBlob } from './downloader/webblob';
 
 export interface WllamaConfig {
   /**
@@ -208,50 +207,26 @@ export class Wllama {
     if (modelUrl.length === 0) {
       throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
     }
-    const ggufBuffers = await loadBinaryResource(
-      modelUrl,
-      config.parallelDownloads ?? 3,
-      config.progressCallback,
+    const urls: string[] = Array.isArray(modelUrl) ? modelUrl : [modelUrl];
+    const blobs = await Promise.all(
+      urls.map(u => WebBlob.create(new URL(u)))
     );
-    return await this.loadModel(ggufBuffers, config);
-  }
-
-  private checkInputModel(buffers: GGUFBuffer[]) {
-    const isArrBuf = buffers[0] instanceof ArrayBuffer;
-    const isBlob = buffers[0] instanceof Blob;
-    if (buffers.length === 0) {
-      throw new Error('Input model (or splits) must be non-empty');
-    }
-    if (isArrBuf) {
-      if (buffers.some(buf => (buf as ArrayBuffer).byteLength === 0)) {
-        throw new Error('Input model (or splits) must be non-empty ArrayBuffer');
-      } else if (buffers.some(buf => false === buf instanceof ArrayBuffer)) {
-        throw new Error('Cannot mix between Blob and ArrayBuffer');
-      }
-    }
-    if (isBlob) {
-      if (buffers.some(buf => (buf as Blob).size === 0)) {
-        throw new Error('Input model (or splits) must be non-empty Blob or File');
-      } else if (buffers.some(buf => false === buf instanceof Blob)) {
-        throw new Error('Cannot mix between Blob and ArrayBuffer');
-      }
-    }
+    return await this.loadModel(blobs, config);
   }
 
   /**
-   * Load model from a given buffer.
+   * Load model from a given list of Blob.
    * 
-   * You can pass multiple buffers into the function (in case the model contains multiple shards). Buffers will be freed after being used.
+   * You can pass multiple buffers into the function (in case the model contains multiple shards).
    * 
-   * @param ggufBuffer ArrayBuffer or Blob that holds data of gguf file. Can be multiple.
+   * @param ggufBlobs List of Blob that holds data of gguf file.
    * @param config LoadModelConfig
    */
-  async loadModel(ggufBuffer: GGUFBuffer | GGUFBuffer[], config: LoadModelConfig): Promise<void> {
-    const buffers: GGUFBuffer[] = Array.isArray(ggufBuffer)
-      ? ggufBuffer as GGUFBuffer[]
-      : [ggufBuffer as GGUFBuffer];
-    const hasMultipleBuffers = buffers.length > 1;
-    this.checkInputModel(buffers);
+  async loadModel(ggufBlobs: Blob[], config: LoadModelConfig): Promise<void> {
+    if (ggufBlobs.some(b => b.size === 0)) {
+      throw new Error('Input model (or splits) must be non-empty Blob or File');
+    }
+    const hasMultipleBuffers = ggufBlobs.length > 1;
     if (this.proxy) {
       throw new Error('Module is already initialized');
     }
@@ -285,7 +260,13 @@ export class Wllama {
       this.config.suppressNativeLog ?? false,
       this.logger(),
     );
-    await this.proxy.moduleInit(buffers);
+    // TODO: files maybe out-of-order
+    await this.proxy.moduleInit(ggufBlobs.map((blob, i) => ({
+      name: hasMultipleBuffers
+        ? `model-${padDigits(i + 1, 5)}-of-${padDigits(ggufBlobs.length, 5)}.gguf`
+        : 'model.gguf',
+      blob,
+    })));
     // run it
     const startResult: any = await this.proxy.wllamaStart();
     if (!startResult.success) {
@@ -309,7 +290,7 @@ export class Wllama {
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       model_path: hasMultipleBuffers
-        ? `/models/model-00001-of-${padDigits(buffers.length, 5)}.gguf`
+        ? `/models/model-00001-of-${padDigits(ggufBlobs.length, 5)}.gguf`
         : '/models/model.gguf',
     });
     this.bosToken = loadResult.token_bos;
