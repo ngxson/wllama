@@ -1,6 +1,7 @@
 import { ProxyToWorker } from './worker';
 import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, padDigits } from './utils';
-import { WebBlob } from './downloader/webblob';
+import { GGUFRemoteBlob } from './downloader/remote-blob';
+import { opfsClear } from './downloader/opfs';
 
 export interface WllamaConfig {
   /**
@@ -60,6 +61,10 @@ export interface DownloadModelConfig extends LoadModelConfig {
   // download-specific params
   parallelDownloads?: number,
   progressCallback?: (opts: { loaded: number, total: number }) => any,
+  /**
+   * Default: useCache = true
+   */
+  useCache?: boolean,
 };
 
 export interface SamplingConfig {
@@ -207,9 +212,13 @@ export class Wllama {
     if (modelUrl.length === 0) {
       throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
     }
+    const skipCache = config.useCache === false;
     const urls: string[] = Array.isArray(modelUrl) ? modelUrl : [modelUrl];
     const blobs = await Promise.all(
-      urls.map(u => WebBlob.create(new URL(u)))
+      urls.map(u => GGUFRemoteBlob.create(new URL(u), {
+        logger: this.logger(),
+        useCache: !skipCache,
+      }))
     );
     return await this.loadModel(blobs, config);
   }
@@ -584,6 +593,13 @@ export class Wllama {
    */
   async exit(): Promise<void> {
     await this.proxy.wllamaExit();
+  }
+
+  /**
+   * Clear all gguf files in the downloade cache
+   */
+  async clearDownloadCache(): Promise<void> {
+    await opfsClear();
   }
 
   /**

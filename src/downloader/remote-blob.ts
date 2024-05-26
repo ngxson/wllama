@@ -1,25 +1,28 @@
 // Adapted from https://github.com/huggingface/huggingface.js/blob/main/packages/hub/src/utils/WebBlob.ts
 
+import { opfsFileSize, opfsOpen, opfsWrite } from './opfs';
+
+
 /**
  * WebBlob is a Blob implementation for web resources that supports range requests.
  */
 
-interface WebBlobCreateOptions {
-  /**
-   * @default 1_000_000
-   *
-   * Objects below that size will immediately be fetched and put in RAM, rather
-   * than streamed ad-hoc
-   */
-  cacheBelow?: number;
+interface GGUFRemoteBlobCreateOptions {
   /**
    * Custom fetch function to use instead of the default one, for example to use a proxy or edit headers.
    */
   fetch?: typeof fetch;
+  useCache?: boolean,
+  /**
+   * Custom debug logger
+   */
+  logger?: {
+    debug: typeof console['debug'],
+  };
 }
 
-export class WebBlob extends Blob {
-  static async create(url: URL, opts?: WebBlobCreateOptions): Promise<Blob> {
+export class GGUFRemoteBlob extends Blob {
+  static async create(url: URL, opts?: GGUFRemoteBlobCreateOptions): Promise<Blob> {
     const customFetch = opts?.fetch ?? fetch;
     const response = await customFetch(url, { method: 'HEAD' });
 
@@ -27,11 +30,21 @@ export class WebBlob extends Blob {
     const contentType = response.headers.get('content-type') || '';
     const supportRange = response.headers.get('accept-ranges') === 'bytes';
 
-    if (!supportRange || size < (opts?.cacheBelow ?? 1_000_000)) {
-      return await (await customFetch(url)).blob();
-    }
+    const cacheKey = url.toString();
+    const cacheFileSize = await opfsFileSize(cacheKey);
+    const skipCache = opts?.useCache === false;
 
-    return new WebBlob(url, 0, size, contentType, true, customFetch);
+    if (size === cacheFileSize && !skipCache) {
+      opts?.logger?.debug(`Using cached file ${cacheKey}`);
+      const cachedFile = await opfsOpen(cacheKey);
+      return new GGUFRemoteBlob(url, 0, cacheFileSize, '', true, customFetch, cachedFile!);
+    } else {
+      if (cacheFileSize > 0) {
+        opts?.logger?.debug(`Cache file is present, but size mismatch (cache = ${cacheFileSize} bytes, real = ${size} bytes)`);
+      }
+      opts?.logger?.debug(`NOT using cache for ${cacheKey}`);
+      return new GGUFRemoteBlob(url, 0, size, contentType, true, customFetch);
+    }
   }
 
   private url: URL;
@@ -40,8 +53,9 @@ export class WebBlob extends Blob {
   private contentType: string;
   private full: boolean;
   private fetch: typeof fetch;
+  private cachedStream?: ReadableStream;
 
-  constructor(url: URL, start: number, end: number, contentType: string, full: boolean, customFetch: typeof fetch) {
+  constructor(url: URL, start: number, end: number, contentType: string, full: boolean, customFetch: typeof fetch, cachedStream?: ReadableStream) {
     super([]);
 
     this.url = url;
@@ -50,6 +64,7 @@ export class WebBlob extends Blob {
     this.contentType = contentType;
     this.full = full;
     this.fetch = customFetch;
+    this.cachedStream = cachedStream;
   }
 
   override get size(): number {
@@ -60,40 +75,31 @@ export class WebBlob extends Blob {
     return this.contentType;
   }
 
-  override slice(start = 0, end = this.size): WebBlob {
-    if (start < 0 || end < 0) {
-      new TypeError('Unsupported negative start/end on FileBlob.slice');
-    }
-
-    const slice = new WebBlob(
-      this.url,
-      this.start + start,
-      Math.min(this.start + end, this.end),
-      this.contentType,
-      start === 0 && end === this.size ? this.full : false,
-      this.fetch
-    );
-
-    return slice;
+  override slice(): GGUFRemoteBlob {
+    throw new Error('Unsupported operation');
   }
 
   override async arrayBuffer(): Promise<ArrayBuffer> {
-    const result = await this.fetchRange();
-
-    return result.arrayBuffer();
+    throw new Error('Unsupported operation');
   }
 
   override async text(): Promise<string> {
-    const result = await this.fetchRange();
-
-    return result.text();
+    throw new Error('Unsupported operation');
   }
 
   override stream(): ReturnType<Blob['stream']> {
+    if (this.cachedStream) {
+      return this.cachedStream;
+    }
+
     const stream = new TransformStream();
 
     this.fetchRange()
-      .then((response) => response.body?.pipeThrough(stream))
+      .then((response) => {
+        const [src0, src1] = response.body!.tee();
+        src0.pipeThrough(stream);
+        opfsWrite(this.url.toString(), src1);
+      })
       .catch((error) => stream.writable.abort(error.message));
 
     return stream.readable;

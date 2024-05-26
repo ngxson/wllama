@@ -60,6 +60,7 @@
       const wllama = new Wllama(CONFIG_PATHS, {
         logger: LoggerWithoutDebug,
       });
+      // await wllama.clearDownloadCache();
 
       print(`Loading model ${MODEL}`);
       timeStart();
