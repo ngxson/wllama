@@ -1,7 +1,8 @@
 import { ProxyToWorker } from './worker';
 import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, padDigits } from './utils';
 import { GGUFRemoteBlob } from './downloader/remote-blob';
-import { opfsClear } from './downloader/opfs';
+import { CacheManager } from './cache';
+export * from './cache';
 
 export interface WllamaConfig {
   /**
@@ -122,6 +123,9 @@ export const LoggerWithoutDebug = {
 };
 
 export class Wllama {
+  // The CacheManager singleton, can be accessed by user
+  public cacheManager = CacheManager;
+
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
@@ -593,13 +597,6 @@ export class Wllama {
    */
   async exit(): Promise<void> {
     await this.proxy.wllamaExit();
-  }
-
-  /**
-   * Clear all gguf files in the downloade cache
-   */
-  async clearDownloadCache(): Promise<void> {
-    await opfsClear();
   }
 
   /**

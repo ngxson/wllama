@@ -1,7 +1,8 @@
 // Adapted from https://github.com/huggingface/huggingface.js/blob/main/packages/hub/src/utils/WebBlob.ts
 
-import { opfsFileSize, opfsOpen, opfsWrite } from './opfs';
+import { CacheManager } from "../cache";
 
+type ProgressCallback = (opts: { loaded: number, total: number }) => any;
 
 /**
  * WebBlob is a Blob implementation for web resources that supports range requests.
@@ -12,7 +13,8 @@ interface GGUFRemoteBlobCreateOptions {
    * Custom fetch function to use instead of the default one, for example to use a proxy or edit headers.
    */
   fetch?: typeof fetch;
-  useCache?: boolean,
+  useCache?: boolean;
+  progressCallback?: ProgressCallback;
   /**
    * Custom debug logger
    */
@@ -31,19 +33,28 @@ export class GGUFRemoteBlob extends Blob {
     const supportRange = response.headers.get('accept-ranges') === 'bytes';
 
     const cacheKey = url.toString();
-    const cacheFileSize = await opfsFileSize(cacheKey);
+    const cacheFileSize = await CacheManager.getSize(cacheKey);
     const skipCache = opts?.useCache === false;
 
     if (size === cacheFileSize && !skipCache) {
       opts?.logger?.debug(`Using cached file ${cacheKey}`);
-      const cachedFile = await opfsOpen(cacheKey);
-      return new GGUFRemoteBlob(url, 0, cacheFileSize, '', true, customFetch, cachedFile!);
+      const cachedFile = await CacheManager.open(cacheKey);
+      opts?.progressCallback?.({
+        loaded: cacheFileSize,
+        total: cacheFileSize,
+      });
+      return new GGUFRemoteBlob(url, 0, cacheFileSize, '', true, customFetch, {
+        cachedStream: cachedFile!,
+        progressCallback: () => {}, // unused
+      });
     } else {
       if (cacheFileSize > 0) {
         opts?.logger?.debug(`Cache file is present, but size mismatch (cache = ${cacheFileSize} bytes, real = ${size} bytes)`);
       }
       opts?.logger?.debug(`NOT using cache for ${cacheKey}`);
-      return new GGUFRemoteBlob(url, 0, size, contentType, true, customFetch);
+      return new GGUFRemoteBlob(url, 0, size, contentType, true, customFetch, {
+        progressCallback: opts?.progressCallback ?? (() => {}),
+      });
     }
   }
 
@@ -54,8 +65,12 @@ export class GGUFRemoteBlob extends Blob {
   private full: boolean;
   private fetch: typeof fetch;
   private cachedStream?: ReadableStream;
+  private progressCallback: ProgressCallback;
 
-  constructor(url: URL, start: number, end: number, contentType: string, full: boolean, customFetch: typeof fetch, cachedStream?: ReadableStream) {
+  constructor(url: URL, start: number, end: number, contentType: string, full: boolean, customFetch: typeof fetch, additionals: {
+    cachedStream?: ReadableStream,
+    progressCallback: ProgressCallback,
+  }) {
     super([]);
 
     this.url = url;
@@ -64,7 +79,8 @@ export class GGUFRemoteBlob extends Blob {
     this.contentType = contentType;
     this.full = full;
     this.fetch = customFetch;
-    this.cachedStream = cachedStream;
+    this.cachedStream = additionals.cachedStream;
+    this.progressCallback = additionals.progressCallback;
   }
 
   override get size(): number {
@@ -92,13 +108,30 @@ export class GGUFRemoteBlob extends Blob {
       return this.cachedStream;
     }
 
-    const stream = new TransformStream();
+    const self = this;
+    let loaded = 0;
+    const stream = new TransformStream({
+      transform(chunk, controller) {
+        controller.enqueue(chunk);
+        loaded += chunk.byteLength;
+        self.progressCallback({
+          loaded,
+          total: self.size,
+        });
+      },
+      flush(controller) {
+        self.progressCallback({
+          loaded: self.size,
+          total: self.size,
+        });
+      },
+    });
 
     this.fetchRange()
       .then((response) => {
         const [src0, src1] = response.body!.tee();
         src0.pipeThrough(stream);
-        opfsWrite(this.url.toString(), src1);
+        CacheManager.write(this.url.toString(), src1);
       })
       .catch((error) => stream.writable.abort(error.message));
 
