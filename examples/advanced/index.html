@@ -46,9 +46,9 @@
     async function main() {
       let res, tokens, elapsed, buffer;
       const wllama = new Wllama(CONFIG_PATHS, {
-        // logger: LoggerWithoutDebug,
+        logger: LoggerWithoutDebug,
       });
-      // await wllama.clearDownloadCache(); return;
+      // await wllama.cacheManager.clear(); return;
 
       print(`Loading model ${MODEL}`);
       timeStart();

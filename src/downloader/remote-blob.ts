@@ -1,6 +1,6 @@
 // Adapted from https://github.com/huggingface/huggingface.js/blob/main/packages/hub/src/utils/WebBlob.ts
 
-import { CacheManager } from "../cache";
+import { CacheManager } from '../cache-manager';
 
 type ProgressCallback = (opts: { loaded: number, total: number }) => any;
 
@@ -15,6 +15,7 @@ interface GGUFRemoteBlobCreateOptions {
   fetch?: typeof fetch;
   useCache?: boolean;
   progressCallback?: ProgressCallback;
+  startSignal?: Promise<void>;
   /**
    * Custom debug logger
    */
@@ -39,9 +40,11 @@ export class GGUFRemoteBlob extends Blob {
     if (size === cacheFileSize && !skipCache) {
       opts?.logger?.debug(`Using cached file ${cacheKey}`);
       const cachedFile = await CacheManager.open(cacheKey);
-      opts?.progressCallback?.({
-        loaded: cacheFileSize,
-        total: cacheFileSize,
+      (opts?.startSignal ?? Promise.resolve()).then(() => {
+        opts?.progressCallback?.({
+          loaded: cacheFileSize,
+          total: cacheFileSize,
+        });
       });
       return new GGUFRemoteBlob(url, 0, cacheFileSize, '', true, customFetch, {
         cachedStream: cachedFile!,
@@ -66,10 +69,12 @@ export class GGUFRemoteBlob extends Blob {
   private fetch: typeof fetch;
   private cachedStream?: ReadableStream;
   private progressCallback: ProgressCallback;
+  private startSignal?: Promise<void>;
 
   constructor(url: URL, start: number, end: number, contentType: string, full: boolean, customFetch: typeof fetch, additionals: {
     cachedStream?: ReadableStream,
     progressCallback: ProgressCallback,
+    startSignal?: Promise<void>,
   }) {
     super([]);
 
@@ -81,6 +86,7 @@ export class GGUFRemoteBlob extends Blob {
     this.fetch = customFetch;
     this.cachedStream = additionals.cachedStream;
     this.progressCallback = additionals.progressCallback;
+    this.startSignal = additionals.startSignal;
   }
 
   override get size(): number {
@@ -127,13 +133,18 @@ export class GGUFRemoteBlob extends Blob {
       },
     });
 
-    this.fetchRange()
-      .then((response) => {
-        const [src0, src1] = response.body!.tee();
-        src0.pipeThrough(stream);
-        CacheManager.write(this.url.toString(), src1);
-      })
-      .catch((error) => stream.writable.abort(error.message));
+    (async () => {
+      if (this.startSignal) {
+        await this.startSignal;
+      }
+      this.fetchRange()
+        .then((response) => {
+          const [src0, src1] = response.body!.tee();
+          src0.pipeThrough(stream);
+          CacheManager.write(this.url.toString(), src1);
+        })
+        .catch((error) => stream.writable.abort(error.message));
+    })();
 
     return stream.readable;
   }

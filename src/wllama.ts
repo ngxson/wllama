@@ -1,8 +1,7 @@
 import { ProxyToWorker } from './worker';
 import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, padDigits } from './utils';
-import { GGUFRemoteBlob } from './downloader/remote-blob';
-import { CacheManager } from './cache';
-export * from './cache';
+import { CacheManager } from './cache-manager';
+import { MultiDownloads } from './downloader/multi-downloads';
 
 export interface WllamaConfig {
   /**
@@ -217,13 +216,16 @@ export class Wllama {
       throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
     }
     const skipCache = config.useCache === false;
-    const urls: string[] = Array.isArray(modelUrl) ? modelUrl : [modelUrl];
-    const blobs = await Promise.all(
-      urls.map(u => GGUFRemoteBlob.create(new URL(u), {
-        logger: this.logger(),
+    const multiDownloads = new MultiDownloads(
+      this.logger(),
+      Array.isArray(modelUrl) ? modelUrl : [modelUrl],
+      config.parallelDownloads ?? 3,
+      {
+        progressCallback: config.progressCallback,
         useCache: !skipCache,
-      }))
+      }
     );
+    const blobs = await multiDownloads.run();
     return await this.loadModel(blobs, config);
   }
 
