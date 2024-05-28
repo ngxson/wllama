@@ -1,5 +1,3 @@
-type ProgressCallback = (opts: { loaded: number, total: number }) => any;
-
 export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
   const output = new Uint8Array(totalSize);
@@ -84,4 +82,13 @@ export const checkEnvironmentCompatible = async (): Promise<void> => {
   if (!(await isSupportSIMD())) {
     throw new Error('WebAssembly runtime does not support SIMD');
   }
+};
+
+/**
+ * Check if browser is Safari
+ * Source: https://github.com/DamonOehlman/detect-browser/blob/master/src/index.ts
+ */
+export const isSafari = (): boolean => {
+  return !!navigator.userAgent.match(/Version\/([0-9\._]+).*Mobile.*Safari.*/) // ios
+    || !!navigator.userAgent.match(/Version\/([0-9\._]+).*Safari/); // safari
 };

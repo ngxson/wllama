@@ -97,6 +97,9 @@ const patchMEMFS = () => {
 
 // Allocate a new file in wllama heapfs, returns file ID
 const heapfsAlloc = (name, size) => {
+  if (size < 1) {
+    throw new Error('File size must be bigger than 0');
+  }
   const m = wModule;
   const ptr = m.mmapAlloc(size);
   const file = {
@@ -583,13 +586,4 @@ export class ProxyToWorker {
       waitingTask.reject(new Error(`Received abort signal from llama.cpp; Message: ${text || '(empty)'}`));
     }
   }
-}
-
-/**
- * Utility functions
- */
-
-// Zero-padding numbers
-function padDigits(number: number, digits: number) {
-  return Array(Math.max(digits - String(number).length + 1, 0)).join('0') + number;
 }
