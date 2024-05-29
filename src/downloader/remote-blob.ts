@@ -57,6 +57,7 @@ export class GGUFRemoteBlob extends Blob {
       opts?.logger?.debug(`NOT using cache for ${cacheKey}`);
       return new GGUFRemoteBlob(url, 0, size, contentType, true, customFetch, {
         progressCallback: opts?.progressCallback ?? (() => {}),
+        startSignal: opts?.startSignal,
       });
     }
   }
