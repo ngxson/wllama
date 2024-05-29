@@ -1,5 +1,5 @@
 import { ProxyToWorker } from './worker';
-import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, padDigits } from './utils';
+import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, maybeSortFileByName, padDigits } from './utils';
 import { CacheManager } from './cache-manager';
 import { MultiDownloads } from './downloader/multi-downloads';
 
@@ -237,11 +237,13 @@ export class Wllama {
    * @param ggufBlobs List of Blob that holds data of gguf file.
    * @param config LoadModelConfig
    */
-  async loadModel(ggufBlobs: Blob[], config: LoadModelConfig): Promise<void> {
-    if (ggufBlobs.some(b => b.size === 0)) {
+  async loadModel(ggufBlobs: Blob[], config: LoadModelConfig = {}): Promise<void> {
+    const blobs = [...ggufBlobs]; // copy array
+    if (blobs.some(b => b.size === 0)) {
       throw new Error('Input model (or splits) must be non-empty Blob or File');
     }
-    const hasMultipleBuffers = ggufBlobs.length > 1;
+    maybeSortFileByName(blobs);
+    const hasMultipleBuffers = blobs.length > 1;
     if (this.proxy) {
       throw new Error('Module is already initialized');
     }
@@ -276,9 +278,9 @@ export class Wllama {
       this.logger(),
     );
     // TODO: files maybe out-of-order
-    await this.proxy.moduleInit(ggufBlobs.map((blob, i) => ({
+    await this.proxy.moduleInit(blobs.map((blob, i) => ({
       name: hasMultipleBuffers
-        ? `model-${padDigits(i + 1, 5)}-of-${padDigits(ggufBlobs.length, 5)}.gguf`
+        ? `model-${padDigits(i + 1, 5)}-of-${padDigits(blobs.length, 5)}.gguf`
         : 'model.gguf',
       blob,
     })));
@@ -305,7 +307,7 @@ export class Wllama {
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       model_path: hasMultipleBuffers
-        ? `/models/model-00001-of-${padDigits(ggufBlobs.length, 5)}.gguf`
+        ? `/models/model-00001-of-${padDigits(blobs.length, 5)}.gguf`
         : '/models/model.gguf',
     });
     this.bosToken = loadResult.token_bos;

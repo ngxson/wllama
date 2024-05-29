@@ -23,8 +23,9 @@
 <body>
 
   <h2>Completions</h2>
-  Model: <span id="cmpl_model"></span><br/>
-  <button id="btn_start_cmpl">Load model</button><br/>
+  <button id="btn_start_cmpl">Load test model</button> Test model: <span id="cmpl_model"></span><br/>
+  <label for="btn_pick_file">Or, pick a local gguf file:</label>
+  <input type="file" id="btn_pick_file" name="btn_pick_file" accept=".gguf" multiple><br><br>
   Prompt: <input id="input_prompt" value="Once upon a time," /><br/>
   Number of tokens: <input id="input_n_predict" value="50" type="number" /><br/>
   <button id="btn_run_cmpl">Run completions</button>
@@ -38,8 +39,7 @@
   <br/>
 
   <h2>Embeddings</h2>
-  Model: <span id="embd_model"></span><br/>
-  <button id="btn_start_embd">Load model</button><br/>
+  <button id="btn_start_embd">Load model</button> Model: <span id="embd_model"></span><br/>
   Text A: <input id="input_a" value="What is the weather like?" /><br/>
   Text B: <input id="input_b" value="Will it rain tomorrow?" /><br/>
   <button id="btn_run_embd">Calculate embeddings and cosine distance</button><br/>
@@ -69,22 +69,32 @@
       elemEmbdModel.textContent = `${getName(EMBD_MODEL)}, size: ${EMBD_MODEL_SIZE}`;
       elemBtnStartCmpl.onclick = async () => {
         elemBtnStartCmpl.disabled = true;
+        elemBtnPickFile.disabled = true;
         await startCompletions(CMPL_MODEL);
-        elemBtnStartCmpl.style.display = 'none';
+      };
+      elemBtnPickFile.onchange = async (event) => {
+        const { files } = event.target;
+        if (files.length === 0) return;
+        elemBtnStartCmpl.disabled = true;
+        elemBtnPickFile.disabled = true;
+        await startCompletions(null, files);
       };
       elemBtnStartEmbd.onclick = async () => {
         elemBtnStartEmbd.disabled = true;
         await startEmbeddings(EMBD_MODEL);
-        elemBtnStartEmbd.style.display = 'none';
       };
     }
 
     /////////////////////////////////////////////////////////////////////
     // completions
 
-    async function startCompletions(modelUrl) {
+    async function startCompletions(modelUrl, files) {
       const wllama = new Wllama(CONFIG_PATHS);
-      await wllama.loadModelFromUrl(modelUrl);
+      if (files) {
+        await wllama.loadModel(files);
+      } else {
+        await wllama.loadModelFromUrl(modelUrl);
+      }
       setCmplDisable(false);
 
       elemBtnCompletions.onclick = async () => {
@@ -134,6 +144,7 @@
     // DOM elements: completions
     const elemCmplModel = document.getElementById('cmpl_model');
     const elemBtnStartCmpl = document.getElementById('btn_start_cmpl');
+    const elemBtnPickFile = document.getElementById('btn_pick_file');
     const elemInput = document.getElementById('input_prompt');
     const elemNPredict = document.getElementById('input_n_predict');
     const elemBtnCompletions = document.getElementById('btn_run_cmpl');

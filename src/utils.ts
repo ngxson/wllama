@@ -42,6 +42,17 @@ export const getWModuleConfig = (pathConfig: { [filename: string]: string }) => 
   };
 }
 
+/**
+ * Check if the given blobs are files or not, then sort them by name
+ */
+export const maybeSortFileByName = (blobs: Blob[]): void => {
+  const isFiles = blobs.every(b => !!(b as File).name);
+  if (isFiles) {
+    const files = blobs as File[];
+    files.sort((a, b) => a.name.localeCompare(b.name));
+  }
+};
+
 export const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export const absoluteUrl = (relativePath: string) => new URL(relativePath, document.baseURI).href;
