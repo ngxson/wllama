@@ -11,6 +11,8 @@
  * - Unidirection: { verb, args }
  */
 
+import { isSafariMobile } from './utils';
+
 interface Logger {
   debug: typeof console.debug,
   log: typeof console.log,
@@ -460,14 +462,16 @@ export class ProxyToWorker {
     return parsedResult;
   }
 
-  async wllamaExit(): Promise<{ success: boolean }> {
-    const result = await this.pushTask({
-      verb: 'wllama.exit',
-      args: [],
-      callbackId: this.taskId++,
-    });
-    const parsedResult = this.parseResult(result);
-    return parsedResult;
+  async wllamaExit(): Promise<void> {
+    if (this.worker) {
+      const result = await this.pushTask({
+        verb: 'wllama.exit',
+        args: [],
+        callbackId: this.taskId++,
+      });
+      this.parseResult(result); // only check for exceptions
+      this.worker.terminate();
+    }
   }
 
   async wllamaDebug(): Promise<any> {
@@ -547,7 +551,10 @@ export class ProxyToWorker {
       const task = this.taskQueue.shift();
       if (!task) break; // no more tasks
       this.resultQueue.push(task);
-      this.worker!!.postMessage(task.param, task.buffers ?? []);
+      // TODO @ngxson : Safari mobile doesn't support transferable ArrayBuffer
+      this.worker!!.postMessage(task.param, isSafariMobile() ? undefined : {
+        transfer: task.buffers ?? [],
+      });
     }
     this.busy = false;
   }

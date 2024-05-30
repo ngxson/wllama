@@ -1,4 +1,4 @@
-import { isSafari } from './utils';
+import { isSafari, isSafariMobile } from './utils';
 
 export interface CacheEntry {
   /**
@@ -200,7 +200,10 @@ async function opfsWriteViaWorker(fileName: string): Promise<{
   }) => new Promise<void>((resolve, reject) => {
     pResolve = resolve;
     pReject = reject;
-    worker.postMessage(data, data.value ? [data.value.buffer] : []);
+    // TODO @ngxson : Safari mobile doesn't support transferable ArrayBuffer
+    worker.postMessage(data, isSafariMobile() ? undefined : {
+      transfer: data.value ? [data.value.buffer] : [],
+    });
   });
   await workerExec({ open: fileName });
   return {

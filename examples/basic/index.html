@@ -90,6 +90,7 @@
 
     async function startCompletions(modelUrl, files) {
       const wllama = new Wllama(CONFIG_PATHS);
+      // await wllama.cacheManager.clear();
       if (files) {
         await wllama.loadModel(files);
       } else {

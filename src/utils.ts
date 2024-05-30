@@ -100,6 +100,13 @@ export const checkEnvironmentCompatible = async (): Promise<void> => {
  * Source: https://github.com/DamonOehlman/detect-browser/blob/master/src/index.ts
  */
 export const isSafari = (): boolean => {
+  return isSafariMobile() || !!navigator.userAgent.match(/Version\/([0-9\._]+).*Safari/); // safari
+};
+
+/**
+ * Check if browser is Safari iOS / iPad / iPhone
+ * Source: https://github.com/DamonOehlman/detect-browser/blob/master/src/index.ts
+ */
+export const isSafariMobile = (): boolean => {
   return !!navigator.userAgent.match(/Version\/([0-9\._]+).*Mobile.*Safari.*/) // ios
-    || !!navigator.userAgent.match(/Version\/([0-9\._]+).*Safari/); // safari
 };
