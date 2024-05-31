@@ -11,6 +11,8 @@
  * - Unidirection: { verb, args }
  */
 
+import { isSafariMobile } from './utils';
+
 interface Logger {
   debug: typeof console.debug,
   log: typeof console.log,
@@ -34,9 +36,16 @@ interface Logger {
  * For llama.cpp, this is great because we use MAP_SHARED
  * 
  * Ref: https://github.com/ngxson/wllama/pull/39
+ * Ref: https://github.com/emscripten-core/emscripten/blob/main/src/library_memfs.js
+ * 
+ * Note 29/05/2024 @ngxson
+ * Due to ftell() being limited to MAX_LONG, we cannot load files bigger than 2^31 bytes (or 2GB)
+ * Ref: https://github.com/emscripten-core/emscripten/blob/main/system/lib/libc/musl/src/stdio/ftell.c
  */
 const MEMFS_PATCH_TO_HEAPFS = `
-const fileToPtr = {};
+const fsNameToFile = {};  // map Name => File
+const fsIdToFile = {};    // map ID => File
+let currFileId = 0;
 
 // Patch and redirect memfs calls to wllama
 const patchMEMFS = () => {
@@ -51,8 +60,8 @@ const patchMEMFS = () => {
 
   const patchStream = (stream) => {
     const name = stream.node.name;
-    if (fileToPtr[name]) {
-      const f = fileToPtr[name];
+    if (fsNameToFile[name]) {
+      const f = fsNameToFile[name];
       stream.node.contents = m.HEAPU8.subarray(f.ptr, f.ptr + f.size);
       stream.node.usedBytes = f.size;
     }
@@ -76,8 +85,8 @@ const patchMEMFS = () => {
   m.MEMFS.stream_ops.mmap = function (stream, length, position, prot, flags) {
     patchStream(stream);
     const name = stream.node.name;
-    if (fileToPtr[name]) {
-      const f = fileToPtr[name];
+    if (fsNameToFile[name]) {
+      const f = fsNameToFile[name];
       return {
         ptr: f.ptr + position,
         allocated: false,
@@ -93,15 +102,37 @@ const patchMEMFS = () => {
   m.FS.mount(m.MEMFS, { root: '.' }, '/models');
 };
 
-// Add new file to wllama heapfs
-const heapfsWriteFile = async (name, buf) => {
+// Allocate a new file in wllama heapfs, returns file ID
+const heapfsAlloc = (name, size) => {
+  if (size < 1) {
+    throw new Error('File size must be bigger than 0');
+  }
   const m = wModule;
-  const ptr = m.mmapAlloc(buf.byteLength);
-  m.HEAPU8.set(buf, ptr);
-  fileToPtr[name] = {
+  const ptr = m.mmapAlloc(size);
+  const file = {
     ptr: ptr,
-    size: buf.byteLength,
+    size: size,
+    id: currFileId++,
   };
+  fsIdToFile[file.id] = file;
+  fsNameToFile[name] = file;
+  return file.id;
+};
+
+// Add new file to wllama heapfs, return number of written bytes
+const heapfsWrite = (id, buffer, offset) => {
+  const m = wModule;
+  if (fsIdToFile[id]) {
+    const { ptr, size } = fsIdToFile[id];
+    const afterWriteByte = offset + buffer.byteLength;
+    if (afterWriteByte > size) {
+      throw new Error(\`File ID \${id} write out of bound, afterWriteByte = \${afterWriteByte} while size = \${size}\`);
+    }
+    m.HEAPU8.set(buffer, ptr + offset);
+    return buffer.byteLength;
+  } else {
+    throw new Error(\`File ID \${id} not found in heapfs\`);
+  }
 };
 `;
 
@@ -222,7 +253,7 @@ onmessage = async (e) => {
   }
 
   if (verb === 'module.init') {
-    const argPathConfig     = args[0];
+    const argPathConfig      = args[0];
     const argPThreadPoolSize = args[1];
     try {
       const Module = ModuleWrapper();
@@ -247,16 +278,29 @@ onmessage = async (e) => {
     return;
   }
 
-  if (verb === 'module.upload') {
-    const argFilename = args[0]; // file name
-    const argBuffer   = args[1]; // buffer for file data
+  if (verb === 'fs.alloc') {
+    const argFilename = args[0];
+    const argSize     = args[1];
     try {
       // create blank file
-      const empty = new ArrayBuffer(0);
-      wModule['FS_createDataFile']('/models', argFilename, empty, true, true, true);
-      // write data to heap
-      await heapfsWriteFile(argFilename, argBuffer);
-      msg({ callbackId, result: true });
+      const emptyBuffer = new ArrayBuffer(0);
+      wModule['FS_createDataFile']('/models', argFilename, emptyBuffer, true, true, true);
+      // alloc data on heap
+      const fileId = heapfsAlloc(argFilename, argSize);
+      msg({ callbackId, result: { fileId } });
+    } catch (err) {
+      msg({ callbackId, err });
+    }
+    return;
+  }
+
+  if (verb === 'fs.write') {
+    const argFileId = args[0];
+    const argBuffer = args[1];
+    const argOffset = args[2];
+    try {
+      const writtenBytes = heapfsWrite(argFileId, argBuffer, argOffset);
+      msg({ callbackId, result: { writtenBytes } });
     } catch (err) {
       msg({ callbackId, err });
     }
@@ -309,7 +353,8 @@ onmessage = async (e) => {
 
 interface TaskParam {
   verb: 'module.init'
-  | 'module.upload'
+  | 'fs.alloc'
+  | 'fs.write'
   | 'wllama.start'
   | 'wllama.action'
   | 'wllama.exit'
@@ -318,7 +363,12 @@ interface TaskParam {
   callbackId: number,
 };
 
-interface Task { resolve: any, reject: any, param: TaskParam };
+interface Task {
+  resolve: any,
+  reject: any,
+  param: TaskParam,
+  buffers?: ArrayBuffer[],
+};
 
 export class ProxyToWorker {
   logger: Logger;
@@ -345,7 +395,7 @@ export class ProxyToWorker {
     this.suppressNativeLog = suppressNativeLog;
   }
 
-  async moduleInit(ggufBuffers: ArrayBuffer[]): Promise<void> {
+  async moduleInit(ggufFiles: { name: string, blob: Blob }[]): Promise<void> {
     if (!this.pathConfig['wllama.js']) {
       throw new Error('"single-thread/wllama.js" or "multi-thread/wllama.js" is missing from pathConfig');
     }
@@ -377,20 +427,17 @@ export class ProxyToWorker {
       callbackId: this.taskId++,
     });
 
-    // copy buffer to worker
-    for (let i = 0; i < ggufBuffers.length; i++) {
-      await this.pushTask({
-        verb: 'module.upload',
-        args: [
-          ggufBuffers.length === 1
-            ? 'model.gguf'
-            : `model-${padDigits(i + 1, 5)}-of-${padDigits(ggufBuffers.length, 5)}.gguf`,
-          new Uint8Array(ggufBuffers[i]),
-        ],
-        callbackId: this.taskId++,
-      });
-      this.freeBuffer(ggufBuffers[i]);
+    // allocate all files
+    const nativeFiles: ({ id: number } & typeof ggufFiles[number])[] = [];
+    for (const file of ggufFiles) {
+      const id = await this.fileAlloc(file.name, file.blob.size);
+      nativeFiles.push({ id, ...file });
     }
+
+    // stream files
+    await Promise.all(nativeFiles.map(file => {
+      return this.fileWrite(file.id, file.blob);
+    }));
 
     return res;
   }
@@ -415,14 +462,16 @@ export class ProxyToWorker {
     return parsedResult;
   }
 
-  async wllamaExit(): Promise<{ success: boolean }> {
-    const result = await this.pushTask({
-      verb: 'wllama.exit',
-      args: [],
-      callbackId: this.taskId++,
-    });
-    const parsedResult = this.parseResult(result);
-    return parsedResult;
+  async wllamaExit(): Promise<void> {
+    if (this.worker) {
+      const result = await this.pushTask({
+        verb: 'wllama.exit',
+        args: [],
+        callbackId: this.taskId++,
+      });
+      this.parseResult(result); // only check for exceptions
+      this.worker.terminate();
+    }
   }
 
   async wllamaDebug(): Promise<any> {
@@ -434,6 +483,44 @@ export class ProxyToWorker {
     return JSON.parse(result);
   }
 
+  ///////////////////////////////////////
+
+  /**
+   * Allocate a new file in heapfs
+   * @returns fileId, to be used by fileWrite()
+   */
+  private async fileAlloc(fileName: string, size: number): Promise<number> {
+    const result = await this.pushTask({
+      verb: 'fs.alloc',
+      args: [fileName, size],
+      callbackId: this.taskId++,
+    });
+    return result.fileId;
+  }
+
+  /**
+   * Write a Blob to heapfs
+   */
+  private async fileWrite(fileId: number, blob: Blob): Promise<void> {
+    const reader = blob.stream().getReader();
+    let offset = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const size = value.byteLength;
+      await this.pushTask({
+        verb: 'fs.write',
+        args: [fileId, value, offset],
+        callbackId: this.taskId++,
+      }, [value.buffer]);
+      offset += size;
+    }
+  }
+
+  /**
+   * Parse JSON result returned by cpp code.
+   * Throw new Error if "__exception" is present in the response
+   */
   private parseResult(result: any): any {
     const parsedResult = JSON.parse(result);
     if (parsedResult && parsedResult['__exception']) {
@@ -442,13 +529,19 @@ export class ProxyToWorker {
     return parsedResult;
   }
 
-  private pushTask(param: TaskParam) {
+  /**
+   * Push a new task to taskQueue
+   */
+  private pushTask(param: TaskParam, buffers?: ArrayBuffer[]) {
     return new Promise<any>((resolve, reject) => {
-      this.taskQueue.push({ resolve, reject, param });
+      this.taskQueue.push({ resolve, reject, param, buffers });
       this.runTaskLoop();
     });
   }
 
+  /**
+   * Main loop for processing tasks
+   */
   private async runTaskLoop() {
     if (this.busy) {
       return; // another loop is already running
@@ -458,11 +551,17 @@ export class ProxyToWorker {
       const task = this.taskQueue.shift();
       if (!task) break; // no more tasks
       this.resultQueue.push(task);
-      this.worker!!.postMessage(task.param);
+      // TODO @ngxson : Safari mobile doesn't support transferable ArrayBuffer
+      this.worker!!.postMessage(task.param, isSafariMobile() ? undefined : {
+        transfer: task.buffers ?? [],
+      });
     }
     this.busy = false;
   }
 
+  /**
+   * Handle messages from worker
+   */
   private onRecvMsg(e: MessageEvent<any>) {
     if (!e.data) return; // ignore
     const { verb, args } = e.data;
@@ -499,28 +598,4 @@ export class ProxyToWorker {
       waitingTask.reject(new Error(`Received abort signal from llama.cpp; Message: ${text || '(empty)'}`));
     }
   }
-
-  // Free ArrayBuffer by resizing them to 0. This is needed because sometimes we run into OOM issue.
-  private freeBuffer(buf: ArrayBuffer) {
-    // @ts-ignore
-    if (ArrayBuffer.prototype.transfer) {
-      // @ts-ignore
-      buf.transfer(0);
-      // @ts-ignore
-    } else if (ArrayBuffer.prototype.resize && buf.resizable) {
-      // @ts-ignore
-      buf.resize(0);
-    } else {
-      this.logger.warn('Cannot free buffer. You may run into out-of-memory issue.');
-    }
-  }
-}
-
-/**
- * Utility functions
- */
-
-// Zero-padding numbers
-function padDigits(number: number, digits: number) {
-  return Array(Math.max(digits - String(number).length + 1, 0)).join('0') + number;
 }

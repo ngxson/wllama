@@ -1,5 +1,7 @@
 import { ProxyToWorker } from './worker';
-import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, loadBinaryResource, padDigits } from './utils';
+import { absoluteUrl, bufToText, checkEnvironmentCompatible, isSupportMultiThread, joinBuffers, maybeSortFileByName, padDigits } from './utils';
+import { CacheManager } from './cache-manager';
+import { MultiDownloads } from './downloader/multi-downloads';
 
 export interface WllamaConfig {
   /**
@@ -59,6 +61,10 @@ export interface DownloadModelConfig extends LoadModelConfig {
   // download-specific params
   parallelDownloads?: number,
   progressCallback?: (opts: { loaded: number, total: number }) => any,
+  /**
+   * Default: useCache = true
+   */
+  useCache?: boolean,
 };
 
 export interface SamplingConfig {
@@ -116,6 +122,9 @@ export const LoggerWithoutDebug = {
 };
 
 export class Wllama {
+  // The CacheManager singleton, can be accessed by user
+  public cacheManager = CacheManager;
+
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
@@ -206,27 +215,35 @@ export class Wllama {
     if (modelUrl.length === 0) {
       throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
     }
-    const ggufBuffers = await loadBinaryResource(
-      modelUrl,
+    const skipCache = config.useCache === false;
+    const multiDownloads = new MultiDownloads(
+      this.logger(),
+      Array.isArray(modelUrl) ? modelUrl : [modelUrl],
       config.parallelDownloads ?? 3,
-      config.progressCallback,
+      {
+        progressCallback: config.progressCallback,
+        useCache: !skipCache,
+      }
     );
-    return await this.loadModel(ggufBuffers, config);
+    const blobs = await multiDownloads.run();
+    return await this.loadModel(blobs, config);
   }
 
   /**
-   * Load model from a given buffer
-   * @param ggufBuffer ArrayBuffer holds data of gguf file. Buffers will be freed after being used.
-   * @param config 
+   * Load model from a given list of Blob.
+   * 
+   * You can pass multiple buffers into the function (in case the model contains multiple shards).
+   * 
+   * @param ggufBlobs List of Blob that holds data of gguf file.
+   * @param config LoadModelConfig
    */
-  async loadModel(ggufBuffer: ArrayBuffer | ArrayBuffer[], config: LoadModelConfig): Promise<void> {
-    const buffers: ArrayBuffer[] = Array.isArray(ggufBuffer)
-      ? ggufBuffer as ArrayBuffer[]
-      : [ggufBuffer as ArrayBuffer];
-    const hasMultipleBuffers = buffers.length > 1;
-    if (buffers.length === 0 || buffers.some(buf => buf.byteLength === 0)) {
-      throw new Error('Input model (or splits) must be non-empty ArrayBuffer');
+  async loadModel(ggufBlobs: Blob[], config: LoadModelConfig = {}): Promise<void> {
+    const blobs = [...ggufBlobs]; // copy array
+    if (blobs.some(b => b.size === 0)) {
+      throw new Error('Input model (or splits) must be non-empty Blob or File');
     }
+    maybeSortFileByName(blobs);
+    const hasMultipleBuffers = blobs.length > 1;
     if (this.proxy) {
       throw new Error('Module is already initialized');
     }
@@ -260,7 +277,13 @@ export class Wllama {
       this.config.suppressNativeLog ?? false,
       this.logger(),
     );
-    await this.proxy.moduleInit(buffers);
+    // TODO: files maybe out-of-order
+    await this.proxy.moduleInit(blobs.map((blob, i) => ({
+      name: hasMultipleBuffers
+        ? `model-${padDigits(i + 1, 5)}-of-${padDigits(blobs.length, 5)}.gguf`
+        : 'model.gguf',
+      blob,
+    })));
     // run it
     const startResult: any = await this.proxy.wllamaStart();
     if (!startResult.success) {
@@ -284,7 +307,7 @@ export class Wllama {
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       model_path: hasMultipleBuffers
-        ? `/models/model-00001-of-${padDigits(buffers.length, 5)}.gguf`
+        ? `/models/model-00001-of-${padDigits(blobs.length, 5)}.gguf`
         : '/models/model.gguf',
     });
     this.bosToken = loadResult.token_bos;

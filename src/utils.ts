@@ -1,87 +1,3 @@
-type ProgressCallback = (opts: { loaded: number, total: number }) => any;
-
-const _loadBinaryResource = async (
-  url: string,
-  progressCallback?: ProgressCallback,
-): Promise<ArrayBuffer> => {
-  const reportProgress = progressCallback && typeof progressCallback === 'function';
-  // @ts-ignore
-  const window = self;
-  const isInsideBrowser = (typeof window !== 'undefined');
-  let cache: Cache | null = null;
-
-  // Try to find if the model data is cached in Web Worker memory.
-  // @ts-ignore
-  if (isInsideBrowser && window.caches) {
-    // @ts-ignore
-    cache = await window.caches.open('wllama_cache');
-    // @ts-ignore
-    const cachedResponse = await cache.match(url);
-
-    if (cachedResponse) {
-      const data = await cachedResponse.arrayBuffer();
-      if (reportProgress) {
-        progressCallback({
-          total: data.byteLength,
-          loaded: data.byteLength,
-        })
-      }
-      return data;
-    }
-  }
-
-
-  // Download model and store in cache
-  const _promise = new Promise<ArrayBuffer>((resolve, reject) => {
-    const req = new XMLHttpRequest();
-    req.open('GET', url, true);
-    req.responseType = 'arraybuffer';
-    req.onload = async (_) => {
-      const arrayBuffer = req.response; // Note: not req.responseText
-      if (arrayBuffer) {
-        if (cache) {
-          await cache.put(url, new Response(arrayBuffer));
-        };
-        resolve(arrayBuffer);
-      }
-    };
-    if (reportProgress) {
-      req.onprogress = progressCallback;
-    }
-    req.onerror = (err) => {
-      reject(err);
-    };
-    req.send(null);
-  });
-
-  return await _promise;
-}
-
-/**
- * Return file size in bytes
- */
-export const getBinarySize = (url: string): Promise<number> => {
-  return new Promise<number>((resolve, reject) => {
-    const req = new XMLHttpRequest();
-    req.open('GET', url, true);
-    req.onreadystatechange = () => {
-      if (req.readyState === 2) { // HEADERS_RECEIVED
-        const value = req.getResponseHeader('Content-Length') ?? '';
-        req.abort();
-        if (isNaN(+value)) {
-          reject(new Error('Content-Length is not a number'));
-        } else {
-          resolve(parseInt(value));
-        }
-      }
-    };
-    req.onerror = (err) => {
-      reject(err);
-    };
-    req.send(null);
-  });
-};
-
 export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
   const output = new Uint8Array(totalSize);
@@ -90,72 +6,6 @@ export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
     output.set(buffers[i], buffers[i - 1].length);
   }
   return output;
-};
-
-/**
- * Load a resource as byte array. If multiple URLs is given, we will assume that the resource is splitted into small files
- * @param url URL (or list of URLs) to resource
- */
-export const loadBinaryResource = async (
-  url: string | string[],
-  nMaxParallel: number,
-  progressCallback?: (opts: { loaded: number, total: number }) => any,
-): Promise<ArrayBuffer | ArrayBuffer[]> => {
-  const reportProgress = progressCallback && typeof progressCallback === 'function';
-  const urls: string[] = Array.isArray(url)
-    ? [...url] as string[]
-    : [url as string];
-
-  const tasks: {
-    url: string,
-    result: ArrayBuffer,
-    started: boolean,
-    sizeTotal: number,
-    sizeLoaded: number,
-  }[] = urls.map(u => ({
-    url: u,
-    result: new ArrayBuffer(0),
-    started: false,
-    sizeTotal: 0,
-    sizeLoaded: 0,
-  }));
-
-  // Get the total length of all files
-  let totalSize = -1;
-  if (reportProgress) {
-    const sizeArr = await Promise.all(urls.map(u => getBinarySize(u)));
-    totalSize = sumArr(sizeArr);
-  }
-
-  // This is not multi-thread, but just a simple naming to borrow the idea
-  const threads: Promise<void>[] = [];
-  const runDownloadThread = async () => {
-    while (true) {
-      const task = tasks.find(t => !t.started);
-      if (!task) return;
-      task.started = true;
-      task.result = await _loadBinaryResource(task.url, (progress) => {
-        task.sizeTotal = progress.total;
-        task.sizeLoaded = progress.loaded;
-        if (reportProgress) {
-          // report aggregated progress across all files
-          progressCallback({
-            loaded: sumArr(tasks.map(t => t.sizeLoaded)),
-            total: totalSize,
-          });
-        }
-      });
-    }
-  };
-  for (let i = 0; i < nMaxParallel; i++) {
-    threads.push(runDownloadThread());
-  }
-  // wait until all downloads finish
-  await Promise.all(threads);
-
-  return tasks.length === 1
-    ? tasks[0].result
-    : tasks.map(r => r.result);
 };
 
 const textDecoder = new TextDecoder();
@@ -191,6 +41,17 @@ export const getWModuleConfig = (pathConfig: { [filename: string]: string }) => 
     },
   };
 }
+
+/**
+ * Check if the given blobs are files or not, then sort them by name
+ */
+export const maybeSortFileByName = (blobs: Blob[]): void => {
+  const isFiles = blobs.every(b => !!(b as File).name);
+  if (isFiles) {
+    const files = blobs as File[];
+    files.sort((a, b) => a.name.localeCompare(b.name));
+  }
+};
 
 export const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -232,4 +93,20 @@ export const checkEnvironmentCompatible = async (): Promise<void> => {
   if (!(await isSupportSIMD())) {
     throw new Error('WebAssembly runtime does not support SIMD');
   }
+};
+
+/**
+ * Check if browser is Safari
+ * Source: https://github.com/DamonOehlman/detect-browser/blob/master/src/index.ts
+ */
+export const isSafari = (): boolean => {
+  return isSafariMobile() || !!navigator.userAgent.match(/Version\/([0-9\._]+).*Safari/); // safari
+};
+
+/**
+ * Check if browser is Safari iOS / iPad / iPhone
+ * Source: https://github.com/DamonOehlman/detect-browser/blob/master/src/index.ts
+ */
+export const isSafariMobile = (): boolean => {
+  return !!navigator.userAgent.match(/Version\/([0-9\._]+).*Mobile.*Safari.*/) // ios
 };
