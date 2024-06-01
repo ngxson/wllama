@@ -6,6 +6,9 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 
 ## Recent changes
 
+- Version 1.10.0
+  - `loadModel()` now accepts `Blob` (also works with `File`)
+  - Origin private file system (OPFS) is used for caching files (better performance)
 - Version 1.9.0
   - Added custom logger
   - Added `getModelMetadata()`
