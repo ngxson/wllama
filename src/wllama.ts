@@ -207,6 +207,33 @@ export class Wllama {
   }
 
   /**
+   * Parses a model URL and returns an array of URLs based on the following patterns:
+   * If the input URL is an array, it returns the array itself.
+   * If the input URL is a string in the `gguf-split` format, it returns an array containing the URL of each shard in ascending order.
+   * Otherwise, it returns an array containing the input URL as a single element array.
+   */
+  parseModelUrl(modelUrl: string | string[]) {
+    if (Array.isArray(modelUrl)) return modelUrl;
+  
+    const urlPartsRegex = /(.*)-(\d{5})-of-(\d{5})\.gguf$/;
+  
+    const matches = modelUrl.match(urlPartsRegex);
+  
+    if (!matches || matches.length !== 4) return [modelUrl];
+  
+    const baseURL = matches[1];
+  
+    const paddedShardsAmount = matches[3];
+  
+    const paddedShardNumbers = Array.from(
+      { length: Number(paddedShardsAmount) },
+      (_, i) => (i + 1).toString().padStart(5, "0")
+    );
+  
+    return paddedShardNumbers.map((paddedShardNumber) => `${baseURL}-${paddedShardNumber}-of-${paddedShardsAmount}.gguf`);
+  }
+
+  /**
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * @param modelUrl URL or list of URLs (in the correct order)
    * @param config 
@@ -218,7 +245,7 @@ export class Wllama {
     const skipCache = config.useCache === false;
     const multiDownloads = new MultiDownloads(
       this.logger(),
-      Array.isArray(modelUrl) ? modelUrl : [modelUrl],
+      this.parseModelUrl(modelUrl),
       config.parallelDownloads ?? 3,
       {
         progressCallback: config.progressCallback,
