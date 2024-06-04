@@ -17,7 +17,7 @@ export interface WllamaConfig {
     warn: typeof console.warn,
     error: typeof console.error,
   },
-  };
+};
 
 export interface AssetsPathConfig {
   'single-thread/wllama.js': string,
@@ -97,7 +97,7 @@ export interface ChatCompletionOptions {
   }): any,
   sampling?: SamplingConfig,
   /**
-   * List of custom token IDs for stopping the generation.
+   * List of custom token IDs for stopping the generation.  
    * Note: To convert from text to token ID, use lookupToken()
    */
   stopTokens?: number[],
@@ -111,7 +111,7 @@ export interface ModelMetadata {
     nLayer: number;
   },
   meta: Record<string, string>,
-  };
+};
 
 /**
  * Logger preset with debug messages suppressed
@@ -150,9 +150,9 @@ export class Wllama {
 
   /**
    * Get token ID associated to BOS (begin of sentence) token.
-   *
+   * 
    * NOTE: This can only being used after `loadModel` is called.
-   *
+   * 
    * @returns -1 if the model is not loaded.
    */
   getBOS(): number {
@@ -161,9 +161,9 @@ export class Wllama {
 
   /**
    * Get token ID associated to EOS (end of sentence) token.
-   *
+   * 
    * NOTE: This can only being used after `loadModel` is called.
-   *
+   * 
    * @returns -1 if the model is not loaded.
    */
   getEOS(): number {
@@ -172,9 +172,9 @@ export class Wllama {
 
   /**
    * Get token ID associated to EOT (end of turn) token.
-   *
+   * 
    * NOTE: This can only being used after `loadModel` is called.
-   *
+   * 
    * @returns -1 if the model is not loaded.
    */
   getEOT(): number {
@@ -183,9 +183,9 @@ export class Wllama {
 
   /**
    * Get model hyper-parameters and metadata
-   *
+   * 
    * NOTE: This can only being used after `loadModel` is called.
-   *
+   * 
    * @returns ModelMetadata
    */
   getModelMetadata(): ModelMetadata {
@@ -197,9 +197,9 @@ export class Wllama {
 
   /**
    * Check if we're currently using multi-thread build.
-   *
+   * 
    * NOTE: This can only being used after `loadModel` is called.
-   *
+   * 
    * @returns true if multi-thread is used.
    */
   isMultithread(): boolean {
@@ -230,7 +230,7 @@ export class Wllama {
   /**
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * @param modelUrl URL or list of URLs (in the correct order)
-   * @param config
+   * @param config 
    */
   async loadModelFromUrl(modelUrl: string | string[], config: DownloadModelConfig = {}): Promise<void> {
     if (modelUrl.length === 0) {
@@ -252,9 +252,9 @@ export class Wllama {
 
   /**
    * Load model from a given list of Blob.
-   *
+   * 
    * You can pass multiple buffers into the function (in case the model contains multiple shards).
-   *
+   * 
    * @param ggufBlobs List of Blob that holds data of gguf file.
    * @param config LoadModelConfig
    */
@@ -287,11 +287,11 @@ export class Wllama {
         'wllama.js': absoluteUrl(this.pathConfig['multi-thread/wllama.js']!!),
         'wllama.wasm': absoluteUrl(this.pathConfig['multi-thread/wllama.wasm']!!),
         'wllama.worker.mjs': absoluteUrl(this.pathConfig['multi-thread/wllama.worker.mjs']!!),
-        }
+      }
       : {
         'wllama.js': absoluteUrl(this.pathConfig['single-thread/wllama.js']),
         'wllama.wasm': absoluteUrl(this.pathConfig['single-thread/wllama.wasm']),
-        };
+      };
     this.proxy = new ProxyToWorker(
       mPathConfig,
       this.useMultiThread ? nbThreads : 1,
@@ -300,10 +300,10 @@ export class Wllama {
     );
     // TODO: files maybe out-of-order
     await this.proxy.moduleInit(blobs.map((blob, i) => ({
-        name: hasMultipleBuffers
-          ? `model-${padDigits(i + 1, 5)}-of-${padDigits(blobs.length, 5)}.gguf`
+      name: hasMultipleBuffers
+        ? `model-${padDigits(i + 1, 5)}-of-${padDigits(blobs.length, 5)}.gguf`
         : 'model.gguf',
-        blob,
+      blob,
     })));
     // run it
     const startResult: any = await this.proxy.wllamaStart();
@@ -383,7 +383,7 @@ export class Wllama {
   /**
    * Make completion for a given text.
    * @param prompt Input text
-   * @param options
+   * @param options 
    * @returns Output completion text (only the completion part)
    */
   async createCompletion(prompt: string, options: ChatCompletionOptions): Promise<string> {
@@ -429,8 +429,8 @@ export class Wllama {
   // Low level API
 
   /**
-   * Create or reset the ctx_sampling
-   * @param config
+   * Create or reset the ctx_sampling 
+   * @param config 
    * @param pastTokens In case re-initializing the ctx_sampling, you can re-import past tokens into the new context
    */
   async samplingInit(config: SamplingConfig, pastTokens: number[] = []): Promise<void> {
@@ -445,7 +445,7 @@ export class Wllama {
   }
 
   /**
-   * Get a list of pieces in vocab.
+   * Get a list of pieces in vocab.  
    * NOTE: This function is slow, should only be used once.
    * @returns A list of Uint8Array. The nth element in the list associated to nth token in vocab
    */
@@ -455,9 +455,9 @@ export class Wllama {
   }
 
   /**
-   * Lookup to see if a token exist in vocab or not. Useful for searching special tokens like "<|im_start|>"
-   * NOTE: It will match the whole token, so do not use it as a replacement for tokenize()
-   * @param piece
+   * Lookup to see if a token exist in vocab or not. Useful for searching special tokens like "<|im_start|>"  
+   * NOTE: It will match the whole token, so do not use it as a replacement for tokenize()  
+   * @param piece 
    * @returns Token ID associated to the given piece. Returns -1 if cannot find the token.
    */
   async lookupToken(piece: string): Promise<number> {
@@ -471,7 +471,7 @@ export class Wllama {
 
   /**
    * Convert a given text to list of tokens
-   * @param text
+   * @param text 
    * @param special Should split special tokens?
    * @returns List of token ID
    */
@@ -485,7 +485,7 @@ export class Wllama {
 
   /**
    * Convert a list of tokens to text
-   * @param tokens
+   * @param tokens 
    * @returns Uint8Array, which maybe an unfinished unicode
    */
   async detokenize(tokens: number[]): Promise<Uint8Array> {
@@ -496,7 +496,7 @@ export class Wllama {
   /**
    * Run llama_decode()
    * @param tokens A list of tokens to be decoded
-   * @param options
+   * @param options 
    * @returns n_past (number of tokens so far in the sequence)
    */
   async decode(tokens: number[], options: {
@@ -530,7 +530,7 @@ export class Wllama {
 
   /**
    * Accept and save a new token to ctx_sampling
-   * @param tokens
+   * @param tokens 
    */
   async samplingAccept(tokens: number[]): Promise<void> {
     const result = await this.proxy.wllamaAction('sampling_accept', { tokens });
@@ -551,7 +551,7 @@ export class Wllama {
 
   /**
    * Calculate embeddings for a given list of tokens. Output vector is always normalized
-   * @param tokens
+   * @param tokens 
    * @returns A list of number represents an embedding vector of N dimensions
    */
   async embeddings(tokens: number[]): Promise<number[]> {
@@ -568,8 +568,8 @@ export class Wllama {
   /**
    * Remove and shift some tokens from KV cache.
    * Keep n_keep, remove n_discard then shift the rest
-   * @param nKeep
-   * @param nDiscard
+   * @param nKeep 
+   * @param nDiscard 
    */
   async kvRemove(nKeep: number, nDiscard: number): Promise<void> {
     const result = await this.proxy.wllamaAction('kv_remove', {
@@ -592,9 +592,9 @@ export class Wllama {
   }
 
   /**
-   * Save session to file (virtual file system)
+   * Save session to file (virtual file system)  
    * TODO: add ability to download the file
-   * @param filePath
+   * @param filePath 
    * @returns List of tokens saved to the file
    */
   async sessionSave(filePath: string): Promise<{ tokens: number[] }> {
@@ -603,10 +603,10 @@ export class Wllama {
   }
 
   /**
-   * Load session from file (virtual file system)
+   * Load session from file (virtual file system)  
    * TODO: add ability to download the file
-   * @param filePath
-   *
+   * @param filePath 
+   * 
    */
   async sessionLoad(filePath: string): Promise<void> {
     const result = await this.proxy.wllamaAction('session_load', { session_path: filePath });
@@ -616,7 +616,7 @@ export class Wllama {
       throw new Error('sessionLoad unknown error');
     }
   }
-
+  
   /**
    * Unload the model and free all memory
    */
