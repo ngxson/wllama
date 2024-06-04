@@ -227,7 +227,7 @@ export class Wllama {
   
     const paddedShardNumbers = Array.from(
       { length: Number(paddedShardsAmount) },
-      (_, i) => (i + 1).toString().padStart(5, "0")
+      (_, i) => (i + 1).toString().padStart(5, '0')
     );
   
     return paddedShardNumbers.map((paddedShardNumber) => `${baseURL}-${paddedShardNumber}-of-${paddedShardsAmount}.gguf`);
