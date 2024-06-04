@@ -212,7 +212,7 @@ export class Wllama {
    * If the input URL is a string in the `gguf-split` format, it returns an array containing the URL of each shard in ascending order.
    * Otherwise, it returns an array containing the input URL as a single element array.
    */
-  parseModelUrl(modelUrl: string | string[]) {
+  private parseModelUrl(modelUrl: string | string[]): string[] {
     if (Array.isArray(modelUrl)) return modelUrl;
   
     const urlPartsRegex = /(.*)-(\d{5})-of-(\d{5})\.gguf$/;
