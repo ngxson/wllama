@@ -214,24 +214,17 @@ export class Wllama {
    * @param modelUrl URL or list of URLs
    */
   private parseModelUrl(modelUrl: string | string[]): string[] {
-    if (Array.isArray(modelUrl)) return modelUrl;
-
+    if (Array.isArray(modelUrl)) {
+      return modelUrl;
+    }
     const urlPartsRegex = /(?<baseURL>.*)-(?<current>\d{5})-of-(?<total>\d{5})\.gguf$/;
-
     const matches = modelUrl.match(urlPartsRegex);
-
-    if (!matches || matches.length !== 4) return [modelUrl];
-
-    const baseURL = matches[1];
-
-    const paddedShardsAmount = matches[3];
-
-    const paddedShardNumbers = Array.from(
-      { length: Number(paddedShardsAmount) },
-      (_, i) => (i + 1).toString().padStart(5, '0')
-    );
-
-    return paddedShardNumbers.map((paddedShardNumber) => `${baseURL}-${paddedShardNumber}-of-${paddedShardsAmount}.gguf`);
+    if (!matches || !matches.groups || Object.keys(matches.groups).length !== 3) {
+      return [modelUrl];
+    }
+    const { baseURL, total} = matches.groups
+    const paddedShardIds = Array.from({ length: Number(total) }, (_, index) => (index + 1).toString().padStart(5, '0'));
+    return paddedShardIds.map((current) => `${baseURL}-${current}-of-${total}.gguf`);
   }
 
   /**
