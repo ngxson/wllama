@@ -215,7 +215,7 @@ export class Wllama {
   private parseModelUrl(modelUrl: string | string[]): string[] {
     if (Array.isArray(modelUrl)) return modelUrl;
   
-    const urlPartsRegex = /(.*)-(\d{5})-of-(\d{5})\.gguf$/;
+    const urlPartsRegex = /(?<baseURL>.*)-(?<current>\d{5})-of-(?<total>\d{5})\.gguf$/;
   
     const matches = modelUrl.match(urlPartsRegex);
   
