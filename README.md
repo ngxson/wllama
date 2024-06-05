@@ -125,17 +125,13 @@ We use `gguf-split` to split a big gguf file into smaller files. You can downloa
 ./gguf-split --split-max-size 512M ./my_model.gguf ./my_model
 ```
 
-This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`,...
+This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`, and so on.
 
-You can then give a list of uploaded files to `loadModelFromUrl`:
+You can then pass to `loadModelFromUrl` the URL of the first file and it will automatically load all the chunks:
 
 ```js
 await wllama.loadModelFromUrl(
-  [
-    'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf',
-    'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00002-of-00003.gguf',
-    'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00003-of-00003.gguf',
-  ],
+  'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf',
   {
     parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
   },
