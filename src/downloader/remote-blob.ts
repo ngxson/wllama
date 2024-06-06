@@ -25,7 +25,7 @@ interface GGUFRemoteBlobCreateOptions {
 }
 
 export class GGUFRemoteBlob extends Blob {
-  static async create(url: URL, opts?: GGUFRemoteBlobCreateOptions): Promise<Blob> {
+  static async create(url: RequestInfo | URL, opts?: GGUFRemoteBlobCreateOptions): Promise<Blob> {
     const customFetch = opts?.fetch ?? fetch;
     const response = await customFetch(url, { method: 'HEAD' });
 
@@ -62,7 +62,7 @@ export class GGUFRemoteBlob extends Blob {
     }
   }
 
-  private url: URL;
+  private url: RequestInfo | URL;
   private start: number;
   private end: number;
   private contentType: string;
@@ -72,7 +72,7 @@ export class GGUFRemoteBlob extends Blob {
   private progressCallback: ProgressCallback;
   private startSignal?: Promise<void>;
 
-  constructor(url: URL, start: number, end: number, contentType: string, full: boolean, customFetch: typeof fetch, additionals: {
+  constructor(url: RequestInfo | URL, start: number, end: number, contentType: string, full: boolean, customFetch: typeof fetch, additionals: {
     cachedStream?: ReadableStream,
     progressCallback: ProgressCallback,
     startSignal?: Promise<void>,
