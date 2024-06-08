@@ -45,7 +45,7 @@ export class MultiDownloads {
   async run(): Promise<Blob[]> {
     // create all Blobs
     await Promise.all(this.tasks.map(async (task) => {
-      task.blob = await GGUFRemoteBlob.create(new URL(task.url), {
+      task.blob = await GGUFRemoteBlob.create(task.url, {
         logger: this.logger,
         useCache: this.useCache,
         startSignal: task.signalStart,
