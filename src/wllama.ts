@@ -371,9 +371,6 @@ export class Wllama {
       skipEOS: false,
       ...options,
     };
-    if (!this.useEmbeddings) {
-      throw new Error('embeddings is not enabled in LoadModelConfig')
-    }
     await this.samplingInit(this.samplingConfig);
     await this.kvClear();
     const tokens = await this.tokenize(text);
@@ -509,6 +506,9 @@ export class Wllama {
   async decode(tokens: number[], options: {
     skipLogits?: boolean,
   }): Promise<{ nPast: number }> {
+    if (this.useEmbeddings) {
+      throw new Error('embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.');
+    }
     const req: any = { tokens };
     if (options.skipLogits) {
       req.skip_logits = true;
@@ -562,6 +562,9 @@ export class Wllama {
    * @returns A list of number represents an embedding vector of N dimensions
    */
   async embeddings(tokens: number[]): Promise<number[]> {
+    if (!this.useEmbeddings) {
+      throw new Error('embeddings is disabled. Use wllama.setOptions({ embeddings: true }) to enable it.');
+    }
     const result = await this.proxy.wllamaAction('embeddings', { tokens });
     if (result.error) {
       throw new Error(result.error);
@@ -629,6 +632,7 @@ export class Wllama {
    */
   async setOptions(opt: ContextOptions): Promise<void> {
     await this.proxy.wllamaAction('set_options', opt);
+    this.useEmbeddings = opt.embeddings;
   }
   
   /**
