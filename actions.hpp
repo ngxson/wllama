@@ -263,6 +263,24 @@ json action_load(app_t &app, json &body)
   };
 }
 
+// set various options at runtime (after loading model)
+json action_set_options(app_t &app, json &body)
+{
+  bool embeddings = body["embeddings"];
+  if (embeddings)
+  {
+    llama_set_embeddings(app.ctx, true);
+    llama_set_causal_attn(app.ctx, false);
+  }
+  else
+  {
+    llama_set_embeddings(app.ctx, false);
+    llama_set_causal_attn(app.ctx, true);
+  }
+  return json{{"success", true}};
+}
+
+// init (or re-init) sampling context
 json action_sampling_init(app_t &app, json &body)
 {
   // sampling

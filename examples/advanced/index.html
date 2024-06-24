@@ -53,7 +53,6 @@
       print(`Loading model ${MODEL}`);
       timeStart();
       await wllama.loadModelFromUrl(MODEL, {
-        embeddings: true,
         n_ctx: 1024,
         progressCallback: ({ loaded, total }) => console.log(`Downloading... ${Math.round(loaded/total*100)}%`),
       });
@@ -146,7 +145,6 @@
       print(`Loading split model...`);
       timeStart();
       await wllamaSplits.loadModelFromUrl(MODEL_SPLITS, {
-        embeddings: true,
         n_ctx: 1024,
         parallelDownloads: 5,
         progressCallback: ({ loaded, total }) => console.log(`Downloading... ${Math.round(loaded/total*100)}%`),
