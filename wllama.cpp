@@ -64,6 +64,7 @@ extern "C" const char *wllama_action(const char *name, const char *body)
     json body_json = json::parse(body_str);
     std::string action(name);
     WLLAMA_ACTION(load);
+    WLLAMA_ACTION(set_options);
     WLLAMA_ACTION(sampling_init);
     WLLAMA_ACTION(sampling_sample);
     WLLAMA_ACTION(sampling_accept);

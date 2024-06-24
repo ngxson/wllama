@@ -125,6 +125,10 @@
         embeddings: true,
         pooling_type: 'LLAMA_POOLING_TYPE_MEAN', // depend on the model, you will need to change this
       });
+
+      // optionally, you can switch between embeddings and generation mode whenever you want:
+      // await wllama.setOptions({ embeddings: false });
+
       setEmbdDisable(false);
 
       elemBtnEmbeddings.onclick = async () => {

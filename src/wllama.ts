@@ -113,6 +113,13 @@ export interface ModelMetadata {
   meta: Record<string, string>,
 };
 
+export interface ContextOptions {
+  /**
+   * Allow switching between embeddings / generation mode. Useful for models like GritLM.
+   */
+  embeddings: boolean;
+};
+
 /**
  * Logger preset with debug messages suppressed
  */
@@ -615,6 +622,13 @@ export class Wllama {
     } else if (!result.success) {
       throw new Error('sessionLoad unknown error');
     }
+  }
+
+  /**
+   * Set options for underlaying llama_context
+   */
+  async setOptions(opt: ContextOptions): Promise<void> {
+    await this.proxy.wllamaAction('set_options', opt);
   }
   
   /**
