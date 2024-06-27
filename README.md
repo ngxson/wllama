@@ -184,6 +184,9 @@ cd wllama
 # Optionally, you can run this command to update llama.cpp to latest upstream version (bleeding-edge, use with your own risk!)
 # git submodule update --remote --merge
 
+# Install the required modules
+npm i
+
 # Firstly, build llama.cpp into wasm
 npm run build:wasm
 # Then, build ES module
