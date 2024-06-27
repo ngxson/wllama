@@ -10,7 +10,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 set(COMMON_SRC actions.hpp
     json.hpp
-    llama.cpp/llama.h)
+    llama.cpp/include/llama.h)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common)
 
