@@ -66,6 +66,20 @@ export const CacheManager = {
       cacheDir.removeEntry(item.name);
     }
   },
+
+  /**
+   * Delete a single file (or group of files) from the cache based on a partial file name
+   */
+  async delete(hint: string): Promise<void> {
+    const cacheDir = await getCacheDir();
+    const list = await CacheManager.list();
+    for (const item of list) {
+      if(item.name.indexOf(hint) != -1){
+        cacheDir.removeEntry(item.name);
+      }
+    }
+  },
+  
 };
 
 /**
