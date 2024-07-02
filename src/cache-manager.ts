@@ -68,13 +68,13 @@ export const CacheManager = {
   },
 
   /**
-   * Delete a single file (or group of files) from the cache based on a partial file name
+   * Delete files from the cache
    */
-  async delete(hint: string): Promise<void> {
+  async delete(predicate: (entry: CacheEntry) => boolean): Promise<void> {
     const cacheDir = await getCacheDir();
     const list = await CacheManager.list();
     for (const item of list) {
-      if(item.name.indexOf(hint) != -1){
+      if (predicate(item)) {
         cacheDir.removeEntry(item.name);
       }
     }
