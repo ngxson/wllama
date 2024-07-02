@@ -16,26 +16,41 @@ export interface CacheEntry {
  */
 export const CacheManager = {
   /**
-   * Write a new file to cache. This will overwrite existing file.
+   * Convert a given URL into file name in cache.
+   * 
+   * Format of the file name: `${hashSHA1(fullURL)}_${fileName}`
    */
-  async write(key: string, stream: ReadableStream): Promise<void> {
-    return await opfsWrite(key, stream);
+  async getNameFromURL(url: string): Promise<string> {
+    return await toFileName(url);
+  },
+
+  /**
+   * Write a new file to cache. This will overwrite existing file.
+   * 
+   * @param name The file name returned by `getNameFromURL()` or `list()`
+   */
+  async write(name: string, stream: ReadableStream): Promise<void> {
+    return await opfsWrite(name, stream);
   },
   
   /**
    * Open a file in cache for reading
+   * 
+   * @param name The file name returned by `getNameFromURL()` or `list()`
    * @returns ReadableStream, or null if file does not exist
    */
-  async open(key: string): Promise<ReadableStream | null> {
-    return await opfsOpen(key);
+  async open(name: string): Promise<ReadableStream | null> {
+    return await opfsOpen(name);
   },
 
   /**
    * Get the size of a file in cache
+   * 
+   * @param name The file name returned by `getNameFromURL()` or `list()`
    * @returns number of bytes, or -1 if file does not exist
    */
-  async getSize(key: string): Promise<number> {
-    return await opfsFileSize(key);
+  async getSize(name: string): Promise<number> {
+    return await opfsFileSize(name);
   },
 
   /**
@@ -60,10 +75,33 @@ export const CacheManager = {
    * Clear all files currently in cache
    */
   async clear(): Promise<void> {
+    await CacheManager.deleteMany(() => true);
+  },
+
+  /**
+   * Delete a single file in cache
+   * 
+   * @param nameOrURL Can be either an URL or a name returned by `getNameFromURL()` or `list()`
+   */
+  async delete(nameOrURL: string): Promise<void> {
+    const name2 = await CacheManager.getNameFromURL(nameOrURL);
+    await CacheManager.deleteMany((entry) => (
+      entry.name === nameOrURL || entry.name === name2
+    ));
+  },
+
+  /**
+   * Delete multiple files in cache.
+   * 
+   * @param predicate A predicate like `array.filter(item => boolean)`
+   */
+  async deleteMany(predicate: (e: CacheEntry) => boolean): Promise<void> {
     const cacheDir = await getCacheDir();
     const list = await CacheManager.list();
     for (const item of list) {
-      cacheDir.removeEntry(item.name);
+      if (predicate(item)) {
+        cacheDir.removeEntry(item.name);
+      }
     }
   },
 };
