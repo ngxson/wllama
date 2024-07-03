@@ -665,7 +665,9 @@ export class Wllama {
   }
   
   /**
-   * Unload the model and free all memory
+   * Unload the model and free all memory.
+   * 
+   * Note: This function will NOT crash if model is not yet loaded
    */
   async exit(): Promise<void> {
     await this.proxy?.wllamaExit();
