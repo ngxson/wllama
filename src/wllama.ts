@@ -155,6 +155,19 @@ export class Wllama {
     return this.config.logger ?? console;
   }
 
+  private checkModelLoaded() {
+    if (!this.isModelLoaded()) {
+      throw new Error('loadModel() is not yet called');
+    }
+  }
+
+  /**
+   * Check if the model is loaded via `loadModel()`
+   */
+  isModelLoaded(): boolean {
+    return !!this.proxy && !!this.metadata;
+  }
+
   /**
    * Get token ID associated to BOS (begin of sentence) token.
    * 
@@ -196,10 +209,8 @@ export class Wllama {
    * @returns ModelMetadata
    */
   getModelMetadata(): ModelMetadata {
-    if (!this.metadata) {
-      throw new Error('loadModel() is not yet called');
-    }
-    return this.metadata;
+    this.checkModelLoaded();
+    return this.metadata!;
   }
 
   /**
@@ -210,6 +221,7 @@ export class Wllama {
    * @returns true if multi-thread is used.
    */
   isMultithread(): boolean {
+    this.checkModelLoaded();
     return this.useMultiThread;
   }
 
@@ -366,6 +378,7 @@ export class Wllama {
     skipBOS?: boolean,
     skipEOS?: boolean,
   } = {}): Promise<number[]> {
+    this.checkModelLoaded();
     const opt = {
       skipBOS: false,
       skipEOS: false,
@@ -391,6 +404,7 @@ export class Wllama {
    * @returns Output completion text (only the completion part)
    */
   async createCompletion(prompt: string, options: ChatCompletionOptions): Promise<string> {
+    this.checkModelLoaded();
     this.samplingConfig = options.sampling ?? {};
     await this.samplingInit(this.samplingConfig);
     await this.kvClear(); // TODO: maybe cache tokens?
@@ -438,6 +452,7 @@ export class Wllama {
    * @param pastTokens In case re-initializing the ctx_sampling, you can re-import past tokens into the new context
    */
   async samplingInit(config: SamplingConfig, pastTokens: number[] = []): Promise<void> {
+    this.checkModelLoaded();
     this.samplingConfig = config;
     const result = await this.proxy.wllamaAction('sampling_init', {
       ...config,
@@ -454,6 +469,7 @@ export class Wllama {
    * @returns A list of Uint8Array. The nth element in the list associated to nth token in vocab
    */
   async getVocab(): Promise<Uint8Array[]> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('get_vocab', {});
     return result.vocab.map((arr: number[]) => new Uint8Array(arr));
   }
@@ -465,6 +481,7 @@ export class Wllama {
    * @returns Token ID associated to the given piece. Returns -1 if cannot find the token.
    */
   async lookupToken(piece: string): Promise<number> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('lookup_token', { piece });
     if (!result.success) {
       return -1;
@@ -480,6 +497,7 @@ export class Wllama {
    * @returns List of token ID
    */
   async tokenize(text: string, special: boolean = true): Promise<number[]> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('tokenize', special
       ? { text, special: true }
       : { text }
@@ -493,6 +511,7 @@ export class Wllama {
    * @returns Uint8Array, which maybe an unfinished unicode
    */
   async detokenize(tokens: number[]): Promise<Uint8Array> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('detokenize', { tokens });
     return new Uint8Array(result.buffer);
   }
@@ -506,6 +525,7 @@ export class Wllama {
   async decode(tokens: number[], options: {
     skipLogits?: boolean,
   }): Promise<{ nPast: number }> {
+    this.checkModelLoaded();
     if (this.useEmbeddings) {
       throw new Error('embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.');
     }
@@ -528,6 +548,7 @@ export class Wllama {
    * @returns the token ID and its detokenized value (which maybe an unfinished unicode)
    */
   async samplingSample(): Promise<{ piece: Uint8Array, token: number }> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('sampling_sample', {});
     return {
       piece: new Uint8Array(result.piece),
@@ -540,6 +561,7 @@ export class Wllama {
    * @param tokens 
    */
   async samplingAccept(tokens: number[]): Promise<void> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('sampling_accept', { tokens });
     if (!result.success) {
       throw new Error('samplingAccept unknown error');
@@ -551,6 +573,7 @@ export class Wllama {
    * @param topK Get top K tokens having highest logits value. If topK == -1, we return all n_vocab logits, but this is not recommended because it's slow.
    */
   async getLogits(topK: number = 40): Promise<{token: number, p: number}[]> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('get_logits', { top_k: topK });
     const logits = result.logits as number[][];
     return logits.map(([token, p]) => ({ token, p }));
@@ -562,6 +585,7 @@ export class Wllama {
    * @returns A list of number represents an embedding vector of N dimensions
    */
   async embeddings(tokens: number[]): Promise<number[]> {
+    this.checkModelLoaded();
     if (!this.useEmbeddings) {
       throw new Error('embeddings is disabled. Use wllama.setOptions({ embeddings: true }) to enable it.');
     }
@@ -582,6 +606,7 @@ export class Wllama {
    * @param nDiscard 
    */
   async kvRemove(nKeep: number, nDiscard: number): Promise<void> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('kv_remove', {
       n_keep: nKeep,
       n_discard: nDiscard,
@@ -595,6 +620,7 @@ export class Wllama {
    * Clear all tokens in KV cache
    */
   async kvClear(): Promise<void> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('kv_clear', {});
     if (!result.success) {
       throw new Error('kvClear unknown error');
@@ -608,6 +634,7 @@ export class Wllama {
    * @returns List of tokens saved to the file
    */
   async sessionSave(filePath: string): Promise<{ tokens: number[] }> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('session_save', { session_path: filePath });
     return result;
   }
@@ -619,6 +646,7 @@ export class Wllama {
    * 
    */
   async sessionLoad(filePath: string): Promise<void> {
+    this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('session_load', { session_path: filePath });
     if (result.error) {
       throw new Error(result.error);
@@ -631,6 +659,7 @@ export class Wllama {
    * Set options for underlaying llama_context
    */
   async setOptions(opt: ContextOptions): Promise<void> {
+    this.checkModelLoaded();
     await this.proxy.wllamaAction('set_options', opt);
     this.useEmbeddings = opt.embeddings;
   }
@@ -646,6 +675,7 @@ export class Wllama {
    * get debug info
    */
   async _getDebugInfo(): Promise<any> {
+    this.checkModelLoaded();
     return await this.proxy.wllamaDebug();
   }
 
