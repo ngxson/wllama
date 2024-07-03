@@ -639,7 +639,7 @@ export class Wllama {
    * Unload the model and free all memory
    */
   async exit(): Promise<void> {
-    await this.proxy.wllamaExit();
+    await this.proxy?.wllamaExit();
   }
 
   /**
