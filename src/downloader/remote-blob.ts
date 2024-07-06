@@ -27,17 +27,25 @@ interface GGUFRemoteBlobCreateOptions {
 export class GGUFRemoteBlob extends Blob {
   static async create(url: RequestInfo | URL, opts?: GGUFRemoteBlobCreateOptions): Promise<Blob> {
     const customFetch = opts?.fetch ?? fetch;
-    const response = await customFetch(url, { method: 'HEAD' });
-
-    const size = Number(response.headers.get('content-length'));
-    const contentType = response.headers.get('content-type') || '';
-    const supportRange = response.headers.get('accept-ranges') === 'bytes';
 
     const cacheKey = url.toString();
     const cacheFileSize = await CacheManager.getSize(cacheKey);
     const skipCache = opts?.useCache === false;
 
-    if (size === cacheFileSize && !skipCache) {
+    let size = 0;
+		let contentType = '';
+		let supportRange = false;
+		if(window.internet === false && cacheFileSize){
+			size = cacheFileSize;
+		}
+		else{
+			const response = await customFetch(url, { method: 'HEAD' });
+      size = Number(response.headers.get('content-length'));
+	    contentType = response.headers.get('content-type') || '';
+	    supportRange = response.headers.get('accept-ranges') === 'bytes';
+    }
+    
+    if (size !== 0 && size === cacheFileSize && !skipCache) {
       opts?.logger?.debug(`Using cached file ${cacheKey}`);
       const cachedFile = await CacheManager.open(cacheKey);
       (opts?.startSignal ?? Promise.resolve()).then(() => {
