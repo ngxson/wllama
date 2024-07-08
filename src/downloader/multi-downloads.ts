@@ -20,10 +20,12 @@ export class MultiDownloads {
   private logger: any;
   private useCache: boolean;
   private totalBytes: number = 0;
+  private allowOffline: boolean;
 
   constructor(logger: any, urls: string[], maxParallel: number, opts: {
     progressCallback?: ProgressCallback,
     useCache: boolean,
+    allowOffline: boolean,
   }) {
     this.tasks = urls.map(url => {
       // @ts-ignore
@@ -40,6 +42,7 @@ export class MultiDownloads {
     this.maxParallel = maxParallel;
     this.progressCallback = opts.progressCallback;
     this.useCache = opts.useCache;
+    this.allowOffline = opts.allowOffline;
   }
 
   async run(): Promise<Blob[]> {
@@ -49,6 +52,7 @@ export class MultiDownloads {
         logger: this.logger,
         useCache: this.useCache,
         startSignal: task.signalStart,
+        allowOffline: this.allowOffline,
         progressCallback: ({ loaded }) => {
           task.loaded = loaded;
           this.updateProgress(task);

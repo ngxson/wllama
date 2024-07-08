@@ -54,6 +54,7 @@
       timeStart();
       await wllama.loadModelFromUrl(MODEL, {
         n_ctx: 1024,
+        // allowOffline: true,
         progressCallback: ({ loaded, total }) => console.log(`Downloading... ${Math.round(loaded/total*100)}%`),
       });
       print(`Loaded, take ${timeEnd()} ms`);
