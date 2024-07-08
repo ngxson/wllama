@@ -113,16 +113,27 @@ export const CacheManager = {
   async list(): Promise<CacheEntry[]> {
     const cacheDir = await getCacheDir();
     const result: CacheEntry[] = [];
+    const metadataMap: Record<string, CacheEntryMetadata> = {};
     // @ts-ignore
     for await (let [name, handler] of cacheDir.entries()) {
-      if (name.startsWith(PREFIX_METADATA)) {
-        continue; // skip metadata file
+      if (handler.kind === 'file' && name.startsWith(PREFIX_METADATA)) {
+        const stream = (await (handler as FileSystemFileHandle).getFile()).stream();
+        const meta = await new Response(stream).json().catch(_ => null);
+        metadataMap[name.replace(PREFIX_METADATA, '')] = meta;
       }
-      if (handler.kind === 'file') {
+    }
+    // @ts-ignore
+    for await (let [name, handler] of cacheDir.entries()) {
+      if (handler.kind === 'file' && !name.startsWith(PREFIX_METADATA)) {
         result.push({
           name,
           size: await (handler as FileSystemFileHandle).getFile().then(f => f.size),
-          metadata: (await CacheManager.getMetadata(name))!,
+          metadata: metadataMap[name] || {
+            // try to polyfill for old versions
+            originalSize: (await (handler as FileSystemFileHandle).getFile()).size,
+            originalURL: '',
+            etag: '',
+          },
         });
       }
     }

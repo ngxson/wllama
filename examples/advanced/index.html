@@ -49,6 +49,7 @@
         logger: LoggerWithoutDebug,
       });
       // await wllama.cacheManager.clear();
+      console.log('Files in cache:', await wllama.cacheManager.list())
 
       print(`Loading model ${MODEL}`);
       timeStart();
