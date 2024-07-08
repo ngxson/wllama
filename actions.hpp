@@ -37,11 +37,6 @@ struct app_t
   struct llama_sampling_context *ctx_sampling = nullptr;
   llama_batch batch = llama_batch_init(512, 0, 1);
   std::vector<llama_token> tokens;
-  // group attention
-  int32_t ga_i = 0; // group-attention state
-  int32_t ga_n = 0; // group-attention factor
-  int32_t ga_w = 0; // group-attention width
-  int32_t n_past_self_extension = 0;
 };
 
 inline void send_response(json data)
@@ -208,11 +203,6 @@ json action_load(app_t &app, json &body)
     cparams.yarn_beta_slow = body["yarn_beta_slow"];
   if (body.contains("yarn_orig_ctx"))
     cparams.yarn_orig_ctx = body["yarn_orig_ctx"];
-  // group attention
-  if (body.contains("grp_attn_n"))
-    app.ga_n = body["grp_attn_n"];
-  if (body.contains("grp_attn_w"))
-    app.ga_w = body["grp_attn_w"];
   // optimizations
   if (body.contains("cache_type_k"))
     cparams.type_k = kv_cache_type_from_str(body["cache_type_k"]);
@@ -249,6 +239,11 @@ json action_load(app_t &app, json &body)
   }
   llama_batch_free(app.batch);
   app.batch = llama_batch_init(cparams.n_batch, 0, 1);
+  auto decoder_start_token = llama_model_decoder_start_token(app.model);
+  if (decoder_start_token < 0)
+  {
+    decoder_start_token = llama_token_bos(app.model);
+  }
   return json{
       {"success", true},
       {"n_ctx", cparams.n_ctx},
@@ -260,6 +255,8 @@ json action_load(app_t &app, json &body)
       {"token_bos", llama_token_bos(app.model)},
       {"token_eos", llama_token_eos(app.model)},
       {"token_eot", llama_token_eot(app.model)},
+      {"encoder", llama_model_has_encoder(app.model)},
+      {"encoder_token", llama_model_decoder_start_token(app.model)},
   };
 }
 
@@ -423,23 +420,15 @@ json action_decode(app_t &app, json &body)
 {
   std::vector<llama_token> tokens_list = body["tokens"];
   bool skip_logits = body.contains("skip_logits");
-  /*bool grp_attn_enabled = app.ga_n > 1;
-  if (grp_attn_enabled)
-  {
-    group_attention_shift_context(app);
-  }*/
   size_t i = 0;
   llama_batch_clear(app.batch);
   for (auto id : tokens_list)
   {
     bool grp_attn_enabled = false; // TODO: maybe remove grp_attn
-    int32_t n_past = grp_attn_enabled
-                         ? app.n_past_self_extension
-                         : app.tokens.size();
+    int32_t n_past = app.tokens.size();
     llama_batch_add(app.batch, id, n_past, {0}, false);
     app.tokens.push_back(id);
     i++;
-    app.n_past_self_extension++;
   }
   // llama_decode will output logits only for the last token of the prompt
   if (!skip_logits)
@@ -455,6 +444,34 @@ json action_decode(app_t &app, json &body)
     return json{
         {"success", true},
         {"n_past", app.tokens.size()},
+    };
+  }
+}
+
+// encode an array of tokens
+json action_encode(app_t &app, json &body)
+{
+  std::vector<llama_token> tokens_list = body["tokens"];
+  if (!llama_model_has_encoder(app.model))
+  {
+    return json{{"error", "this model does not have an encoder"}};
+  }
+  size_t n_past = 0;
+  llama_batch_clear(app.batch);
+  for (auto id : tokens_list)
+  {
+    llama_batch_add(app.batch, id, n_past, {0}, false);
+    n_past++;
+  }
+  if (llama_encode(app.ctx, app.batch) != 0)
+  {
+    return json{{"error", "llama_encode failed, maybe n_batch is too small?"}};
+  }
+  else
+  {
+    return json{
+        {"success", true},
+        {"n_past", n_past},
     };
   }
 }

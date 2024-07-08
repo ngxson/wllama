@@ -143,6 +143,8 @@ export class Wllama {
   private eotToken: number = -1;
   private metadata?: ModelMetadata;
   private samplingConfig: SamplingConfig = {};
+  private encoder: boolean = false;
+  private encoderToken: number = -1;
 
   constructor(pathConfig: AssetsPathConfig, wllamaConfig: WllamaConfig = {}) {
     checkEnvironmentCompatible();
@@ -339,6 +341,8 @@ export class Wllama {
       token_bos: number,
       token_eos: number,
       token_eot: number,
+      encoder: boolean,
+      encoder_token: number,
     } = await this.proxy.wllamaAction('load', {
       ...config,
       use_mmap: true,
@@ -363,6 +367,8 @@ export class Wllama {
       },
       meta: loadResult.metadata,
     };
+    this.encoder = !!loadResult.encoder;
+    this.encoderToken = loadResult.encoder_token;
   }
 
   //////////////////////////////////////////////
@@ -538,6 +544,31 @@ export class Wllama {
       throw new Error(result.error);
     } else if (!result.success) {
       throw new Error('Cannot decode, unknown error');
+    } else {
+      return { nPast: result.n_past };
+    }
+  }
+
+  /**
+   * Run llama_encode()
+   * @param tokens A list of tokens to be encoded
+   * @param options Unused for now
+   * @returns n_past (number of tokens so far in the sequence)
+   */
+  async encode(tokens: number[], options?: Record<never, never>): Promise<{ nPast: number }> {
+    this.checkModelLoaded();
+    if (!this.encoder) {
+      throw new Error('This model does not use encoder-decoder architecture.');
+    }
+    if (this.useEmbeddings) {
+      throw new Error('embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.');
+    }
+    const req: any = { tokens };
+    const result = await this.proxy.wllamaAction('encode', req);
+    if (result.error) {
+      throw new Error(result.error);
+    } else if (!result.success) {
+      throw new Error('Cannot encode, unknown error');
     } else {
       return { nPast: result.n_past };
     }
