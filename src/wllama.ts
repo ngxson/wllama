@@ -65,6 +65,10 @@ export interface DownloadModelConfig extends LoadModelConfig {
    * Default: useCache = true
    */
   useCache?: boolean,
+  /**
+   * Default: useCache = false
+   */
+  allowOffline?: boolean,
 };
 
 export interface SamplingConfig {
@@ -227,9 +231,9 @@ export class Wllama {
 
   /**
    * Parses a model URL and returns an array of URLs based on the following patterns:
-   * If the input URL is an array, it returns the array itself.
-   * If the input URL is a string in the `gguf-split` format, it returns an array containing the URL of each shard in ascending order.
-   * Otherwise, it returns an array containing the input URL as a single element array.
+   * - If the input URL is an array, it returns the array itself.
+   * - If the input URL is a string in the `gguf-split` format, it returns an array containing the URL of each shard in ascending order.
+   * - Otherwise, it returns an array containing the input URL as a single element array.
    * @param modelUrl URL or list of URLs
    */
   private parseModelUrl(modelUrl: string | string[]): string[] {
@@ -263,6 +267,7 @@ export class Wllama {
       {
         progressCallback: config.progressCallback,
         useCache: !skipCache,
+        allowOffline: !!config.allowOffline,
       }
     );
     const blobs = await multiDownloads.run();
