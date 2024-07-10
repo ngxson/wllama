@@ -147,6 +147,8 @@ export class Wllama {
   private eotToken: number = -1;
   private metadata?: ModelMetadata;
   private samplingConfig: SamplingConfig = {};
+  private hasEncoder: boolean = false;
+  private decoderStartToken: number = -1;
 
   constructor(pathConfig: AssetsPathConfig, wllamaConfig: WllamaConfig = {}) {
     checkEnvironmentCompatible();
@@ -206,6 +208,17 @@ export class Wllama {
   }
 
   /**
+   * Get token ID associated to token used by decoder, to start generating output sequence(only usable for encoder-decoder architecture). In other words, encoder uses normal BOS and decoder uses this token.
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
+   * @returns -1 if the model is not loaded.
+   */
+  getDecoderStartToken(): number {
+    return this.decoderStartToken;
+  }
+
+  /**
    * Get model hyper-parameters and metadata
    * 
    * NOTE: This can only being used after `loadModel` is called.
@@ -227,6 +240,18 @@ export class Wllama {
   isMultithread(): boolean {
     this.checkModelLoaded();
     return this.useMultiThread;
+  }
+
+  /**
+   * Check if the current model uses encoder-decoder architecture
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
+   * @returns true if multi-thread is used.
+   */
+  isEncoderDecoderArchitecture(): boolean {
+    this.checkModelLoaded();
+    return this.hasEncoder;
   }
 
   /**
@@ -344,6 +369,8 @@ export class Wllama {
       token_bos: number,
       token_eos: number,
       token_eot: number,
+      has_encoder: boolean,
+      token_decoder_start: number,
     } = await this.proxy.wllamaAction('load', {
       ...config,
       use_mmap: true,
@@ -368,6 +395,8 @@ export class Wllama {
       },
       meta: loadResult.metadata,
     };
+    this.hasEncoder = !!loadResult.has_encoder;
+    this.decoderStartToken = loadResult.token_decoder_start;
   }
 
   //////////////////////////////////////////////
@@ -421,7 +450,12 @@ export class Wllama {
     // process prompt
     const tokens = await this.tokenize(prompt, true);
     await this.samplingAccept(tokens);
-    await this.decode(tokens, {});
+    if (this.isEncoderDecoderArchitecture()) {
+      await this.encode(tokens);
+      await this.decode([this.getDecoderStartToken()], {});
+    } else {
+      await this.decode(tokens, {});
+    }
     let outBuf = new Uint8Array();
     // abort signal
     let abort = false;
@@ -543,6 +577,31 @@ export class Wllama {
       throw new Error(result.error);
     } else if (!result.success) {
       throw new Error('Cannot decode, unknown error');
+    } else {
+      return { nPast: result.n_past };
+    }
+  }
+
+  /**
+   * Run llama_encode()
+   * @param tokens A list of tokens to be encoded
+   * @param options Unused for now
+   * @returns n_past (number of tokens so far in the sequence)
+   */
+  async encode(tokens: number[], options?: Record<never, never>): Promise<{ nPast: number }> {
+    this.checkModelLoaded();
+    if (!this.hasEncoder) {
+      throw new Error('This model does not use encoder-decoder architecture.');
+    }
+    if (this.useEmbeddings) {
+      throw new Error('embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.');
+    }
+    const req: any = { tokens };
+    const result = await this.proxy.wllamaAction('encode', req);
+    if (result.error) {
+      throw new Error(result.error);
+    } else if (!result.success) {
+      throw new Error('Cannot encode, unknown error');
     } else {
       return { nPast: result.n_past };
     }

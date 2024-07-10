@@ -73,6 +73,7 @@ extern "C" const char *wllama_action(const char *name, const char *body)
     WLLAMA_ACTION(tokenize);
     WLLAMA_ACTION(detokenize);
     WLLAMA_ACTION(decode);
+    WLLAMA_ACTION(encode);
     WLLAMA_ACTION(get_logits);
     WLLAMA_ACTION(embeddings);
     WLLAMA_ACTION(kv_remove);
