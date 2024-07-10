@@ -6,6 +6,9 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
 
 ## Recent changes
 
+- Version 1.14.0
+  - Added ability to use cached model when device goes offline [#90](https://github.com/ngxson/wllama/pull/90)
+  - Added experimental support for encoder-decoder architecture [#91](https://github.com/ngxson/wllama/pull/91)
 - Version 1.10.0
   - `loadModel()` now accepts `Blob` (also works with `File`)
   - Origin private file system (OPFS) is used for caching files (better performance)
@@ -13,13 +16,6 @@ Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.c
   - Added custom logger
   - Added `getModelMetadata()`
   - Added support for EOT (end of turn) and `stopTokens` in `createCompletion()`
-- Version 1.8.0
-  - Docs & demo address changed from `ngxson.github.io` to `github.ngxson.com`. This allows adding COOP/COEP headers (required to run multi-thread examples)
-  - Added `abortSignal`, see [#26](https://github.com/ngxson/wllama/pull/26)
-  - For more details, see [releases page](https://github.com/ngxson/wllama/releases)
-- Version 1.7.0
-  - When downloading, `n_downloads_parallel` is changed to `parallelDownloads`
-  - Added support for `progressCallback` when downloading. See [advanced example](./examples/advanced/index.html)
 
 For more details, see [releases](https://github.com/ngxson/wllama/releases)
 
