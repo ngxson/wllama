@@ -1,5 +1,10 @@
 import { isSafari, isSafariMobile } from './utils';
 
+const PREFIX_METADATA = '__metadata__';
+
+// To prevent breaking change, we fill etag with a pre-defined value
+export const POLYFILL_ETAG = 'polyfill_for_older_version';
+
 export interface CacheEntry {
   /**
    * File name in OPFS, in the format: `${hashSHA1(fullURL)}_${fileName}`
@@ -9,6 +14,26 @@ export interface CacheEntry {
    * Size of file (in bytes)
    */
   size: number;
+  /**
+   * Other metadata
+   */
+  metadata: CacheEntryMetadata;
+};
+
+export interface CacheEntryMetadata {
+  /**
+   * ETag header from remote request
+   * https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag
+   */
+  etag: string;
+  /**
+   * Remote file size (in bytes), used for integrity check
+   */
+  originalSize: number;
+  /**
+   * Original URL of the remote model. Unused for now
+   */
+  originalURL: string;
 };
 
 /**
@@ -21,7 +46,7 @@ export const CacheManager = {
    * Format of the file name: `${hashSHA1(fullURL)}_${fileName}`
    */
   async getNameFromURL(url: string): Promise<string> {
-    return await toFileName(url);
+    return await toFileName(url, '');
   },
 
   /**
@@ -29,10 +54,11 @@ export const CacheManager = {
    * 
    * @param name The file name returned by `getNameFromURL()` or `list()`
    */
-  async write(name: string, stream: ReadableStream): Promise<void> {
+  async write(name: string, stream: ReadableStream, metadata: CacheEntryMetadata): Promise<void> {
+    CacheManager._writeMetadata(name, metadata); // no need await
     return await opfsWrite(name, stream);
   },
-  
+
   /**
    * Open a file in cache for reading
    * 
@@ -44,7 +70,9 @@ export const CacheManager = {
   },
 
   /**
-   * Get the size of a file in cache
+   * Get the size of a file in stored cache
+   * 
+   * NOTE: in case the download is stopped mid-way (i.e. user close browser tab), the file maybe corrupted, size maybe different from `metadata.originalSize`
    * 
    * @param name The file name returned by `getNameFromURL()` or `list()`
    * @returns number of bytes, or -1 if file does not exist
@@ -54,17 +82,58 @@ export const CacheManager = {
   },
 
   /**
+   * Get metadata of a cached file
+   */
+  async getMetadata(name: string): Promise<CacheEntryMetadata | null> {
+    const stream = await opfsOpen(name, PREFIX_METADATA);
+    const cachedSize = await CacheManager.getSize(name);
+    if (!stream) {
+      return cachedSize > 0
+        // files created by older version of wllama doesn't have metadata, we will try to polyfill it
+        ? {
+          etag: POLYFILL_ETAG,
+          originalSize: cachedSize,
+          originalURL: '',
+        }
+        // if cached file not found, we don't have metadata at all
+        : null;
+    }
+    try {
+      const meta = await new Response(stream).json();
+      return meta;
+    } catch (e) {
+      // worst case: metadata is somehow corrupted, we will re-download the model
+      return null;
+    }
+  },
+
+  /**
    * List all files currently in cache
    */
   async list(): Promise<CacheEntry[]> {
     const cacheDir = await getCacheDir();
     const result: CacheEntry[] = [];
+    const metadataMap: Record<string, CacheEntryMetadata> = {};
     // @ts-ignore
     for await (let [name, handler] of cacheDir.entries()) {
-      if (handler.kind === 'file') {
+      if (handler.kind === 'file' && name.startsWith(PREFIX_METADATA)) {
+        const stream = (await (handler as FileSystemFileHandle).getFile()).stream();
+        const meta = await new Response(stream).json().catch(_ => null);
+        metadataMap[name.replace(PREFIX_METADATA, '')] = meta;
+      }
+    }
+    // @ts-ignore
+    for await (let [name, handler] of cacheDir.entries()) {
+      if (handler.kind === 'file' && !name.startsWith(PREFIX_METADATA)) {
         result.push({
           name,
           size: await (handler as FileSystemFileHandle).getFile().then(f => f.size),
+          metadata: metadataMap[name] || {
+            // try to polyfill for old versions
+            originalSize: (await (handler as FileSystemFileHandle).getFile()).size,
+            originalURL: '',
+            etag: '',
+          },
         });
       }
     }
@@ -104,15 +173,23 @@ export const CacheManager = {
       }
     }
   },
+
+  /**
+   * Internally used
+   */
+  async _writeMetadata(name: string, metadata: CacheEntryMetadata): Promise<void> {
+    const blob = new Blob([JSON.stringify(metadata)], { type: 'text/plain' });
+    await opfsWrite(name, blob.stream(), PREFIX_METADATA);
+  },
 };
 
 /**
  * Write to OPFS file from ReadableStream
  */
-async function opfsWrite(key: string, stream: ReadableStream): Promise<void> {
+async function opfsWrite(key: string, stream: ReadableStream, prefix = ''): Promise<void> {
   try {
     const cacheDir = await getCacheDir();
-    const fileName = await toFileName(key);
+    const fileName = await toFileName(key, prefix);
     const writable = isSafari()
       ? await opfsWriteViaWorker(fileName)
       : await cacheDir.getFileHandle(fileName, { create: true }).then(h => h.createWritable());
@@ -133,10 +210,10 @@ async function opfsWrite(key: string, stream: ReadableStream): Promise<void> {
  * Opens a file in OPFS for reading
  * @returns ReadableStream
  */
-async function opfsOpen(key: string): Promise<ReadableStream | null> {
+async function opfsOpen(key: string, prefix = ''): Promise<ReadableStream | null> {
   try {
     const cacheDir = await getCacheDir();
-    const fileName = await toFileName(key);
+    const fileName = await toFileName(key, prefix);
     const fileHandler = await cacheDir.getFileHandle(fileName);
     const file = await fileHandler.getFile();
     return file.stream();
@@ -150,10 +227,10 @@ async function opfsOpen(key: string): Promise<ReadableStream | null> {
  * Get file size of a file in OPFS
  * @returns number of bytes, or -1 if file does not exist
  */
-async function opfsFileSize(key: string): Promise<number> {
+async function opfsFileSize(key: string, prefix = ''): Promise<number> {
   try {
     const cacheDir = await getCacheDir();
-    const fileName = await toFileName(key);
+    const fileName = await toFileName(key, prefix);
     const fileHandler = await cacheDir.getFileHandle(fileName);
     const file = await fileHandler.getFile();
     return file.size;
@@ -163,11 +240,11 @@ async function opfsFileSize(key: string): Promise<number> {
   }
 }
 
-async function toFileName(str: string) {
+async function toFileName(str: string, prefix: string) {
   const hashBuffer = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(str));
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return `${hashHex}_${str.split('/').pop()}`;
+  return `${prefix}${hashHex}_${str.split('/').pop()}`;
 }
 
 async function getCacheDir() {

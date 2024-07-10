@@ -49,11 +49,13 @@
         logger: LoggerWithoutDebug,
       });
       // await wllama.cacheManager.clear();
+      console.log('Files in cache:', await wllama.cacheManager.list())
 
       print(`Loading model ${MODEL}`);
       timeStart();
       await wllama.loadModelFromUrl(MODEL, {
         n_ctx: 1024,
+        // allowOffline: true,
         progressCallback: ({ loaded, total }) => console.log(`Downloading... ${Math.round(loaded/total*100)}%`),
       });
       print(`Loaded, take ${timeEnd()} ms`);

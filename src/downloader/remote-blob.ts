@@ -1,6 +1,6 @@
 // Adapted from https://github.com/huggingface/huggingface.js/blob/main/packages/hub/src/utils/WebBlob.ts
 
-import { CacheManager } from '../cache-manager';
+import { CacheEntryMetadata, CacheManager, POLYFILL_ETAG } from '../cache-manager';
 
 type ProgressCallback = (opts: { loaded: number, total: number }) => any;
 
@@ -16,6 +16,7 @@ interface GGUFRemoteBlobCreateOptions {
   useCache?: boolean;
   progressCallback?: ProgressCallback;
   startSignal?: Promise<void>;
+  allowOffline: boolean;
   /**
    * Custom debug logger
    */
@@ -25,69 +26,110 @@ interface GGUFRemoteBlobCreateOptions {
 }
 
 export class GGUFRemoteBlob extends Blob {
-  static async create(url: RequestInfo | URL, opts?: GGUFRemoteBlobCreateOptions): Promise<Blob> {
+  static async create(url: string, opts: GGUFRemoteBlobCreateOptions): Promise<Blob> {
     const customFetch = opts?.fetch ?? fetch;
-    const response = await customFetch(url, { method: 'HEAD' });
+    const cacheKey = url;
+    let remoteFile: CacheEntryMetadata;
 
-    const size = Number(response.headers.get('content-length'));
-    const contentType = response.headers.get('content-type') || '';
-    const supportRange = response.headers.get('accept-ranges') === 'bytes';
+    try {
+      const response = await customFetch(url, { method: 'HEAD' });
+      remoteFile = {
+        originalURL: url,
+        originalSize: Number(response.headers.get('content-length')),
+        etag: (response.headers.get('etag') || '').replace(/[^A-Za-z0-9]/g, ''),
+        // supportRange: response.headers.get('accept-ranges') === 'bytes';
+      };
+    } catch (err) {
+      // connection error (i.e. offline)
+      if (opts.allowOffline) {
+        const cachedMeta = await CacheManager.getMetadata(cacheKey);
+        if (cachedMeta) {
+          remoteFile = cachedMeta;
+        } else {
+          throw new Error('Network error, cannot find requested model in cache for using offline');
+        }
+      } else {
+        throw err;
+      }
+    }
 
-    const cacheKey = url.toString();
-    const cacheFileSize = await CacheManager.getSize(cacheKey);
+    const cachedFileSize = await CacheManager.getSize(cacheKey);
+    const cachedFile = await CacheManager.getMetadata(cacheKey);
     const skipCache = opts?.useCache === false;
 
-    if (size === cacheFileSize && !skipCache) {
+    // migrate from old version: if metadata is polyfilled, we save the new metadata
+    const metadataPolyfilled = cachedFile?.etag === POLYFILL_ETAG;
+    if (metadataPolyfilled) {
+      await CacheManager._writeMetadata(cacheKey, remoteFile);
+    }
+
+    const cachedFileValid = metadataPolyfilled
+      || (cachedFile
+        && remoteFile.etag === cachedFile.etag
+        && remoteFile.originalSize === cachedFileSize);
+    if (cachedFileValid && !skipCache) {
       opts?.logger?.debug(`Using cached file ${cacheKey}`);
       const cachedFile = await CacheManager.open(cacheKey);
       (opts?.startSignal ?? Promise.resolve()).then(() => {
         opts?.progressCallback?.({
-          loaded: cacheFileSize,
-          total: cacheFileSize,
+          loaded: cachedFileSize,
+          total: cachedFileSize,
         });
       });
-      return new GGUFRemoteBlob(url, 0, cacheFileSize, '', true, customFetch, {
+      return new GGUFRemoteBlob(url, 0, remoteFile.originalSize, true, customFetch, {
         cachedStream: cachedFile!,
         progressCallback: () => {}, // unused
+        etag: remoteFile.etag,
       });
     } else {
-      if (cacheFileSize > 0) {
-        opts?.logger?.debug(`Cache file is present, but size mismatch (cache = ${cacheFileSize} bytes, real = ${size} bytes)`);
+      if (remoteFile.originalSize !== cachedFileSize) {
+        opts?.logger?.debug(`Cache file is present, but size mismatch (cache = ${cachedFileSize} bytes, remote = ${remoteFile.originalSize} bytes)`);
+      }
+      if (cachedFile && remoteFile.etag !== cachedFile.etag) {
+        opts?.logger?.debug(`Cache file is present, but ETag mismatch (cache = "${cachedFile.etag}", remote = "${remoteFile.etag}")`);
       }
       opts?.logger?.debug(`NOT using cache for ${cacheKey}`);
-      return new GGUFRemoteBlob(url, 0, size, contentType, true, customFetch, {
+      return new GGUFRemoteBlob(url, 0, remoteFile.originalSize, true, customFetch, {
         progressCallback: opts?.progressCallback ?? (() => {}),
         startSignal: opts?.startSignal,
+        etag: remoteFile.etag,
       });
     }
   }
 
-  private url: RequestInfo | URL;
+  private url: string;
+  private etag: string;
   private start: number;
   private end: number;
-  private contentType: string;
+  private contentType: string = '';
   private full: boolean;
   private fetch: typeof fetch;
   private cachedStream?: ReadableStream;
   private progressCallback: ProgressCallback;
   private startSignal?: Promise<void>;
 
-  constructor(url: RequestInfo | URL, start: number, end: number, contentType: string, full: boolean, customFetch: typeof fetch, additionals: {
+  constructor(url: string, start: number, end: number, full: boolean, customFetch: typeof fetch, additionals: {
     cachedStream?: ReadableStream,
     progressCallback: ProgressCallback,
     startSignal?: Promise<void>,
+    etag: string,
   }) {
     super([]);
+
+    if (start !== 0) {
+      throw new Error('start range must be 0');
+    }
 
     this.url = url;
     this.start = start;
     this.end = end;
-    this.contentType = contentType;
+    this.contentType = '';
     this.full = full;
     this.fetch = customFetch;
     this.cachedStream = additionals.cachedStream;
     this.progressCallback = additionals.progressCallback;
     this.startSignal = additionals.startSignal;
+    this.etag = additionals.etag;
   }
 
   override get size(): number {
@@ -142,7 +184,11 @@ export class GGUFRemoteBlob extends Blob {
         .then((response) => {
           const [src0, src1] = response.body!.tee();
           src0.pipeThrough(stream);
-          CacheManager.write(this.url.toString(), src1);
+          CacheManager.write(this.url, src1, {
+            originalSize: this.end,
+            originalURL: this.url,
+            etag: this.etag,
+          });
         })
         .catch((error) => stream.writable.abort(error.message));
     })();
