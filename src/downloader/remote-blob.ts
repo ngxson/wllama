@@ -18,6 +18,11 @@ interface GGUFRemoteBlobCreateOptions {
   startSignal?: Promise<void>;
   allowOffline: boolean;
   /**
+   * Should we skip TEE the output stream?
+   * Set to true if we only download model to cache, without reading it
+   */
+  noTEE: boolean;
+  /**
    * Custom debug logger
    */
   logger?: {
@@ -80,6 +85,7 @@ export class GGUFRemoteBlob extends Blob {
         cachedStream: cachedFile!,
         progressCallback: () => {}, // unused
         etag: remoteFile.etag,
+        noTEE: opts.noTEE,
       });
     } else {
       if (remoteFile.originalSize !== cachedFileSize) {
@@ -93,6 +99,7 @@ export class GGUFRemoteBlob extends Blob {
         progressCallback: opts?.progressCallback ?? (() => {}),
         startSignal: opts?.startSignal,
         etag: remoteFile.etag,
+        noTEE: opts.noTEE,
       });
     }
   }
@@ -107,12 +114,14 @@ export class GGUFRemoteBlob extends Blob {
   private cachedStream?: ReadableStream;
   private progressCallback: ProgressCallback;
   private startSignal?: Promise<void>;
+  private noTEE: boolean;
 
   constructor(url: string, start: number, end: number, full: boolean, customFetch: typeof fetch, additionals: {
     cachedStream?: ReadableStream,
     progressCallback: ProgressCallback,
     startSignal?: Promise<void>,
     etag: string,
+    noTEE: boolean,
   }) {
     super([]);
 
@@ -130,6 +139,7 @@ export class GGUFRemoteBlob extends Blob {
     this.progressCallback = additionals.progressCallback;
     this.startSignal = additionals.startSignal;
     this.etag = additionals.etag;
+    this.noTEE = additionals.noTEE;
   }
 
   override get size(): number {
@@ -161,7 +171,10 @@ export class GGUFRemoteBlob extends Blob {
     let loaded = 0;
     const stream = new TransformStream({
       transform(chunk, controller) {
-        controller.enqueue(chunk);
+        // if noTEE is set, we discard the chunk
+        if (!self.noTEE) {
+          controller.enqueue(chunk);
+        }
         loaded += chunk.byteLength;
         self.progressCallback({
           loaded,

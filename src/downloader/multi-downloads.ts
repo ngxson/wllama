@@ -21,11 +21,13 @@ export class MultiDownloads {
   private useCache: boolean;
   private totalBytes: number = 0;
   private allowOffline: boolean;
+  private noTEE: boolean;
 
   constructor(logger: any, urls: string[], maxParallel: number, opts: {
     progressCallback?: ProgressCallback,
     useCache: boolean,
     allowOffline: boolean,
+    noTEE?: boolean,
   }) {
     this.tasks = urls.map(url => {
       // @ts-ignore
@@ -43,6 +45,7 @@ export class MultiDownloads {
     this.progressCallback = opts.progressCallback;
     this.useCache = opts.useCache;
     this.allowOffline = opts.allowOffline;
+    this.noTEE = !!opts.noTEE;
   }
 
   async run(): Promise<Blob[]> {
@@ -53,6 +56,7 @@ export class MultiDownloads {
         useCache: this.useCache,
         startSignal: task.signalStart,
         allowOffline: this.allowOffline,
+        noTEE: this.noTEE,
         progressCallback: ({ loaded }) => {
           task.loaded = loaded;
           this.updateProgress(task);
