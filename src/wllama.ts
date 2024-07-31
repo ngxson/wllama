@@ -276,7 +276,35 @@ export class Wllama {
   }
 
   /**
+   * Download a model to cache, without loading it
+   * @param modelUrl URL or list of URLs (in the correct order)
+   * @param config 
+   */
+  async downloadModel(modelUrl: string | string[], config: DownloadModelConfig = {}): Promise<void> {
+    if (modelUrl.length === 0) {
+      throw new Error('modelUrl must be an URL or a list of URLs (in the correct order)');
+    }
+    if (config.useCache === false) {
+      throw new Error('useCache must not be false');
+    }
+    const multiDownloads = new MultiDownloads(
+      this.logger(),
+      this.parseModelUrl(modelUrl),
+      config.parallelDownloads ?? 3,
+      {
+        progressCallback: config.progressCallback,
+        useCache: true,
+        allowOffline: !!config.allowOffline,
+        noTEE: true,
+      }
+    );
+    await multiDownloads.run();
+  }
+
+  /**
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
+   * - If the model already been downloaded (via `downloadModel()`), then we will use the cached model
+   * - Else, we download the model from internet
    * @param modelUrl URL or list of URLs (in the correct order)
    * @param config 
    */
