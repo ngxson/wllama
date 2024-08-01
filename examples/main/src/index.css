@@ -5,3 +5,16 @@
 body {
   @apply bg-base-300;
 }
+
+.guide-text {
+  a {
+    @apply text-primary;
+  }
+  
+  ul {
+    @apply list-disc pl-4 mt-2;
+    li {
+      @apply mb-2;
+    }
+  }
+}
