@@ -2,7 +2,9 @@
 
 ![](./README_banner.png)
 
-Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp). Inspired by [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm), but unlike it, **Wllama** aims to supports **low-level API** like (de)tokenization, embeddings,...
+WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
+
+👉 [Try the demo app](https://github.ngxson.com/wllama/examples/main/dist/)
 
 ## Recent changes
 
