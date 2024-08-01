@@ -1,12 +1,12 @@
 /**
  * Module code will be copied into worker.
- * 
+ *
  * Messages between main <==> worker:
- * 
+ *
  * From main thread to worker:
  * - Send direction: { verb, args, callbackId }
  * - Result direction: { callbackId, result } or { callbackId, err }
- * 
+ *
  * Signal from worker to main:
  * - Unidirection: { verb, args }
  */
@@ -14,11 +14,11 @@
 import { isSafariMobile } from './utils';
 
 interface Logger {
-  debug: typeof console.debug,
-  log: typeof console.log,
-  warn: typeof console.warn,
-  error: typeof console.error,
-};
+  debug: typeof console.debug;
+  log: typeof console.log;
+  warn: typeof console.warn;
+  error: typeof console.error;
+}
 
 //////////////////////////////////////////////////
 //////////////////////////////////////////////////
@@ -28,16 +28,16 @@ interface Logger {
  * allocating new Uint8Array in javascript heap. This is not good
  * because it requires files to be copied to wasm heap each time
  * a file is read.
- * 
+ *
  * HeapFS is an alternative, which resolves this problem by
  * allocating space for file directly inside wasm heap. This
  * allows us to mmap without doing any copy.
- * 
+ *
  * For llama.cpp, this is great because we use MAP_SHARED
- * 
+ *
  * Ref: https://github.com/ngxson/wllama/pull/39
  * Ref: https://github.com/emscripten-core/emscripten/blob/main/src/library_memfs.js
- * 
+ *
  * Note 29/05/2024 @ngxson
  * Due to ftell() being limited to MAX_LONG, we cannot load files bigger than 2^31 bytes (or 2GB)
  * Ref: https://github.com/emscripten-core/emscripten/blob/main/system/lib/libc/musl/src/stdio/ftell.c
@@ -352,23 +352,24 @@ onmessage = async (e) => {
 `;
 
 interface TaskParam {
-  verb: 'module.init'
-  | 'fs.alloc'
-  | 'fs.write'
-  | 'wllama.start'
-  | 'wllama.action'
-  | 'wllama.exit'
-  | 'wllama.debug',
-  args: any[],
-  callbackId: number,
-};
+  verb:
+    | 'module.init'
+    | 'fs.alloc'
+    | 'fs.write'
+    | 'wllama.start'
+    | 'wllama.action'
+    | 'wllama.exit'
+    | 'wllama.debug';
+  args: any[];
+  callbackId: number;
+}
 
 interface Task {
-  resolve: any,
-  reject: any,
-  param: TaskParam,
-  buffers?: ArrayBuffer[],
-};
+  resolve: any;
+  reject: any;
+  param: TaskParam;
+  buffers?: ArrayBuffer[];
+}
 
 export class ProxyToWorker {
   logger: Logger;
@@ -386,7 +387,7 @@ export class ProxyToWorker {
     pathConfig: any,
     nbThread: number = 1,
     suppressNativeLog: boolean,
-    logger: Logger,
+    logger: Logger
   ) {
     this.pathConfig = pathConfig;
     this.nbThread = nbThread;
@@ -395,9 +396,11 @@ export class ProxyToWorker {
     this.suppressNativeLog = suppressNativeLog;
   }
 
-  async moduleInit(ggufFiles: { name: string, blob: Blob }[]): Promise<void> {
+  async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
     if (!this.pathConfig['wllama.js']) {
-      throw new Error('"single-thread/wllama.js" or "multi-thread/wllama.js" is missing from pathConfig');
+      throw new Error(
+        '"single-thread/wllama.js" or "multi-thread/wllama.js" is missing from pathConfig'
+      );
     }
     const Module = await import(this.pathConfig['wllama.js']);
     let moduleCode = Module.default.toString();
@@ -413,31 +416,32 @@ export class ProxyToWorker {
       WORKER_CODE,
     ].join(';\n\n');
     // https://stackoverflow.com/questions/5408406/web-workers-without-a-separate-javascript-file
-    const workerURL = window.URL.createObjectURL(new Blob([completeCode], { type: 'text/javascript' }));
+    const workerURL = window.URL.createObjectURL(
+      new Blob([completeCode], { type: 'text/javascript' })
+    );
     this.worker = new Worker(workerURL);
     this.worker.onmessage = this.onRecvMsg.bind(this);
     this.worker.onerror = this.logger.error;
 
     const res = await this.pushTask({
       verb: 'module.init',
-      args: [
-        this.pathConfig,
-        this.nbThread,
-      ],
+      args: [this.pathConfig, this.nbThread],
       callbackId: this.taskId++,
     });
 
     // allocate all files
-    const nativeFiles: ({ id: number } & typeof ggufFiles[number])[] = [];
+    const nativeFiles: ({ id: number } & (typeof ggufFiles)[number])[] = [];
     for (const file of ggufFiles) {
       const id = await this.fileAlloc(file.name, file.blob.size);
       nativeFiles.push({ id, ...file });
     }
 
     // stream files
-    await Promise.all(nativeFiles.map(file => {
-      return this.fileWrite(file.id, file.blob);
-    }));
+    await Promise.all(
+      nativeFiles.map((file) => {
+        return this.fileWrite(file.id, file.blob);
+      })
+    );
 
     return res;
   }
@@ -508,11 +512,14 @@ export class ProxyToWorker {
       const { done, value } = await reader.read();
       if (done) break;
       const size = value.byteLength;
-      await this.pushTask({
-        verb: 'fs.write',
-        args: [fileId, value, offset],
-        callbackId: this.taskId++,
-      }, [value.buffer]);
+      await this.pushTask(
+        {
+          verb: 'fs.write',
+          args: [fileId, value, offset],
+          callbackId: this.taskId++,
+        },
+        [value.buffer]
+      );
       offset += size;
     }
   }
@@ -552,9 +559,14 @@ export class ProxyToWorker {
       if (!task) break; // no more tasks
       this.resultQueue.push(task);
       // TODO @ngxson : Safari mobile doesn't support transferable ArrayBuffer
-      this.worker!!.postMessage(task.param, isSafariMobile() ? undefined : {
-        transfer: task.buffers ?? [],
-      });
+      this.worker!!.postMessage(
+        task.param,
+        isSafariMobile()
+          ? undefined
+          : {
+              transfer: task.buffers ?? [],
+            }
+      );
     }
     this.busy = false;
   }
@@ -580,13 +592,17 @@ export class ProxyToWorker {
 
     const { callbackId, result, err } = e.data;
     if (callbackId) {
-      const idx = this.resultQueue.findIndex(t => t.param.callbackId === callbackId);
+      const idx = this.resultQueue.findIndex(
+        (t) => t.param.callbackId === callbackId
+      );
       if (idx !== -1) {
         const waitingTask = this.resultQueue.splice(idx, 1)[0];
         if (err) waitingTask.reject(err);
         else waitingTask.resolve(result);
       } else {
-        this.logger.error(`Cannot find waiting task with callbackId = ${callbackId}`);
+        this.logger.error(
+          `Cannot find waiting task with callbackId = ${callbackId}`
+        );
       }
     }
   }
@@ -595,7 +611,11 @@ export class ProxyToWorker {
     while (this.resultQueue.length > 0) {
       const waitingTask = this.resultQueue.pop();
       if (!waitingTask) break;
-      waitingTask.reject(new Error(`Received abort signal from llama.cpp; Message: ${text || '(empty)'}`));
+      waitingTask.reject(
+        new Error(
+          `Received abort signal from llama.cpp; Message: ${text || '(empty)'}`
+        )
+      );
     }
   }
 }

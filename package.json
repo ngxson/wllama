@@ -15,7 +15,8 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "postbuild": "./scripts/post_build.sh && npm run docs",
     "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts",
-    "upload": "npm run build && npm publish --access public"
+    "upload": "npm run build && npm publish --access public",
+    "format": "prettier --write ."
   },
   "repository": {
     "type": "git",
@@ -40,7 +41,15 @@
   "devDependencies": {
     "express": "^4.18.3",
     "mime-types": "^2.1.35",
+    "prettier": "^3.3.3",
     "typedoc": "^0.25.12",
     "typescript": "^5.4.2"
+  },
+  "prettier": {
+    "trailingComma": "es5",
+    "tabWidth": 2,
+    "semi": true,
+    "singleQuote": true,
+    "bracketSameLine": false
   }
 }

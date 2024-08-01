@@ -1,4 +1,4 @@
-name: Deploy docs to GitHub Pages
+name: Deploy docs and demo to GitHub Pages
 
 on:
   # Runs on pushes targeting the default branch
@@ -41,6 +41,14 @@ jobs:
 
       - name: Remove .gitignore and node_modules
         run: |
+          rm .gitignore
+          rm -rf node_modules
+
+      - name: Build main example
+        working-directory: ./examples/main
+        run: |
+          npm i
+          npm run build
           rm .gitignore
           rm -rf node_modules
 

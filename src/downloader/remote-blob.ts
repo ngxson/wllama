@@ -1,8 +1,12 @@
 // Adapted from https://github.com/huggingface/huggingface.js/blob/main/packages/hub/src/utils/WebBlob.ts
 
-import { CacheEntryMetadata, CacheManager, POLYFILL_ETAG } from '../cache-manager';
+import {
+  CacheEntryMetadata,
+  CacheManager,
+  POLYFILL_ETAG,
+} from '../cache-manager';
 
-type ProgressCallback = (opts: { loaded: number, total: number }) => any;
+type ProgressCallback = (opts: { loaded: number; total: number }) => any;
 
 /**
  * WebBlob is a Blob implementation for web resources that supports range requests.
@@ -26,12 +30,15 @@ interface GGUFRemoteBlobCreateOptions {
    * Custom debug logger
    */
   logger?: {
-    debug: typeof console['debug'],
+    debug: (typeof console)['debug'];
   };
 }
 
 export class GGUFRemoteBlob extends Blob {
-  static async create(url: string, opts: GGUFRemoteBlobCreateOptions): Promise<Blob> {
+  static async create(
+    url: string,
+    opts: GGUFRemoteBlobCreateOptions
+  ): Promise<Blob> {
     const customFetch = opts?.fetch ?? fetch;
     const cacheKey = url;
     let remoteFile: CacheEntryMetadata;
@@ -51,7 +58,9 @@ export class GGUFRemoteBlob extends Blob {
         if (cachedMeta) {
           remoteFile = cachedMeta;
         } else {
-          throw new Error('Network error, cannot find requested model in cache for using offline');
+          throw new Error(
+            'Network error, cannot find requested model in cache for using offline'
+          );
         }
       } else {
         throw err;
@@ -68,10 +77,11 @@ export class GGUFRemoteBlob extends Blob {
       await CacheManager._writeMetadata(cacheKey, remoteFile);
     }
 
-    const cachedFileValid = metadataPolyfilled
-      || (cachedFile
-        && remoteFile.etag === cachedFile.etag
-        && remoteFile.originalSize === cachedFileSize);
+    const cachedFileValid =
+      metadataPolyfilled ||
+      (cachedFile &&
+        remoteFile.etag === cachedFile.etag &&
+        remoteFile.originalSize === cachedFileSize);
     if (cachedFileValid && !skipCache) {
       opts?.logger?.debug(`Using cached file ${cacheKey}`);
       const cachedFile = await CacheManager.open(cacheKey);
@@ -81,26 +91,44 @@ export class GGUFRemoteBlob extends Blob {
           total: cachedFileSize,
         });
       });
-      return new GGUFRemoteBlob(url, 0, remoteFile.originalSize, true, customFetch, {
-        cachedStream: cachedFile!,
-        progressCallback: () => {}, // unused
-        etag: remoteFile.etag,
-        noTEE: opts.noTEE,
-      });
+      return new GGUFRemoteBlob(
+        url,
+        0,
+        remoteFile.originalSize,
+        true,
+        customFetch,
+        {
+          cachedStream: cachedFile!,
+          progressCallback: () => {}, // unused
+          etag: remoteFile.etag,
+          noTEE: opts.noTEE,
+        }
+      );
     } else {
       if (remoteFile.originalSize !== cachedFileSize) {
-        opts?.logger?.debug(`Cache file is present, but size mismatch (cache = ${cachedFileSize} bytes, remote = ${remoteFile.originalSize} bytes)`);
+        opts?.logger?.debug(
+          `Cache file is present, but size mismatch (cache = ${cachedFileSize} bytes, remote = ${remoteFile.originalSize} bytes)`
+        );
       }
       if (cachedFile && remoteFile.etag !== cachedFile.etag) {
-        opts?.logger?.debug(`Cache file is present, but ETag mismatch (cache = "${cachedFile.etag}", remote = "${remoteFile.etag}")`);
+        opts?.logger?.debug(
+          `Cache file is present, but ETag mismatch (cache = "${cachedFile.etag}", remote = "${remoteFile.etag}")`
+        );
       }
       opts?.logger?.debug(`NOT using cache for ${cacheKey}`);
-      return new GGUFRemoteBlob(url, 0, remoteFile.originalSize, true, customFetch, {
-        progressCallback: opts?.progressCallback ?? (() => {}),
-        startSignal: opts?.startSignal,
-        etag: remoteFile.etag,
-        noTEE: opts.noTEE,
-      });
+      return new GGUFRemoteBlob(
+        url,
+        0,
+        remoteFile.originalSize,
+        true,
+        customFetch,
+        {
+          progressCallback: opts?.progressCallback ?? (() => {}),
+          startSignal: opts?.startSignal,
+          etag: remoteFile.etag,
+          noTEE: opts.noTEE,
+        }
+      );
     }
   }
 
@@ -116,13 +144,20 @@ export class GGUFRemoteBlob extends Blob {
   private startSignal?: Promise<void>;
   private noTEE: boolean;
 
-  constructor(url: string, start: number, end: number, full: boolean, customFetch: typeof fetch, additionals: {
-    cachedStream?: ReadableStream,
-    progressCallback: ProgressCallback,
-    startSignal?: Promise<void>,
-    etag: string,
-    noTEE: boolean,
-  }) {
+  constructor(
+    url: string,
+    start: number,
+    end: number,
+    full: boolean,
+    customFetch: typeof fetch,
+    additionals: {
+      cachedStream?: ReadableStream;
+      progressCallback: ProgressCallback;
+      startSignal?: Promise<void>;
+      etag: string;
+      noTEE: boolean;
+    }
+  ) {
     super([]);
 
     if (start !== 0) {
@@ -181,6 +216,7 @@ export class GGUFRemoteBlob extends Blob {
           total: self.size,
         });
       },
+      // @ts-ignore unused variable
       flush(controller) {
         self.progressCallback({
           loaded: self.size,

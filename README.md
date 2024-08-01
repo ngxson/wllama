@@ -2,7 +2,9 @@
 
 ![](./README_banner.png)
 
-Another WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp). Inspired by [tangledgroup/llama-cpp-wasm](https://github.com/tangledgroup/llama-cpp-wasm), but unlike it, **Wllama** aims to supports **low-level API** like (de)tokenization, embeddings,...
+WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
+
+👉 [Try the demo app](https://github.ngxson.com/wllama/examples/main/dist/)
 
 ## Recent changes
 
@@ -37,6 +39,10 @@ Limitations:
 - Max file size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length). If your model is bigger than 2GB, please follow the **Split model** section below.
 
 ## Demo and documentations
+
+**Main demo**: https://github.ngxson.com/wllama/examples/main/dist/
+
+![](./assets/screenshot_0.png)
 
 **Documentation:** https://github.ngxson.com/wllama/docs/
 
@@ -114,11 +120,11 @@ Cases where we want to split the model:
 - Due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length), the size limitation of a file is 2GB. If your model is bigger than 2GB, you can split the model into small files.
 - Even with a small model, splitting into chunks allows the browser to download multiple chunks in parallel, thus making the download process a bit faster.
 
-We use `gguf-split` to split a big gguf file into smaller files. You can download the pre-built binary via [llama.cpp release page](https://github.com/ggerganov/llama.cpp/releases):
+We use `llama-gguf-split` to split a big gguf file into smaller files. You can download the pre-built binary via [llama.cpp release page](https://github.com/ggerganov/llama.cpp/releases):
 
 ```bash
 # Split the model into chunks of 512 Megabytes
-./gguf-split --split-max-size 512M ./my_model.gguf ./my_model
+./llama-gguf-split --split-max-size 512M ./my_model.gguf ./my_model
 ```
 
 This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`, and so on.
