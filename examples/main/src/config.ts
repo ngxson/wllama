@@ -18,10 +18,6 @@ export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 export const LIST_MODELS: Model[] = [
   {
-    url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/gemma-2-2b-it-abliterated-Q4_K_M-00001-of-00004.gguf',
-    size: 1708583264,
-  },
-  {
     url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M-00001-of-00003.gguf',
     size: 668788416,
   },
@@ -30,8 +26,24 @@ export const LIST_MODELS: Model[] = [
     size: 986046272,
   },
   {
+    url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/gemma-2-2b-it-abliterated-Q4_K_M-00001-of-00004.gguf',
+    size: 1708583264,
+  },
+  {
+    url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/neuralreyna-mini-1.8b-v0.3.q4_k_m-00001-of-00005.gguf',
+    size: 1217753472,
+  },
+  {
+    url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/Phi-3.1-mini-128k-instruct-Q3_K_M-00001-of-00008.gguf',
+    size: 1955478176,
+  },
+  {
     url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/meta-llama-3.1-8b-instruct-abliterated.Q2_K-00001-of-00014.gguf',
     size: 3179133600,
+  },
+  {
+    url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/Meta-Llama-3.1-8B-Instruct-Q2_K-00001-of-00014.gguf',
+    size: 3179138048,
   },
 ];
 

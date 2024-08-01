@@ -137,6 +137,8 @@ export default function ModelScreen() {
           ))}
       </div>
 
+      <div className="h-10" />
+
       {showAddCustom && (
         <AddCustomModelDialog onClose={() => setShowAddCustom(false)} />
       )}
