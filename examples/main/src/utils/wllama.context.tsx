@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState } from 'react';
-import { delay, getDefaultScreen, useDidMount, WllamaStorage } from './utils';
+import { getDefaultScreen, useDidMount, WllamaStorage } from './utils';
 import { Wllama } from '@wllama/wllama';
 import {
   DEFAULT_INFERENCE_PARAMS,
@@ -190,6 +190,7 @@ export const WllamaProvider = ({ children }: any) => {
       sampling: {
         temp: currParams.temperature,
       },
+      // @ts-ignore unused variable
       onNewToken(token, piece, currentText, optionals) {
         callback(currentText);
         if (stopSignal) optionals.abortSignal();

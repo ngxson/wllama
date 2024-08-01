@@ -216,6 +216,7 @@ export class GGUFRemoteBlob extends Blob {
           total: self.size,
         });
       },
+      // @ts-ignore unused variable
       flush(controller) {
         self.progressCallback({
           loaded: self.size,

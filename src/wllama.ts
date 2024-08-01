@@ -744,6 +744,7 @@ export class Wllama {
    */
   async encode(
     tokens: number[],
+    // @ts-ignore unused variable
     options?: Record<never, never>
   ): Promise<{ nPast: number }> {
     this.checkModelLoaded();

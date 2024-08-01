@@ -17,10 +17,11 @@ export const WLLAMA_CONFIG_PATHS = {
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 export const LIST_MODELS: Model[] = [
-  {
-    url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M-00001-of-00003.gguf',
-    size: 668788416,
-  },
+  // FIXME: chat template for tinyllama is broken
+  // {
+  //   url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M-00001-of-00003.gguf',
+  //   size: 668788416,
+  // },
   {
     url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/qwen2-1_5b-instruct-q4_k_m-00001-of-00004.gguf',
     size: 986046272,

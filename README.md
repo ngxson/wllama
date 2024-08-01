@@ -38,6 +38,10 @@ Limitations:
 
 ## Demo and documentations
 
+**Main demo**: https://github.ngxson.com/wllama/examples/main/dist/
+
+![](./assets/screenshot_0.png)
+
 **Documentation:** https://github.ngxson.com/wllama/docs/
 
 Demo:
