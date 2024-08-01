@@ -2,11 +2,11 @@ import { useMessages } from "../utils/messages.context";
 import { Screen } from "../utils/types";
 import { useWllama } from "../utils/wllama.context";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBrain, faArrowUpRightFromSquare, faQuestionCircle } from '@fortawesome/free-solid-svg-icons';
+import { faBrain, faArrowUpRightFromSquare, faQuestionCircle, faTrashAlt } from '@fortawesome/free-solid-svg-icons';
 
 export default function Sidebar({ children }: { children: any }) {
   const { currentConvId, navigateTo, currScreen, currModel } = useWllama();
-  const { conversations, getConversationById } = useMessages();
+  const { conversations, getConversationById, deleteConversation } = useMessages();
 
   const currConv = getConversationById(currentConvId);
 
@@ -23,7 +23,18 @@ export default function Sidebar({ children }: { children: any }) {
               <a className={(!currConv && currScreen === Screen.CHAT) ? 'active' : ''}>+ New conversation</a>
             </li>
             {conversations.map((conv) => <li key={conv.id} onClick={() => navigateTo(Screen.CHAT, conv.id)}>
-              <a className={conv.id === currentConvId ? 'active' : ''}>{conv.messages[0]?.content}</a>
+              <a className={`group ${conv.id === currentConvId ? 'active' : ''}`}>
+                {conv.messages[0]?.content}
+                <span className="text-right hidden group-hover:inline cursor-pointer">
+                  <FontAwesomeIcon icon={faTrashAlt} onClick={(e) => {
+                    e.preventDefault();
+                    if (confirm('Are you sure to delete this conversation?')) {
+                      navigateTo(Screen.CHAT);
+                      deleteConversation(conv.id);
+                    }
+                  }} />
+                </span>
+              </a>
             </li>)}
           </ul>
         </div>
@@ -32,7 +43,7 @@ export default function Sidebar({ children }: { children: any }) {
           <div className="divider my-2"></div>
 
           {currModel && <div className="text-sm px-4 pb-2">
-            Model: {currModel.url.split('/').pop()}
+            Model: {currModel.name}
           </div>}
 
           <ul className="menu gap-1">

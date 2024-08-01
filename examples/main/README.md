@@ -1,7 +1,7 @@
 # wllama main example
 
 TODO:
-- Stop button
-- Add custom gguf
+- Chat auto scroll
 - Load local gguf
 - Add log screen
+- Switching theme

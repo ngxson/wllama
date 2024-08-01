@@ -2,10 +2,13 @@ import { useState } from "react";
 import { useMessages } from "../utils/messages.context";
 import { useWllama } from "../utils/wllama.context";
 import { Message, Screen } from "../utils/types";
+import { formatChat } from "../utils/utils";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faStop } from "@fortawesome/free-solid-svg-icons";
 
 export default function ChatScreen() {
   const [input, setInput] = useState('');
-  const { currentConvId, isGenerating, createCompletion, navigateTo, currModel } = useWllama();
+  const { currentConvId, isGenerating, createCompletion, navigateTo, currModel, getWllamaInstance, stopCompletion } = useWllama();
   const { getConversationById, addMessageToConversation, editMessageInConversation, newConversation } = useMessages();
 
   const currConv = getConversationById(currentConvId);
@@ -14,6 +17,7 @@ export default function ChatScreen() {
     if (isGenerating) return;
 
     // copy input and create messages
+    const currHistory = currConv?.messages ?? [];
     const userInput = input;
     setInput('');
     const userMsg: Message = { id: Date.now(), content: userInput, role: 'user' };
@@ -34,7 +38,15 @@ export default function ChatScreen() {
     }
 
     // generate response
-    await createCompletion(userInput, (newContent) => {
+    if (!currModel) {
+      throw new Error('currModel is null');
+    }
+    const formattedChat = await formatChat(getWllamaInstance(), [
+      ...currHistory,
+      userMsg,
+    ]);
+    console.log({formattedChat});
+    await createCompletion(formattedChat, (newContent) => {
       editMessageInConversation(convId, assistantMsg.id, newContent);
     });
   };
@@ -52,7 +64,10 @@ export default function ChatScreen() {
             </div>
           ) : (
             <div className="chat chat-start" key={msg.id}>
-              <div className="chat-bubble bg-base-100 text-base-content">{msg.content}</div>
+              <div className="chat-bubble bg-base-100 text-base-content">
+                {msg.content.length === 0 && isGenerating && <span className="loading loading-spinner"></span>}
+                {msg.content}
+              </div>
             </div>
           ))}
         </> : <div className="pt-24 text-center text-xl">
@@ -63,9 +78,16 @@ export default function ChatScreen() {
 
     </div>
     <div className="flex flex-col input-message py-4">
+      {isGenerating && <div className="text-center">
+        <button className="btn btn-outline btn-sm mb-4" onClick={stopCompletion}>
+          <FontAwesomeIcon icon={faStop} />
+          Stop generation
+        </button>
+      </div>}
+
       {currModel && <textarea
         className="textarea textarea-bordered w-full"
-        placeholder="Your message"
+        placeholder="Your message..."
         disabled={isGenerating}
         value={input}
         onChange={e => setInput(e.target.value)}
@@ -89,7 +111,7 @@ export default function ChatScreen() {
 function WarnNoModel() {
   const { navigateTo } = useWllama();
 
-  return <div role="alert" className="alert alert-warning">
+  return <div role="alert" className="alert">
     <svg
       xmlns="http://www.w3.org/2000/svg"
       className="h-6 w-6 shrink-0 stroke-current"
@@ -103,7 +125,7 @@ function WarnNoModel() {
     </svg>
     <span>Model is not loaded</span>
     <div>
-      <button className="btn btn-sm" onClick={() => navigateTo(Screen.MODEL)}>Select model</button>
+      <button className="btn btn-sm btn-primary" onClick={() => navigateTo(Screen.MODEL)}>Select model</button>
     </div>
   </div>;
 }

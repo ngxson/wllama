@@ -145,6 +145,9 @@ export class Wllama {
   private bosToken: number = -1;
   private eosToken: number = -1;
   private eotToken: number = -1;
+  private addBosToken: boolean = false;
+  private addEosToken: boolean = false;
+  private chatTemplate?: string;
   private metadata?: ModelMetadata;
   private samplingConfig: SamplingConfig = {};
   private hasEncoder: boolean = false;
@@ -252,6 +255,42 @@ export class Wllama {
   isEncoderDecoderArchitecture(): boolean {
     this.checkModelLoaded();
     return this.hasEncoder;
+  }
+
+  /**
+   * Must we add BOS token to the tokenized sequence?
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
+   * @returns true if BOS token must be added to the sequence
+   */
+  mustAddBosToken(): boolean {
+    this.checkModelLoaded();
+    return this.addBosToken;
+  }
+
+  /**
+   * Must we add EOS token to the tokenized sequence?
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
+   * @returns true if EOS token must be added to the sequence
+   */
+  mustAddEosToken(): boolean {
+    this.checkModelLoaded();
+    return this.addEosToken;
+  }
+
+  /**
+   * Get the jinja chat template comes with the model. It only available if the original model (before converting to gguf) has the template in `tokenizer_config.json`
+   * 
+   * NOTE: This can only being used after `loadModel` is called.
+   * 
+   * @returns the jinja template. null if there is no template in gguf
+   */
+  getChatTemplate(): string | null {
+    this.checkModelLoaded();
+    return this.chatTemplate ?? null;
   }
 
   /**
@@ -406,6 +445,8 @@ export class Wllama {
       token_eot: number,
       has_encoder: boolean,
       token_decoder_start: number,
+      add_bos_token: boolean,
+      add_eos_token: boolean,
     } = await this.proxy.wllamaAction('load', {
       ...config,
       use_mmap: true,
@@ -432,6 +473,10 @@ export class Wllama {
     };
     this.hasEncoder = !!loadResult.has_encoder;
     this.decoderStartToken = loadResult.token_decoder_start;
+    this.addBosToken = loadResult.add_bos_token;
+    this.addEosToken = loadResult.add_eos_token;
+    this.chatTemplate = loadResult.metadata['tokenizer.chat_template'];
+    this.logger().debug({ loadResult });
   }
 
   //////////////////////////////////////////////
@@ -484,6 +529,9 @@ export class Wllama {
     ]
     // process prompt
     const tokens = await this.tokenize(prompt, true);
+    if (this.addBosToken && tokens[0] !== this.bosToken) {
+      tokens.unshift(this.bosToken);
+    }
     await this.samplingAccept(tokens);
     if (this.isEncoderDecoderArchitecture()) {
       await this.encode(tokens);

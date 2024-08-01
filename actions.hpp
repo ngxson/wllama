@@ -255,6 +255,8 @@ json action_load(app_t &app, json &body)
       {"token_bos", llama_token_bos(app.model)},
       {"token_eos", llama_token_eos(app.model)},
       {"token_eot", llama_token_eot(app.model)},
+      {"add_bos_token", llama_add_bos_token(app.model) == 1},
+      {"add_eos_token", llama_add_eos_token(app.model) == 1},
       {"has_encoder", llama_model_has_encoder(app.model)},
       {"token_decoder_start", llama_model_decoder_start_token(app.model)},
   };

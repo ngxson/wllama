@@ -7,7 +7,7 @@ export default function GuideScreen() {
   return <div className="w-[40rem] max-w-full h-full px-4 overflow-auto">
     <div className="guide-text pt-16">
       <h1 className="text-2xl font-bold mb-4">
-        Wllama
+        Wllama 🦙
       </h1>
 
       <div className="mb-3">
