@@ -1,14 +1,16 @@
-import { useEffect } from "react";
-import { Template } from "@huggingface/jinja";
-import { Message, Screen } from "./types";
+import { useEffect } from 'react';
+import { Template } from '@huggingface/jinja';
+import { Message, Screen } from './types';
 import { Wllama } from '@wllama/wllama';
-import { DEFAULT_CHAT_TEMPLATE } from "../config";
+import { DEFAULT_CHAT_TEMPLATE } from '../config';
 
-export const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export const delay = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
-export const useDidMount = (callback: () => any) => useEffect(() => {
-  callback();
-}, []);
+export const useDidMount = (callback: () => any) =>
+  useEffect(() => {
+    callback();
+  }, []);
 
 type StorageKey = 'conversations' | 'params' | 'welcome' | 'custom_models';
 
@@ -30,8 +32,13 @@ export const getDefaultScreen = (): Screen => {
   return welcome ? Screen.GUIDE : Screen.MODEL;
 };
 
-export const formatChat = async (modelWllama: Wllama, messages: Message[]): Promise<string> => {
-  const template = new Template(modelWllama.getChatTemplate() ?? DEFAULT_CHAT_TEMPLATE);
+export const formatChat = async (
+  modelWllama: Wllama,
+  messages: Message[]
+): Promise<string> => {
+  const template = new Template(
+    modelWllama.getChatTemplate() ?? DEFAULT_CHAT_TEMPLATE
+  );
   return template.render({
     messages,
     bos_token: await modelWllama.detokenize([modelWllama.getBOS()]),

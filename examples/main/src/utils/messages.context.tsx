@@ -8,7 +8,11 @@ interface MessagesContextValue {
   deleteConversation: (id: number) => void;
   addMessageToConversation: (id: number, message: Message) => void;
   getConversationById: (id: number) => Conversation | undefined;
-  editMessageInConversation: (conversationId: number, messageId: number, content: string) => void;
+  editMessageInConversation: (
+    conversationId: number,
+    messageId: number,
+    content: string
+  ) => void;
 }
 
 const MessagesContext = createContext<MessagesContextValue>({} as any);
@@ -41,7 +45,10 @@ export const MessagesProvider = ({ children }: any) => {
       id: Date.now(),
       messages: [message],
     };
-    setConversations((prevConversations) => ({ ...prevConversations, [conv.id]: conv }));
+    setConversations((prevConversations) => ({
+      ...prevConversations,
+      [conv.id]: conv,
+    }));
     return conv;
   };
 
@@ -53,7 +60,10 @@ export const MessagesProvider = ({ children }: any) => {
     });
   };
 
-  const addMessageToConversation = (conversationId: number, message: Message) => {
+  const addMessageToConversation = (
+    conversationId: number,
+    message: Message
+  ) => {
     setConversations((prevConversations) => {
       if (prevConversations[conversationId]) {
         const newConversations = { ...prevConversations };
@@ -66,7 +76,11 @@ export const MessagesProvider = ({ children }: any) => {
     });
   };
 
-  const editMessageInConversation = (conversationId: number, messageId: number, content: string) => {
+  const editMessageInConversation = (
+    conversationId: number,
+    messageId: number,
+    content: string
+  ) => {
     setConversations((prevConversations) => {
       if (prevConversations[conversationId]) {
         const newConversations = { ...prevConversations };
@@ -88,14 +102,18 @@ export const MessagesProvider = ({ children }: any) => {
   const getConversationById = (id: number) => conversations[id];
 
   return (
-    <MessagesContext.Provider value={{
-      conversations: sortedConversations,
-      newConversation,
-      deleteConversation,
-      addMessageToConversation,
-      getConversationById,
-      editMessageInConversation,
-    }}>{children}</MessagesContext.Provider>
+    <MessagesContext.Provider
+      value={{
+        conversations: sortedConversations,
+        newConversation,
+        deleteConversation,
+        addMessageToConversation,
+        getConversationById,
+        editMessageInConversation,
+      }}
+    >
+      {children}
+    </MessagesContext.Provider>
   );
 };
 

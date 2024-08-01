@@ -1,8 +1,18 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 import { delay, getDefaultScreen, useDidMount, WllamaStorage } from './utils';
 import { Wllama } from '@wllama/wllama';
-import { DEFAULT_INFERENCE_PARAMS, LIST_MODELS, WLLAMA_CONFIG_PATHS } from '../config';
-import { InferenceParams, ManageModel, Model, ModelState, Screen } from './types';
+import {
+  DEFAULT_INFERENCE_PARAMS,
+  LIST_MODELS,
+  WLLAMA_CONFIG_PATHS,
+} from '../config';
+import {
+  InferenceParams,
+  ManageModel,
+  Model,
+  ModelState,
+  Screen,
+} from './types';
 import { verifyCustomModel } from './custom-models';
 
 interface WllamaContextValue {
@@ -25,7 +35,10 @@ interface WllamaContextValue {
 
   // functions for chat completion
   getWllamaInstance(): Wllama;
-  createCompletion(input: string, callback: (piece: string) => void): Promise<void>;
+  createCompletion(
+    input: string,
+    callback: (piece: string) => void
+  ): Promise<void>;
   stopCompletion(): void;
   isGenerating: boolean;
   currentConvId: number;
@@ -45,18 +58,20 @@ const resetWllamaInstance = () => {
 
 const getManageModels = async (): Promise<ManageModel[]> => {
   // TODO: remove "abandoned" files
-  const cachedFiles = (await wllamaInstance.cacheManager.list()).filter(m => {
+  const cachedFiles = (await wllamaInstance.cacheManager.list()).filter((m) => {
     // remove files with sizes not matching remote
     return m.size === m.metadata.originalSize;
   });
-  const cachedURLs = new Set(cachedFiles.map(e => e.metadata.originalURL));
-  const models = [
-    ...LIST_MODELS,
-    ...WllamaStorage.load('custom_models', []),
-  ];
-  return models.map(m => ({
+  const cachedURLs = new Set(cachedFiles.map((e) => e.metadata.originalURL));
+  const models = [...LIST_MODELS, ...WllamaStorage.load('custom_models', [])];
+  return models.map((m) => ({
     ...m,
-    name: m.url.split('/').pop()?.replace(/-\d{5}-of-\d{5}/, '').replace('.gguf', '') ?? '(unknown)',
+    name:
+      m.url
+        .split('/')
+        .pop()
+        ?.replace(/-\d{5}-of-\d{5}/, '')
+        .replace('.gguf', '') ?? '(unknown)',
     state: cachedURLs.has(m.url) ? ModelState.READY : ModelState.NOT_DOWNLOADED,
     downloadPercent: 0,
   }));
@@ -77,33 +92,51 @@ export const WllamaProvider = ({ children }: any) => {
   });
 
   // computed variables
-  const isDownloading = useMemo(() => models.some(m => m.state === ModelState.DOWNLOADING), [models]);
-  const isLoadingModel = useMemo(() => isBusy || models.some(m => m.state === ModelState.LOADING), [models, isBusy]);
-  const currModel = useMemo(() => models.find(m => m.state === ModelState.LOADED), [models]);
+  const isDownloading = useMemo(
+    () => models.some((m) => m.state === ModelState.DOWNLOADING),
+    [models]
+  );
+  const isLoadingModel = useMemo(
+    () => isBusy || models.some((m) => m.state === ModelState.LOADING),
+    [models, isBusy]
+  );
+  const currModel = useMemo(
+    () => models.find((m) => m.state === ModelState.LOADED),
+    [models]
+  );
 
   // utils
-  const editModel = (newModel: ManageModel) => setModels(models => models.map(m => m.url === newModel.url ? newModel : m));
+  const editModel = (newModel: ManageModel) =>
+    setModels((models) =>
+      models.map((m) => (m.url === newModel.url ? newModel : m))
+    );
   const reloadModels = async () => {
     setModels(await getManageModels());
   };
 
   const downloadModel = async (model: ManageModel) => {
     if (isDownloading || currModel || isLoadingModel) return;
-    editModel({...model, state: ModelState.DOWNLOADING, downloadPercent: 0});
+    editModel({ ...model, state: ModelState.DOWNLOADING, downloadPercent: 0 });
     try {
       await wllamaInstance.downloadModel(model.url, {
         progressCallback(opts) {
-          editModel({...model, state: ModelState.DOWNLOADING, downloadPercent: opts.loaded / opts.total });
+          editModel({
+            ...model,
+            state: ModelState.DOWNLOADING,
+            downloadPercent: opts.loaded / opts.total,
+          });
         },
       });
-      editModel({...model, state: ModelState.READY, downloadPercent: 0});
+      editModel({ ...model, state: ModelState.READY, downloadPercent: 0 });
     } catch (e) {
       alert((e as any)?.message || 'unknown error while downloading model');
     }
   };
 
   const removeModel = async (model: ManageModel) => {
-    const cacheKey = await wllamaInstance.cacheManager.getNameFromURL(model.url);
+    const cacheKey = await wllamaInstance.cacheManager.getNameFromURL(
+      model.url
+    );
     await wllamaInstance.cacheManager.delete(cacheKey);
     await reloadModels();
   };
@@ -120,21 +153,21 @@ export const WllamaProvider = ({ children }: any) => {
       await downloadModel(model);
     }
     // make sure the model is cached
-    if (await wllamaInstance.cacheManager.getSize(model.url) <= 0) {
+    if ((await wllamaInstance.cacheManager.getSize(model.url)) <= 0) {
       throw new Error('Model is not in cache');
     }
-    editModel({...model, state: ModelState.LOADING, downloadPercent: 0});
+    editModel({ ...model, state: ModelState.LOADING, downloadPercent: 0 });
     try {
       await wllamaInstance.loadModelFromUrl(model.url, {
         n_threads: currParams.nThreads > 0 ? currParams.nThreads : undefined,
         n_ctx: currParams.nContext,
         n_batch: currParams.nBatch,
       });
-      editModel({...model, state: ModelState.LOADED, downloadPercent: 0});
+      editModel({ ...model, state: ModelState.LOADED, downloadPercent: 0 });
     } catch (e) {
       resetWllamaInstance();
       alert(`Failed to load model: ${(e as any).message ?? 'Unknown error'}`);
-      editModel({...model, state: ModelState.READY, downloadPercent: 0});
+      editModel({ ...model, state: ModelState.READY, downloadPercent: 0 });
     }
   };
 
@@ -142,10 +175,13 @@ export const WllamaProvider = ({ children }: any) => {
     if (!currModel) return;
     await wllamaInstance.exit();
     resetWllamaInstance();
-    editModel({...currModel, state: ModelState.READY, downloadPercent: 0});
+    editModel({ ...currModel, state: ModelState.READY, downloadPercent: 0 });
   };
 
-  const createCompletion = async (input: string, callback: (currentText: string) => void) => {
+  const createCompletion = async (
+    input: string,
+    callback: (currentText: string) => void
+  ) => {
     if (isDownloading || !currModel || isLoadingModel) return;
     setGenerating(true);
     stopSignal = false;
@@ -187,7 +223,7 @@ export const WllamaProvider = ({ children }: any) => {
     setBusy(true);
     try {
       const custom = await verifyCustomModel(url);
-      if (models.some(m => m.url === custom.url)) {
+      if (models.some((m) => m.url === custom.url)) {
         throw new Error('Model with the same URL already exist');
       }
       const currList: Model[] = WllamaStorage.load('custom_models', []);
@@ -204,34 +240,41 @@ export const WllamaProvider = ({ children }: any) => {
     setBusy(true);
     await removeModel(model);
     const currList: Model[] = WllamaStorage.load('custom_models', []);
-    WllamaStorage.save('custom_models', currList.filter(m => m.url !== model.url));
+    WllamaStorage.save(
+      'custom_models',
+      currList.filter((m) => m.url !== model.url)
+    );
     await reloadModels();
     setBusy(false);
   };
 
   return (
-    <WllamaContext.Provider value={{
-      models,
-      isDownloading,
-      isLoadingModel,
-      downloadModel,
-      removeModel,
-      removeAllModels,
-      currModel,
-      loadModel,
-      unloadModel,
-      currParams,
-      setParams,
-      createCompletion,
-      stopCompletion,
-      isGenerating,
-      currentConvId,
-      navigateTo,
-      currScreen,
-      getWllamaInstance: () => wllamaInstance,
-      addCustomModel,
-      removeCustomModel,
-    }}>{children}</WllamaContext.Provider>
+    <WllamaContext.Provider
+      value={{
+        models,
+        isDownloading,
+        isLoadingModel,
+        downloadModel,
+        removeModel,
+        removeAllModels,
+        currModel,
+        loadModel,
+        unloadModel,
+        currParams,
+        setParams,
+        createCompletion,
+        stopCompletion,
+        isGenerating,
+        currentConvId,
+        navigateTo,
+        currScreen,
+        getWllamaInstance: () => wllamaInstance,
+        addCustomModel,
+        removeCustomModel,
+      }}
+    >
+      {children}
+    </WllamaContext.Provider>
   );
 };
 

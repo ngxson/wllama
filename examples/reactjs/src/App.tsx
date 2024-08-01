@@ -9,13 +9,14 @@ import wllamaMulti from '@wllama/wllama/src/multi-thread/wllama.wasm?url';
 import wllamaMultiWorker from '@wllama/wllama/src/multi-thread/wllama.worker.mjs?url';
 
 const CONFIG_PATHS = {
-  'single-thread/wllama.js'       : wllamaSingleJS,
-  'single-thread/wllama.wasm'     : wllamaSingle,
-  'multi-thread/wllama.js'        : wllamaMultiJS,
-  'multi-thread/wllama.wasm'      : wllamaMulti,
+  'single-thread/wllama.js': wllamaSingleJS,
+  'single-thread/wllama.wasm': wllamaSingle,
+  'multi-thread/wllama.js': wllamaMultiJS,
+  'multi-thread/wllama.wasm': wllamaMulti,
   'multi-thread/wllama.worker.mjs': wllamaMultiWorker,
 };
-const CMPL_MODEL = 'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
+const CMPL_MODEL =
+  'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
 
 function App() {
   const wllama = useMemo(() => new Wllama(CONFIG_PATHS), []);
@@ -52,32 +53,39 @@ function App() {
 
   // For embeddings, see "examples/basic/index.html"
 
-  return <div className='main'>
-    <h2>Completions demo - ReactJS</h2>
-
-    Model: {CMPL_MODEL} <br/>
-    {!ready ? <>
-      Loading model...
-    </> : <>
-      Prompt: <input
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        disabled={running} />
-      <br/>
-      Number of tokens: <input
-        value={nPredict}
-        onChange={(e) => setNPredict(e.target.value)}
-        disabled={running}
-      /><br/>
-      <button onClick={runCompletion} disabled={running}>Run completions</button>
-      <br/>
-      <br/>
-      Completion: <br/>
-      <div className='output_cmpl'>
-        {output}
-      </div>
-    </>}
-  </div>
+  return (
+    <div className="main">
+      <h2>Completions demo - ReactJS</h2>
+      Model: {CMPL_MODEL} <br />
+      {!ready ? (
+        <>Loading model...</>
+      ) : (
+        <>
+          Prompt:{' '}
+          <input
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            disabled={running}
+          />
+          <br />
+          Number of tokens:{' '}
+          <input
+            value={nPredict}
+            onChange={(e) => setNPredict(e.target.value)}
+            disabled={running}
+          />
+          <br />
+          <button onClick={runCompletion} disabled={running}>
+            Run completions
+          </button>
+          <br />
+          <br />
+          Completion: <br />
+          <div className="output_cmpl">{output}</div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default App;

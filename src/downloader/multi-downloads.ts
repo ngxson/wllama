@@ -1,6 +1,6 @@
 import { GGUFRemoteBlob } from './remote-blob';
 
-type ProgressCallback = (opts: { loaded: number, total: number }) => any;
+type ProgressCallback = (opts: { loaded: number; total: number }) => any;
 interface Task {
   url: string;
   state: State;
@@ -10,8 +10,12 @@ interface Task {
   fireEnd(): void;
   blob: Blob;
   loaded: number;
-};
-enum State { READY, WORKING, FINISHED };
+}
+enum State {
+  READY,
+  WORKING,
+  FINISHED,
+}
 
 export class MultiDownloads {
   private tasks: Task[];
@@ -23,21 +27,26 @@ export class MultiDownloads {
   private allowOffline: boolean;
   private noTEE: boolean;
 
-  constructor(logger: any, urls: string[], maxParallel: number, opts: {
-    progressCallback?: ProgressCallback,
-    useCache: boolean,
-    allowOffline: boolean,
-    noTEE?: boolean,
-  }) {
-    this.tasks = urls.map(url => {
+  constructor(
+    logger: any,
+    urls: string[],
+    maxParallel: number,
+    opts: {
+      progressCallback?: ProgressCallback;
+      useCache: boolean;
+      allowOffline: boolean;
+      noTEE?: boolean;
+    }
+  ) {
+    this.tasks = urls.map((url) => {
       // @ts-ignore
       const task: Task = {
         url,
         state: State.READY,
         loaded: 0,
       };
-      task.signalStart = new Promise((resolve) => task.fireStart = resolve);
-      task.signalEnd = new Promise((resolve) => task.fireEnd = resolve);
+      task.signalStart = new Promise((resolve) => (task.fireStart = resolve));
+      task.signalEnd = new Promise((resolve) => (task.fireEnd = resolve));
       return task;
     });
     this.logger = logger;
@@ -50,26 +59,28 @@ export class MultiDownloads {
 
   async run(): Promise<Blob[]> {
     // create all Blobs
-    await Promise.all(this.tasks.map(async (task) => {
-      task.blob = await GGUFRemoteBlob.create(task.url, {
-        logger: this.logger,
-        useCache: this.useCache,
-        startSignal: task.signalStart,
-        allowOffline: this.allowOffline,
-        noTEE: this.noTEE,
-        progressCallback: ({ loaded }) => {
-          task.loaded = loaded;
-          this.updateProgress(task);
-        },
-      });
-    }));
+    await Promise.all(
+      this.tasks.map(async (task) => {
+        task.blob = await GGUFRemoteBlob.create(task.url, {
+          logger: this.logger,
+          useCache: this.useCache,
+          startSignal: task.signalStart,
+          allowOffline: this.allowOffline,
+          noTEE: this.noTEE,
+          progressCallback: ({ loaded }) => {
+            task.loaded = loaded;
+            this.updateProgress(task);
+          },
+        });
+      })
+    );
     // calculate totalBytes
     this.totalBytes = this.tasks.reduce((n, task) => n + task.blob.size, 0);
     // run N dispatchers
     for (let i = 0; i < this.maxParallel; i++) {
       this.dispatcher();
     }
-    return this.tasks.map(t => t.blob);
+    return this.tasks.map((t) => t.blob);
   }
 
   updateProgress(task: Task) {
@@ -87,7 +98,7 @@ export class MultiDownloads {
 
   async dispatcher() {
     while (true) {
-      const task = this.tasks.find(t => t.state === State.READY);
+      const task = this.tasks.find((t) => t.state === State.READY);
       if (!task) return;
       task.state = State.WORKING;
       task.fireStart();

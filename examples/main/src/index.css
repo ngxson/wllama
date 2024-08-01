@@ -10,7 +10,7 @@ body {
   a {
     @apply text-primary;
   }
-  
+
   ul {
     @apply list-disc pl-4 mt-2;
     li {
