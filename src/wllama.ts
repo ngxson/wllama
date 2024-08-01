@@ -298,7 +298,14 @@ export class Wllama {
         noTEE: true,
       }
     );
-    await multiDownloads.run();
+    const blobs = await multiDownloads.run();
+    await Promise.all(blobs.map(async (blob) => {
+      const reader = blob.stream().getReader();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) return;
+      }
+    }));
   }
 
   /**
