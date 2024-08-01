@@ -24,6 +24,11 @@ static void llama_log_callback_logTee(ggml_log_level level, const char *text, vo
 {
   (void)user_data;
   const char *lvl = "@@DEBUG";
+  size_t len = strlen(text);
+  if (len == 0 || text[len - 1] != '\n') {
+    // do not print if the line does not terminate with \n
+    return;
+  }
   if (level == GGML_LOG_LEVEL_ERROR) {
     lvl = "@@ERROR";
   } else if (level == GGML_LOG_LEVEL_WARN) {
