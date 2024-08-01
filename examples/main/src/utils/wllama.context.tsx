@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 import { delay, getDefaultScreen, useDidMount, WllamaStorage } from './utils';
 import { Wllama } from '@wllama/wllama';
-import { DEFAULT_INFERENCE_PARAMS, LIST_MODELS, WLLAMA_CONFIG_PATHS } from './config';
+import { DEFAULT_INFERENCE_PARAMS, LIST_MODELS, WLLAMA_CONFIG_PATHS } from '../config';
 import { InferenceParams, ManageModel, Model, ModelState, Screen } from './types';
 import { verifyCustomModel } from './custom-models';
 

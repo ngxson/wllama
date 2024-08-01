@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Template } from "@huggingface/jinja";
 import { Message, Screen } from "./types";
 import { Wllama } from '@wllama/wllama';
-import { DEFAULT_CHAT_TEMPLATE } from "./config";
+import { DEFAULT_CHAT_TEMPLATE } from "../config";
 
 export const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 

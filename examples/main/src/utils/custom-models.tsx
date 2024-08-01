@@ -1,5 +1,6 @@
-import { MAX_GGUF_SIZE } from "./config";
+import { MAX_GGUF_SIZE } from "../config";
 import { Model } from "./types";
+import { WllamaStorage } from "./utils";
 
 const ggufMagicNumber = new Uint8Array([0x47, 0x47, 0x55, 0x46]);
 
@@ -76,3 +77,14 @@ const parseModelUrl = (modelUrl: string): string[] => {
 }
 
 const sumArr = (arr: number[]) => arr.reduce((sum, num) => sum + num, 0);
+
+// for debugging only
+// @ts-ignore
+window._exportModelList = function () {
+  const list: Model[] = WllamaStorage.load('custom_models', []);
+  const listExported = list.map(m => {
+    delete m.userAdded;
+    return m;
+  });
+  console.log(JSON.stringify(listExported, null, 2));
+};

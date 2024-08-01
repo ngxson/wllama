@@ -21,6 +21,7 @@ export default function GuideScreen() {
           <li>Due to memory constraint of WebAssembly and emscripten, models larger than 2GB will need to be split. <a href="https://github.com/ngxson/wllama?tab=readme-ov-file#split-model" target="_blank" rel="noopener">Click here to learn more</a></li>
           <li>Large model may not fit into RAM, (again) due to memory constraint of WebAssembly.</li>
           <li>Running on smartphone maybe buggy.</li>
+          <li><b>WebGPU is not supported</b>. We're still working hard to add support for WebGPU.</li>
         </ul>
       </div>
 

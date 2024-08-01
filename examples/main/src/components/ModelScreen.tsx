@@ -2,7 +2,7 @@ import { ManageModel, ModelState } from "../utils/types";
 import { useWllama } from "../utils/wllama.context";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrashAlt, faXmark, faWarning } from '@fortawesome/free-solid-svg-icons';
-import { DEFAULT_INFERENCE_PARAMS, MAX_GGUF_SIZE } from "../utils/config";
+import { DEFAULT_INFERENCE_PARAMS, MAX_GGUF_SIZE } from "../config";
 import { toHumanReadableSize } from "../utils/utils";
 import { useState } from "react";
 
@@ -105,6 +105,9 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
   return <dialog className="modal modal-open">
     <div className="modal-box">
       <h3 className="font-bold text-lg">Add custom model</h3>
+      <div className="mt-4">
+        Max gguf file size is 2GB. If your model is bigger than 2GB, please <a href="https://github.com/ngxson/wllama?tab=readme-ov-file#split-model" target="_blank" rel="noopener" className="text-primary">follow this guide</a> to split it into smaller shards.
+      </div>
       <div className="mt-4">
         <label className="input input-bordered flex items-center gap-2 mb-2">
           URL

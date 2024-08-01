@@ -5,3 +5,4 @@ TODO:
 - Load local gguf
 - Add log screen
 - Switching theme
+- Warning limitations on mobile
