@@ -120,6 +120,11 @@ export interface ChatCompletionOptions {
    * Note: To convert from text to token ID, use lookupToken()
    */
   stopTokens?: number[];
+  /**
+   * Equivalent to `cache_prompt` option in llama.cpp server.
+   * Useful for chat, because it skip evaluating the history part of the conversation.
+   */
+  useCache?: boolean;
 }
 
 export interface ModelMetadata {
@@ -582,17 +587,23 @@ export class Wllama {
     this.checkModelLoaded();
     this.samplingConfig = options.sampling ?? {};
     await this.samplingInit(this.samplingConfig);
-    await this.kvClear(); // TODO: maybe cache tokens?
     const stopTokens = [
       this.eosToken,
       this.eotToken,
       ...(options.stopTokens ?? []),
     ];
     // process prompt
-    const tokens = await this.tokenize(prompt, true);
+    let tokens = await this.tokenize(prompt, true);
     if (this.addBosToken && tokens[0] !== this.bosToken) {
       tokens.unshift(this.bosToken);
     }
+    // maybe reuse KV cache
+    if (options.useCache) {
+      tokens = await this.getNonCachedTokens(tokens);
+    } else {
+      await this.kvClear();
+    }
+    // decode/encode tokens
     await this.samplingAccept(tokens);
     if (this.isEncoderDecoderArchitecture()) {
       await this.encode(tokens);
@@ -713,6 +724,7 @@ export class Wllama {
   async decode(
     tokens: number[],
     options: {
+      // when processing input prompt, we don't need to get output tokens
       skipLogits?: boolean;
     }
   ): Promise<{ nPast: number }> {
@@ -909,6 +921,32 @@ export class Wllama {
   async _getDebugInfo(): Promise<any> {
     this.checkModelLoaded();
     return await this.proxy.wllamaDebug();
+  }
+
+
+  ///// Prompt cache utils /////
+  private async getCachedToken(): Promise<number[]> {
+    this.checkModelLoaded();
+    const result = await this.proxy.wllamaAction('current_status', {});
+    return result.tokens;
+  }
+
+  /**
+   * Compare the input sequence and cachedToken, then return the part that is not in cache.
+   * This function also remove mismatch part in cache (via kvRemove)
+   */
+  private async getNonCachedTokens(seq: number[]) {
+    const cachedTokens = await this.getCachedToken();
+    let nKeep = 0;
+    for (; nKeep < Math.min(cachedTokens.length, seq.length); nKeep++) {
+      if (cachedTokens[nKeep] !== seq[nKeep]) {
+        break;
+      }
+    }
+    const nDiscard = cachedTokens.length - nKeep;
+    this.logger().debug(`Cache nKeep=${nKeep} nDiscard=${nDiscard}`)
+    await this.kvRemove(nKeep, nDiscard);
+    return seq.slice(nKeep, seq.length);
   }
 
   // TODO: add current_status
