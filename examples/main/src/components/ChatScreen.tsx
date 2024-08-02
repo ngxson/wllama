@@ -6,6 +6,7 @@ import { formatChat } from '../utils/utils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faStop } from '@fortawesome/free-solid-svg-icons';
 import { nl2br } from '../utils/nl2br';
+import ScreenWrapper from './ScreenWrapper';
 
 export default function ChatScreen() {
   const [input, setInput] = useState('');
@@ -74,7 +75,7 @@ export default function ChatScreen() {
   };
 
   return (
-    <div className="w-[40rem] max-w-full h-full px-4 flex flex-col">
+    <ScreenWrapper fitScreen>
       <div className="chat-messages grow overflow-auto">
         <div className="h-10" />
 
@@ -136,7 +137,7 @@ export default function ChatScreen() {
           wllama may generate inaccurate information. Use with your own risk.
         </small>
       </div>
-    </div>
+    </ScreenWrapper>
   );
 }
 

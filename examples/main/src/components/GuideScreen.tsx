@@ -1,11 +1,12 @@
 import { Screen } from '../utils/types';
 import { useWllama } from '../utils/wllama.context';
+import ScreenWrapper from './ScreenWrapper';
 
 export default function GuideScreen() {
   const { navigateTo } = useWllama();
 
   return (
-    <div className="w-[40rem] max-w-full h-full px-4 overflow-auto">
+    <ScreenWrapper>
       <div className="guide-text pt-16">
         <h1 className="text-2xl font-bold mb-4">Wllama 🦙</h1>
 
@@ -79,6 +80,6 @@ export default function GuideScreen() {
           with <b>console log screenshot</b>.
         </div>
       </div>
-    </div>
+    </ScreenWrapper>
   );
 }
