@@ -7,6 +7,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faStop } from '@fortawesome/free-solid-svg-icons';
 import { nl2br } from '../utils/nl2br';
 import ScreenWrapper from './ScreenWrapper';
+import { useIntervalWhen } from '../utils/use-interval-when';
 
 export default function ChatScreen() {
   const [input, setInput] = useState('');
@@ -25,6 +26,8 @@ export default function ChatScreen() {
     editMessageInConversation,
     newConversation,
   } = useMessages();
+
+  useIntervalWhen(chatScrollToBottom, 500, isGenerating, true);
 
   const currConv = getConversationById(currentConvId);
 
@@ -76,7 +79,7 @@ export default function ChatScreen() {
 
   return (
     <ScreenWrapper fitScreen>
-      <div className="chat-messages grow overflow-auto">
+      <div className="chat-messages grow overflow-auto" id="chat-history">
         <div className="h-10" />
 
         {currConv ? (
@@ -171,3 +174,11 @@ function WarnNoModel() {
     </div>
   );
 }
+
+const chatScrollToBottom = () => {
+  const elem = document.getElementById('chat-history');
+  elem?.scrollTo({
+    top: elem.scrollHeight,
+    behavior: 'smooth',
+  });
+};
