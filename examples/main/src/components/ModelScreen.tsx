@@ -9,6 +9,7 @@ import {
 import { DEFAULT_INFERENCE_PARAMS, MAX_GGUF_SIZE } from '../config';
 import { toHumanReadableSize } from '../utils/utils';
 import { useState } from 'react';
+import ScreenWrapper from './ScreenWrapper';
 
 export default function ModelScreen() {
   const [showAddCustom, setShowAddCustom] = useState(false);
@@ -29,7 +30,7 @@ export default function ModelScreen() {
   };
 
   return (
-    <div className="w-[40rem] max-w-full h-full px-4 overflow-auto">
+    <ScreenWrapper>
       <div className="inference-params pt-8">
         <h1 className="text-2xl mb-4">Inference parameters</h1>
         <label className="input input-bordered flex items-center gap-2 mb-2">
@@ -116,7 +117,7 @@ export default function ModelScreen() {
             className="btn btn-primary btn-outline btn-sm ml-6"
             onClick={() => setShowAddCustom(true)}
           >
-            + Add model
+            + Add GGUF
           </button>
         </h1>
 
@@ -142,7 +143,7 @@ export default function ModelScreen() {
       {showAddCustom && (
         <AddCustomModelDialog onClose={() => setShowAddCustom(false)} />
       )}
-    </div>
+    </ScreenWrapper>
   );
 }
 
@@ -163,9 +164,9 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
   return (
     <dialog className="modal modal-open">
       <div className="modal-box">
-        <h3 className="font-bold text-lg">Add custom model</h3>
+        <h3 className="font-bold text-lg">Add custom GGUF</h3>
         <div className="mt-4">
-          Max gguf file size is 2GB. If your model is bigger than 2GB, please{' '}
+          Max GGUF file size is 2GB. If your model is bigger than 2GB, please{' '}
           <a
             href="https://github.com/ngxson/wllama?tab=readme-ov-file#split-model"
             target="_blank"

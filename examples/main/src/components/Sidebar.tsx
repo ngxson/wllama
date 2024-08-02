@@ -100,7 +100,7 @@ export default function Sidebar({ children }: { children: any }) {
         </div>
       </div>
 
-      <div className="drawer-content mx-auto">{children}</div>
+      <div className="drawer-content grow">{children}</div>
     </>
   );
 }

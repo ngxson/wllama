@@ -5,6 +5,7 @@ import { Message, Screen } from '../utils/types';
 import { formatChat } from '../utils/utils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faStop } from '@fortawesome/free-solid-svg-icons';
+import { nl2br } from '../utils/nl2br';
 
 export default function ChatScreen() {
   const [input, setInput] = useState('');
@@ -82,7 +83,7 @@ export default function ChatScreen() {
             {currConv.messages.map((msg) =>
               msg.role === 'user' ? (
                 <div className="chat chat-end" key={msg.id}>
-                  <div className="chat-bubble">{msg.content}</div>
+                  <div className="chat-bubble">{nl2br(msg.content)}</div>
                 </div>
               ) : (
                 <div className="chat chat-start" key={msg.id}>
@@ -90,7 +91,7 @@ export default function ChatScreen() {
                     {msg.content.length === 0 && isGenerating && (
                       <span className="loading loading-spinner"></span>
                     )}
-                    {msg.content}
+                    {nl2br(msg.content)}
                   </div>
                 </div>
               )
