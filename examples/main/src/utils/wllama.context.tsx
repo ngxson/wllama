@@ -1,5 +1,10 @@
 import { createContext, useContext, useMemo, useState } from 'react';
-import { getDefaultScreen, useDidMount, WllamaStorage } from './utils';
+import {
+  DebugLogger,
+  getDefaultScreen,
+  useDidMount,
+  WllamaStorage,
+} from './utils';
 import { Wllama } from '@wllama/wllama';
 import {
   DEFAULT_INFERENCE_PARAMS,
@@ -54,10 +59,10 @@ interface WllamaContextValue {
 
 const WllamaContext = createContext<WllamaContextValue>({} as any);
 
-let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS);
+let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
 let stopSignal = false;
 const resetWllamaInstance = () => {
-  wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS);
+  wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
 };
 
 const getManageModels = async (): Promise<ManageModel[]> => {

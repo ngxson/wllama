@@ -69,7 +69,7 @@ export default function GuideScreen() {
 
         <div className="mb-3">
           Wllama is in development and many bugs are expected to happen. If you
-          find a bug, for example, a model can't load, please{' '}
+          find a bug, please{' '}
           <a
             href="https://github.com/ngxson/wllama/issues"
             target="_blank"
@@ -77,7 +77,13 @@ export default function GuideScreen() {
           >
             open a issue
           </a>{' '}
-          with <b>console log screenshot</b>.
+          with log copied from{' '}
+          <button
+            className="btn btn-sm btn-primary btn-outline"
+            onClick={() => navigateTo(Screen.LOG)}
+          >
+            Debug log
+          </button>
         </div>
       </div>
     </ScreenWrapper>

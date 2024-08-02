@@ -2,6 +2,7 @@ export enum Screen {
   GUIDE,
   CHAT,
   MODEL,
+  LOG,
 }
 
 export interface Model {

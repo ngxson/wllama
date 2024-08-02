@@ -7,6 +7,7 @@ import {
   faArrowUpRightFromSquare,
   faQuestionCircle,
   faTrashAlt,
+  faBug,
 } from '@fortawesome/free-solid-svg-icons';
 
 export default function Sidebar({ children }: { children: any }) {
@@ -84,6 +85,11 @@ export default function Sidebar({ children }: { children: any }) {
               <li onClick={() => navigateTo(Screen.MODEL)}>
                 <a className={currScreen === Screen.MODEL ? 'active' : ''}>
                   <FontAwesomeIcon icon={faBrain} /> Manage models
+                </a>
+              </li>
+              <li onClick={() => navigateTo(Screen.LOG)}>
+                <a className={currScreen === Screen.LOG ? 'active' : ''}>
+                  <FontAwesomeIcon icon={faBug} /> Debug log
                 </a>
               </li>
               <li>
