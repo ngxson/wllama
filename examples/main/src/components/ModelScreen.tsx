@@ -5,10 +5,12 @@ import {
   faTrashAlt,
   faXmark,
   faWarning,
+  faCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import { DEFAULT_INFERENCE_PARAMS, MAX_GGUF_SIZE } from '../config';
 import { toHumanReadableSize } from '../utils/utils';
 import { useState } from 'react';
+import ScreenWrapper from './ScreenWrapper';
 
 export default function ModelScreen() {
   const [showAddCustom, setShowAddCustom] = useState(false);
@@ -29,7 +31,7 @@ export default function ModelScreen() {
   };
 
   return (
-    <div className="w-[40rem] max-w-full h-full px-4 overflow-auto">
+    <ScreenWrapper>
       <div className="inference-params pt-8">
         <h1 className="text-2xl mb-4">Inference parameters</h1>
         <label className="input input-bordered flex items-center gap-2 mb-2">
@@ -116,7 +118,7 @@ export default function ModelScreen() {
             className="btn btn-primary btn-outline btn-sm ml-6"
             onClick={() => setShowAddCustom(true)}
           >
-            + Add model
+            + Add GGUF
           </button>
         </h1>
 
@@ -142,7 +144,7 @@ export default function ModelScreen() {
       {showAddCustom && (
         <AddCustomModelDialog onClose={() => setShowAddCustom(false)} />
       )}
-    </div>
+    </ScreenWrapper>
   );
 }
 
@@ -163,9 +165,9 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
   return (
     <dialog className="modal modal-open">
       <div className="modal-box">
-        <h3 className="font-bold text-lg">Add custom model</h3>
+        <h3 className="font-bold text-lg">Add custom GGUF</h3>
         <div className="mt-4">
-          Max gguf file size is 2GB. If your model is bigger than 2GB, please{' '}
+          Max GGUF file size is 2GB. If your model is bigger than 2GB, please{' '}
           <a
             href="https://github.com/ngxson/wllama?tab=readme-ov-file#split-model"
             target="_blank"
@@ -222,6 +224,7 @@ function ModelCard({
     loadModel,
     unloadModel,
     removeCustomModel,
+    currRuntimeInfo,
   } = useWllama();
 
   const m = model;
@@ -251,6 +254,21 @@ function ModelCard({
               ? ` - Downloaded: ${percent}%`
               : ''}
           </small>
+
+          {m.state === ModelState.LOADED && currRuntimeInfo && (
+            <>
+              <br />
+              <InfoOnOffDisplay
+                text="Multithread"
+                on={currRuntimeInfo.isMultithread}
+              />
+              &nbsp;&nbsp;&nbsp;&nbsp;
+              <InfoOnOffDisplay
+                text="Chat template"
+                on={currRuntimeInfo.hasChatTemplate}
+              />
+            </>
+          )}
 
           {m.state === ModelState.DOWNLOADING && (
             <div>
@@ -331,5 +349,22 @@ function ModelCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function InfoOnOffDisplay({ text, on }: { text: string; on: boolean }) {
+  return (
+    <>
+      {on ? (
+        <span className="text-green-300">
+          <FontAwesomeIcon icon={faCheck} />
+        </span>
+      ) : (
+        <span className="text-red-400">
+          <FontAwesomeIcon icon={faXmark} />
+        </span>
+      )}
+      <span className="text-sm">&nbsp;{text}</span>
+    </>
   );
 }

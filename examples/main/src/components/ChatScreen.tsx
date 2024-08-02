@@ -5,6 +5,9 @@ import { Message, Screen } from '../utils/types';
 import { formatChat } from '../utils/utils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faStop } from '@fortawesome/free-solid-svg-icons';
+import { nl2br } from '../utils/nl2br';
+import ScreenWrapper from './ScreenWrapper';
+import { useIntervalWhen } from '../utils/use-interval-when';
 
 export default function ChatScreen() {
   const [input, setInput] = useState('');
@@ -23,6 +26,8 @@ export default function ChatScreen() {
     editMessageInConversation,
     newConversation,
   } = useMessages();
+
+  useIntervalWhen(chatScrollToBottom, 500, isGenerating, true);
 
   const currConv = getConversationById(currentConvId);
 
@@ -73,8 +78,8 @@ export default function ChatScreen() {
   };
 
   return (
-    <div className="w-[40rem] max-w-full h-full px-4 flex flex-col">
-      <div className="chat-messages grow overflow-auto">
+    <ScreenWrapper fitScreen>
+      <div className="chat-messages grow overflow-auto" id="chat-history">
         <div className="h-10" />
 
         {currConv ? (
@@ -82,15 +87,15 @@ export default function ChatScreen() {
             {currConv.messages.map((msg) =>
               msg.role === 'user' ? (
                 <div className="chat chat-end" key={msg.id}>
-                  <div className="chat-bubble">{msg.content}</div>
+                  <div className="chat-bubble">{nl2br(msg.content)}</div>
                 </div>
               ) : (
                 <div className="chat chat-start" key={msg.id}>
                   <div className="chat-bubble bg-base-100 text-base-content">
                     {msg.content.length === 0 && isGenerating && (
-                      <span className="loading loading-spinner"></span>
+                      <span className="loading loading-dots"></span>
                     )}
-                    {msg.content}
+                    {nl2br(msg.content)}
                   </div>
                 </div>
               )
@@ -135,7 +140,7 @@ export default function ChatScreen() {
           wllama may generate inaccurate information. Use with your own risk.
         </small>
       </div>
-    </div>
+    </ScreenWrapper>
   );
 }
 
@@ -169,3 +174,11 @@ function WarnNoModel() {
     </div>
   );
 }
+
+const chatScrollToBottom = () => {
+  const elem = document.getElementById('chat-history');
+  elem?.scrollTo({
+    top: elem.scrollHeight,
+    behavior: 'smooth',
+  });
+};

@@ -59,3 +59,38 @@ export const toHumanReadableSize = (bytes: number): string => {
 
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 };
+
+export const DebugLogger = {
+  content: [] as string[],
+  debug(...args: any) {
+    console.debug('🔧', ...args);
+    DebugLogger.content.push(`🔧 ${DebugLogger.argsToStr(args)}`);
+  },
+  log(...args: any) {
+    console.log('ℹ️', ...args);
+    DebugLogger.content.push(`ℹ️ ${DebugLogger.argsToStr(args)}`);
+  },
+  warn(...args: any) {
+    console.warn('⚠️', ...args);
+    DebugLogger.content.push(`⚠️ ${DebugLogger.argsToStr(args)}`);
+  },
+  error(...args: any) {
+    console.error('☠️', ...args);
+    DebugLogger.content.push(`☠️ ${DebugLogger.argsToStr(args)}`);
+  },
+  argsToStr(args: any[]): string {
+    return args
+      .map((arg) => {
+        if (arg.startsWith) {
+          return arg;
+        } else {
+          try {
+            return JSON.stringify(arg, null, 2);
+          } catch (_) {
+            return '';
+          }
+        }
+      })
+      .join(' ');
+  },
+};

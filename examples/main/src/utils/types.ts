@@ -2,6 +2,7 @@ export enum Screen {
   GUIDE,
   CHAT,
   MODEL,
+  LOG,
 }
 
 export interface Model {
@@ -22,6 +23,11 @@ export interface ManageModel extends Model {
   name: string;
   state: ModelState;
   downloadPercent: number; // from 0.0 to 1.0
+}
+
+export interface RuntimeInfo {
+  isMultithread: boolean;
+  hasChatTemplate: boolean;
 }
 
 export interface InferenceParams {

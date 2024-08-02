@@ -7,6 +7,7 @@ import {
   faArrowUpRightFromSquare,
   faQuestionCircle,
   faTrashAlt,
+  faBug,
 } from '@fortawesome/free-solid-svg-icons';
 
 export default function Sidebar({ children }: { children: any }) {
@@ -86,6 +87,11 @@ export default function Sidebar({ children }: { children: any }) {
                   <FontAwesomeIcon icon={faBrain} /> Manage models
                 </a>
               </li>
+              <li onClick={() => navigateTo(Screen.LOG)}>
+                <a className={currScreen === Screen.LOG ? 'active' : ''}>
+                  <FontAwesomeIcon icon={faBug} /> Debug log
+                </a>
+              </li>
               <li>
                 <a
                   href="https://github.com/ngxson/wllama"
@@ -100,7 +106,7 @@ export default function Sidebar({ children }: { children: any }) {
         </div>
       </div>
 
-      <div className="drawer-content mx-auto">{children}</div>
+      <div className="drawer-content grow">{children}</div>
     </>
   );
 }

@@ -1,11 +1,12 @@
 import { Screen } from '../utils/types';
 import { useWllama } from '../utils/wllama.context';
+import ScreenWrapper from './ScreenWrapper';
 
 export default function GuideScreen() {
   const { navigateTo } = useWllama();
 
   return (
-    <div className="w-[40rem] max-w-full h-full px-4 overflow-auto">
+    <ScreenWrapper>
       <div className="guide-text pt-16">
         <h1 className="text-2xl font-bold mb-4">Wllama 🦙</h1>
 
@@ -68,7 +69,7 @@ export default function GuideScreen() {
 
         <div className="mb-3">
           Wllama is in development and many bugs are expected to happen. If you
-          find a bug, for example, a model can't load, please{' '}
+          find a bug, please{' '}
           <a
             href="https://github.com/ngxson/wllama/issues"
             target="_blank"
@@ -76,9 +77,15 @@ export default function GuideScreen() {
           >
             open a issue
           </a>{' '}
-          with <b>console log screenshot</b>.
+          with log copied from{' '}
+          <button
+            className="btn btn-sm btn-primary btn-outline"
+            onClick={() => navigateTo(Screen.LOG)}
+          >
+            Debug log
+          </button>
         </div>
       </div>
-    </div>
+    </ScreenWrapper>
   );
 }
