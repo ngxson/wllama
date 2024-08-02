@@ -24,6 +24,11 @@ export interface ManageModel extends Model {
   downloadPercent: number; // from 0.0 to 1.0
 }
 
+export interface RuntimeInfo {
+  isMultithread: boolean;
+  hasChatTemplate: boolean;
+}
+
 export interface InferenceParams {
   nThreads: number;
   nContext: number;

@@ -89,7 +89,7 @@ export default function ChatScreen() {
                 <div className="chat chat-start" key={msg.id}>
                   <div className="chat-bubble bg-base-100 text-base-content">
                     {msg.content.length === 0 && isGenerating && (
-                      <span className="loading loading-spinner"></span>
+                      <span className="loading loading-dots"></span>
                     )}
                     {nl2br(msg.content)}
                   </div>

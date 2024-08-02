@@ -5,6 +5,7 @@ import {
   faTrashAlt,
   faXmark,
   faWarning,
+  faCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import { DEFAULT_INFERENCE_PARAMS, MAX_GGUF_SIZE } from '../config';
 import { toHumanReadableSize } from '../utils/utils';
@@ -223,6 +224,7 @@ function ModelCard({
     loadModel,
     unloadModel,
     removeCustomModel,
+    currRuntimeInfo,
   } = useWllama();
 
   const m = model;
@@ -252,6 +254,21 @@ function ModelCard({
               ? ` - Downloaded: ${percent}%`
               : ''}
           </small>
+
+          {m.state === ModelState.LOADED && currRuntimeInfo && (
+            <>
+              <br />
+              <InfoOnOffDisplay
+                text="Multithread"
+                on={currRuntimeInfo.isMultithread}
+              />
+              &nbsp;&nbsp;&nbsp;&nbsp;
+              <InfoOnOffDisplay
+                text="Chat template"
+                on={currRuntimeInfo.hasChatTemplate}
+              />
+            </>
+          )}
 
           {m.state === ModelState.DOWNLOADING && (
             <div>
@@ -332,5 +349,22 @@ function ModelCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function InfoOnOffDisplay({ text, on }: { text: string; on: boolean }) {
+  return (
+    <>
+      {on ? (
+        <span className="text-green-300">
+          <FontAwesomeIcon icon={faCheck} />
+        </span>
+      ) : (
+        <span className="text-red-400">
+          <FontAwesomeIcon icon={faXmark} />
+        </span>
+      )}
+      <span className="text-sm">&nbsp;{text}</span>
+    </>
   );
 }

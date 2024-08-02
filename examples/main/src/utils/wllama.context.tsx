@@ -8,6 +8,7 @@ import {
 } from '../config';
 import {
   InferenceParams,
+  RuntimeInfo,
   ManageModel,
   Model,
   ModelState,
@@ -23,11 +24,14 @@ interface WllamaContextValue {
   removeAllModels(): Promise<void>;
   isDownloading: boolean;
   isLoadingModel: boolean;
-  currModel?: ManageModel;
-  loadModel(model: ManageModel): Promise<void>;
-  unloadModel(): Promise<void>;
   currParams: InferenceParams;
   setParams(params: InferenceParams): void;
+
+  // function to load/unload model
+  currModel?: ManageModel;
+  currRuntimeInfo?: RuntimeInfo;
+  loadModel(model: ManageModel): Promise<void>;
+  unloadModel(): Promise<void>;
 
   // function for managing custom user model
   addCustomModel(url: string): Promise<void>;
@@ -83,6 +87,7 @@ export const WllamaProvider = ({ children }: any) => {
   const [currScreen, setScreen] = useState<Screen>(getDefaultScreen());
   const [models, setModels] = useState<ManageModel[]>([]);
   const [isBusy, setBusy] = useState(false);
+  const [currRuntimeInfo, setCurrRuntimeInfo] = useState<RuntimeInfo>();
   const [currParams, setCurrParams] = useState<InferenceParams>(
     WllamaStorage.load('params', DEFAULT_INFERENCE_PARAMS)
   );
@@ -164,6 +169,10 @@ export const WllamaProvider = ({ children }: any) => {
         n_batch: currParams.nBatch,
       });
       editModel({ ...model, state: ModelState.LOADED, downloadPercent: 0 });
+      setCurrRuntimeInfo({
+        isMultithread: wllamaInstance.isMultithread(),
+        hasChatTemplate: !!wllamaInstance.getChatTemplate(),
+      });
     } catch (e) {
       resetWllamaInstance();
       alert(`Failed to load model: ${(e as any).message ?? 'Unknown error'}`);
@@ -176,6 +185,7 @@ export const WllamaProvider = ({ children }: any) => {
     await wllamaInstance.exit();
     resetWllamaInstance();
     editModel({ ...currModel, state: ModelState.READY, downloadPercent: 0 });
+    setCurrRuntimeInfo(undefined);
   };
 
   const createCompletion = async (
@@ -272,6 +282,7 @@ export const WllamaProvider = ({ children }: any) => {
         getWllamaInstance: () => wllamaInstance,
         addCustomModel,
         removeCustomModel,
+        currRuntimeInfo,
       }}
     >
       {children}
