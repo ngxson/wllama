@@ -1,3 +1,4 @@
+import CacheManager from '../cache-manager';
 import { GGUFRemoteBlob } from './remote-blob';
 
 type ProgressCallback = (opts: { loaded: number; total: number }) => any;
@@ -26,11 +27,13 @@ export class MultiDownloads {
   private totalBytes: number = 0;
   private allowOffline: boolean;
   private noTEE: boolean;
+  private cacheManager: CacheManager;
 
   constructor(
     logger: any,
     urls: string[],
     maxParallel: number,
+    cacheManager: CacheManager,
     opts: {
       progressCallback?: ProgressCallback;
       useCache: boolean;
@@ -55,6 +58,7 @@ export class MultiDownloads {
     this.useCache = opts.useCache;
     this.allowOffline = opts.allowOffline;
     this.noTEE = !!opts.noTEE;
+    this.cacheManager = cacheManager;
   }
 
   async run(): Promise<Blob[]> {
@@ -67,6 +71,7 @@ export class MultiDownloads {
           startSignal: task.signalStart,
           allowOffline: this.allowOffline,
           noTEE: this.noTEE,
+          cacheManager: this.cacheManager,
           progressCallback: ({ loaded }) => {
             task.loaded = loaded;
             this.updateProgress(task);

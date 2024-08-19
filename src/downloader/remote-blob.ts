@@ -1,8 +1,7 @@
 // Adapted from https://github.com/huggingface/huggingface.js/blob/main/packages/hub/src/utils/WebBlob.ts
 
-import {
+import CacheManager, {
   CacheEntryMetadata,
-  CacheManager,
   POLYFILL_ETAG,
 } from '../cache-manager';
 
@@ -21,6 +20,7 @@ interface GGUFRemoteBlobCreateOptions {
   progressCallback?: ProgressCallback;
   startSignal?: Promise<void>;
   allowOffline: boolean;
+  cacheManager: CacheManager;
   /**
    * Should we skip TEE the output stream?
    * Set to true if we only download model to cache, without reading it
@@ -39,6 +39,7 @@ export class GGUFRemoteBlob extends Blob {
     url: string,
     opts: GGUFRemoteBlobCreateOptions
   ): Promise<Blob> {
+    const { cacheManager } = opts;
     const customFetch = opts?.fetch ?? fetch;
     const cacheKey = url;
     let remoteFile: CacheEntryMetadata;
@@ -54,7 +55,7 @@ export class GGUFRemoteBlob extends Blob {
     } catch (err) {
       // connection error (i.e. offline)
       if (opts.allowOffline) {
-        const cachedMeta = await CacheManager.getMetadata(cacheKey);
+        const cachedMeta = await cacheManager.getMetadata(cacheKey);
         if (cachedMeta) {
           remoteFile = cachedMeta;
         } else {
@@ -67,14 +68,14 @@ export class GGUFRemoteBlob extends Blob {
       }
     }
 
-    const cachedFileSize = await CacheManager.getSize(cacheKey);
-    const cachedFile = await CacheManager.getMetadata(cacheKey);
+    const cachedFileSize = await cacheManager.getSize(cacheKey);
+    const cachedFile = await cacheManager.getMetadata(cacheKey);
     const skipCache = opts?.useCache === false;
 
     // migrate from old version: if metadata is polyfilled, we save the new metadata
     const metadataPolyfilled = cachedFile?.etag === POLYFILL_ETAG;
     if (metadataPolyfilled) {
-      await CacheManager._writeMetadata(cacheKey, remoteFile);
+      await cacheManager._writeMetadata(cacheKey, remoteFile);
     }
 
     const cachedFileValid =
@@ -84,7 +85,7 @@ export class GGUFRemoteBlob extends Blob {
         remoteFile.originalSize === cachedFileSize);
     if (cachedFileValid && !skipCache) {
       opts?.logger?.debug(`Using cached file ${cacheKey}`);
-      const cachedFile = await CacheManager.open(cacheKey);
+      const cachedFile = await cacheManager.open(cacheKey);
       (opts?.startSignal ?? Promise.resolve()).then(() => {
         opts?.progressCallback?.({
           loaded: cachedFileSize,
@@ -102,6 +103,7 @@ export class GGUFRemoteBlob extends Blob {
           progressCallback: () => {}, // unused
           etag: remoteFile.etag,
           noTEE: opts.noTEE,
+          cacheManager: cacheManager,
         }
       );
     } else {
@@ -127,11 +129,13 @@ export class GGUFRemoteBlob extends Blob {
           startSignal: opts?.startSignal,
           etag: remoteFile.etag,
           noTEE: opts.noTEE,
+          cacheManager: cacheManager,
         }
       );
     }
   }
 
+  private cacheManager: CacheManager;
   private url: string;
   private etag: string;
   private start: number;
@@ -156,6 +160,7 @@ export class GGUFRemoteBlob extends Blob {
       startSignal?: Promise<void>;
       etag: string;
       noTEE: boolean;
+      cacheManager: CacheManager;
     }
   ) {
     super([]);
@@ -175,6 +180,7 @@ export class GGUFRemoteBlob extends Blob {
     this.startSignal = additionals.startSignal;
     this.etag = additionals.etag;
     this.noTEE = additionals.noTEE;
+    this.cacheManager = additionals.cacheManager;
   }
 
   override get size(): number {
@@ -233,7 +239,7 @@ export class GGUFRemoteBlob extends Blob {
         .then((response) => {
           const [src0, src1] = response.body!.tee();
           src0.pipeThrough(stream);
-          CacheManager.write(this.url, src1, {
+          this.cacheManager.write(this.url, src1, {
             originalSize: this.end,
             originalURL: this.url,
             etag: this.etag,

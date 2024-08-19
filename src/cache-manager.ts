@@ -39,7 +39,7 @@ export interface CacheEntryMetadata {
 /**
  * Cache implementation using OPFS (Origin private file system)
  */
-export const CacheManager = {
+class CacheManager {
   /**
    * Convert a given URL into file name in cache.
    *
@@ -47,7 +47,7 @@ export const CacheManager = {
    */
   async getNameFromURL(url: string): Promise<string> {
     return await toFileName(url, '');
-  },
+  }
 
   /**
    * Write a new file to cache. This will overwrite existing file.
@@ -59,9 +59,9 @@ export const CacheManager = {
     stream: ReadableStream,
     metadata: CacheEntryMetadata
   ): Promise<void> {
-    CacheManager._writeMetadata(name, metadata); // no need await
+    this._writeMetadata(name, metadata); // no need await
     return await opfsWrite(name, stream);
-  },
+  }
 
   /**
    * Open a file in cache for reading
@@ -71,7 +71,7 @@ export const CacheManager = {
    */
   async open(name: string): Promise<ReadableStream | null> {
     return await opfsOpen(name);
-  },
+  }
 
   /**
    * Get the size of a file in stored cache
@@ -83,14 +83,14 @@ export const CacheManager = {
    */
   async getSize(name: string): Promise<number> {
     return await opfsFileSize(name);
-  },
+  }
 
   /**
    * Get metadata of a cached file
    */
   async getMetadata(name: string): Promise<CacheEntryMetadata | null> {
     const stream = await opfsOpen(name, PREFIX_METADATA);
-    const cachedSize = await CacheManager.getSize(name);
+    const cachedSize = await this.getSize(name);
     if (!stream) {
       return cachedSize > 0
         ? // files created by older version of wllama doesn't have metadata, we will try to polyfill it
@@ -109,7 +109,7 @@ export const CacheManager = {
       // worst case: metadata is somehow corrupted, we will re-download the model
       return null;
     }
-  },
+  }
 
   /**
    * List all files currently in cache
@@ -147,14 +147,14 @@ export const CacheManager = {
       }
     }
     return result;
-  },
+  }
 
   /**
    * Clear all files currently in cache
    */
   async clear(): Promise<void> {
-    await CacheManager.deleteMany(() => true);
-  },
+    await this.deleteMany(() => true);
+  }
 
   /**
    * Delete a single file in cache
@@ -162,11 +162,11 @@ export const CacheManager = {
    * @param nameOrURL Can be either an URL or a name returned by `getNameFromURL()` or `list()`
    */
   async delete(nameOrURL: string): Promise<void> {
-    const name2 = await CacheManager.getNameFromURL(nameOrURL);
-    await CacheManager.deleteMany(
+    const name2 = await this.getNameFromURL(nameOrURL);
+    await this.deleteMany(
       (entry) => entry.name === nameOrURL || entry.name === name2
     );
-  },
+  }
 
   /**
    * Delete multiple files in cache.
@@ -175,25 +175,27 @@ export const CacheManager = {
    */
   async deleteMany(predicate: (e: CacheEntry) => boolean): Promise<void> {
     const cacheDir = await getCacheDir();
-    const list = await CacheManager.list();
+    const list = await this.list();
     for (const item of list) {
       if (predicate(item)) {
         cacheDir.removeEntry(item.name);
       }
     }
-  },
+  }
 
   /**
    * Internally used
    */
-  async _writeMetadata(
+  private async _writeMetadata(
     name: string,
     metadata: CacheEntryMetadata
   ): Promise<void> {
     const blob = new Blob([JSON.stringify(metadata)], { type: 'text/plain' });
     await opfsWrite(name, blob.stream(), PREFIX_METADATA);
-  },
-};
+  }
+}
+
+export default CacheManager;
 
 /**
  * Write to OPFS file from ReadableStream

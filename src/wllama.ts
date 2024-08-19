@@ -8,7 +8,7 @@ import {
   maybeSortFileByName,
   padDigits,
 } from './utils';
-import { CacheManager } from './cache-manager';
+import CacheManager from './cache-manager';
 import { MultiDownloads } from './downloader/multi-downloads';
 
 export interface WllamaConfig {
@@ -25,6 +25,10 @@ export interface WllamaConfig {
     warn: typeof console.warn;
     error: typeof console.error;
   };
+  /**
+   * Custom cache manager (only for advanced usage)
+   */
+  cacheManager?: CacheManager;
 }
 
 export interface AssetsPathConfig {
@@ -154,7 +158,7 @@ export const LoggerWithoutDebug = {
 
 export class Wllama {
   // The CacheManager singleton, can be accessed by user
-  public cacheManager = CacheManager;
+  public cacheManager: CacheManager;
 
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
@@ -178,6 +182,7 @@ export class Wllama {
     if (!pathConfig) throw new Error('AssetsPathConfig is required');
     this.pathConfig = pathConfig;
     this.config = wllamaConfig;
+    this.cacheManager = wllamaConfig.cacheManager ?? new CacheManager();
   }
 
   private logger() {
@@ -364,6 +369,7 @@ export class Wllama {
       this.logger(),
       this.parseModelUrl(modelUrl),
       config.parallelDownloads ?? 3,
+      this.cacheManager,
       {
         progressCallback: config.progressCallback,
         useCache: true,
@@ -404,6 +410,7 @@ export class Wllama {
       this.logger(),
       this.parseModelUrl(modelUrl),
       config.parallelDownloads ?? 3,
+      this.cacheManager,
       {
         progressCallback: config.progressCallback,
         useCache: !skipCache,
@@ -923,7 +930,6 @@ export class Wllama {
     return await this.proxy.wllamaDebug();
   }
 
-
   ///// Prompt cache utils /////
   private async getCachedToken(): Promise<number[]> {
     this.checkModelLoaded();
@@ -944,7 +950,7 @@ export class Wllama {
       }
     }
     const nDiscard = cachedTokens.length - nKeep;
-    this.logger().debug(`Cache nKeep=${nKeep} nDiscard=${nDiscard}`)
+    this.logger().debug(`Cache nKeep=${nKeep} nDiscard=${nDiscard}`);
     await this.kvRemove(nKeep, nDiscard);
     return seq.slice(nKeep, seq.length);
   }
