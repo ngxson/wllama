@@ -186,7 +186,7 @@ class CacheManager {
   /**
    * Internally used
    */
-  async _writeMetadata(
+  private async _writeMetadata(
     name: string,
     metadata: CacheEntryMetadata
   ): Promise<void> {
