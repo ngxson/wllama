@@ -75,7 +75,7 @@ export class GGUFRemoteBlob extends Blob {
     // migrate from old version: if metadata is polyfilled, we save the new metadata
     const metadataPolyfilled = cachedFile?.etag === POLYFILL_ETAG;
     if (metadataPolyfilled) {
-      await cacheManager._writeMetadata(cacheKey, remoteFile);
+      await cacheManager.writeMetadata(cacheKey, remoteFile);
     }
 
     const cachedFileValid =

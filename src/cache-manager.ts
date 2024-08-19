@@ -59,7 +59,7 @@ class CacheManager {
     stream: ReadableStream,
     metadata: CacheEntryMetadata
   ): Promise<void> {
-    this._writeMetadata(name, metadata); // no need await
+    this.writeMetadata(name, metadata); // no need await
     return await opfsWrite(name, stream);
   }
 
@@ -184,9 +184,11 @@ class CacheManager {
   }
 
   /**
-   * Internally used
+   * Write the metadata of the file to disk.
+   *
+   * This function is separated from `write()` for compatibility reason. In older version of wllama, there was no metadata for cached file, so when newer version of wllama loads a file created by older version, it will try to polyfill the metadata.
    */
-  private async _writeMetadata(
+  async writeMetadata(
     name: string,
     metadata: CacheEntryMetadata
   ): Promise<void> {
