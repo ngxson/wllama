@@ -8,6 +8,7 @@
 #include "llama.h"
 #include "json.hpp"
 #include "common.h"
+#include "sampling.h"
 
 /**
  * CCAMA project - A low-level llama.cpp API via JSON
@@ -34,9 +35,10 @@ struct app_t
 {
   llama_model *model;
   llama_context *ctx;
-  struct llama_sampling_context *ctx_sampling = nullptr;
+  struct gpt_sampler *ctx_sampling = nullptr;
   llama_batch batch = llama_batch_init(512, 0, 1);
   std::vector<llama_token> tokens;
+  int32_t seed = LLAMA_DEFAULT_SEED;
 };
 
 inline void send_response(json data)
@@ -119,7 +121,7 @@ void free_all(app_t &app)
   if (app.model != nullptr)
     llama_free_model(app.model);
   if (app.ctx_sampling != nullptr)
-    llama_sampling_free(app.ctx_sampling);
+    gpt_sampler_free(app.ctx_sampling);
 }
 
 json dump_metadata(app_t &app)
@@ -172,7 +174,7 @@ json action_load(app_t &app, json &body)
   if (body.contains("n_gpu_layers"))
     mparams.n_gpu_layers = body["n_gpu_layers"];
   auto cparams = llama_context_default_params();
-  cparams.seed = body["seed"];
+  app.seed = body["seed"];
   cparams.n_ctx = body["n_ctx"];
   cparams.n_threads = body["n_threads"];
   cparams.n_threads_batch = cparams.n_threads;
@@ -283,7 +285,10 @@ json action_set_options(app_t &app, json &body)
 json action_sampling_init(app_t &app, json &body)
 {
   // sampling
-  llama_sampling_params sparams;
+  gpt_sampler_params sparams;
+  sparams.seed = app.seed;
+  if (sparams.seed == LLAMA_DEFAULT_SEED)
+    sparams.seed = time(NULL);
   if (body.contains("mirostat"))
     sparams.mirostat = body["mirostat"];
   if (body.contains("mirostat_tau"))
@@ -322,8 +327,10 @@ json action_sampling_init(app_t &app, json &body)
     sparams.min_p = body["min_p"];
   if (body.contains("tfs_z"))
     sparams.tfs_z = body["tfs_z"];
-  if (body.contains("typical_p"))
-    sparams.typical_p = body["typical_p"];
+  if (body.contains("typical_p")) // for compat
+    sparams.typ_p = body["typical_p"];
+  if (body.contains("typ_p"))
+    sparams.typ_p = body["typ_p"];
   // logit bias
   if (body.contains("logit_bias"))
   {
@@ -332,21 +339,21 @@ json action_sampling_init(app_t &app, json &body)
     {
       llama_token token = item["token"];
       float bias = item["bias"];
-      sparams.logit_bias[token] = bias;
+      sparams.logit_bias.push_back({ token, bias });
     }
   }
   // maybe free before creating a new one
   if (app.ctx_sampling != nullptr)
   {
-    llama_sampling_free(app.ctx_sampling);
+    gpt_sampler_free(app.ctx_sampling);
   }
-  app.ctx_sampling = llama_sampling_init(sparams);
+  app.ctx_sampling = gpt_sampler_init(app.model, sparams);
   if (body.contains("tokens"))
   {
     std::vector<llama_token> tokens = body["tokens"];
     for (auto id : tokens)
     {
-      llama_sampling_accept(app.ctx_sampling, app.ctx, id, false);
+      gpt_sampler_accept(app.ctx_sampling, id, false);
     }
   }
   return json{{"success", true}};
@@ -482,7 +489,7 @@ json action_encode(app_t &app, json &body)
 json action_sampling_sample(app_t &app, json &body)
 {
   int32_t idx = app.batch.n_tokens - 1;
-  const llama_token new_token_id = llama_sampling_sample(app.ctx_sampling, app.ctx, NULL, idx);
+  const llama_token new_token_id = gpt_sampler_sample(app.ctx_sampling, app.ctx, idx, false);
   std::string piece = llama_token_to_piece(app.ctx, new_token_id);
   return json{
       {"success", true},
@@ -497,7 +504,7 @@ json action_sampling_accept(app_t &app, json &body)
   std::vector<llama_token> tokens_list = body["tokens"];
   for (auto id : tokens_list)
   {
-    llama_sampling_accept(app.ctx_sampling, app.ctx, id, false);
+    gpt_sampler_accept(app.ctx_sampling, id, false);
   }
   return json{{"success", true}};
 }
