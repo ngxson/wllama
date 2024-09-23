@@ -46,7 +46,6 @@ extern "C" const char *wllama_start()
 {
   try
   {
-    log_disable();
     llama_backend_init();
     // std::cerr << llama_print_system_info() << "\n";
     llama_log_set(llama_log_callback_logTee, nullptr);
