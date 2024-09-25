@@ -1,0 +1,39 @@
+name: Build Hugging Face space
+
+on:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ["master"]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "hf_space"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build Hugging Face space
+        shell: bash
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN is not set, skipping..."
+          else
+            cd scripts && ./build_hf_space.sh
+          fi
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
