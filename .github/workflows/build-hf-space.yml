@@ -33,6 +33,8 @@ jobs:
           if [ -z "$HF_TOKEN" ]; then
             echo "HF_TOKEN is not set, skipping..."
           else
+            git config --global user.email "son@huggingface.com"
+            git config --global user.name "Xuan Son NGUYEN"
             cd scripts && ./build_hf_space.sh
           fi
         env:
