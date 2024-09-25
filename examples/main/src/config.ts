@@ -4,7 +4,10 @@ import wllamaSingle from '@wllama/wllama/src/single-thread/wllama.wasm?url';
 import wllamaMultiJS from '@wllama/wllama/src/multi-thread/wllama.js?url';
 import wllamaMulti from '@wllama/wllama/src/multi-thread/wllama.wasm?url';
 import wllamaMultiWorker from '@wllama/wllama/src/multi-thread/wllama.worker.mjs?url';
+import wllamaPackageJson from '@wllama/wllama/package.json';
 import { InferenceParams, Model } from './utils/types';
+
+export const WLLAMA_VERSION = wllamaPackageJson.version;
 
 export const WLLAMA_CONFIG_PATHS = {
   'single-thread/wllama.js': wllamaSingleJS,
@@ -25,6 +28,10 @@ export const LIST_MODELS: Model[] = [
   {
     url: 'https://huggingface.co/HuggingFaceTB/smollm-360M-instruct-v0.2-Q8_0-GGUF/resolve/main/smollm-360m-instruct-add-basics-q8_0.gguf',
     size: 386405440,
+  },
+  {
+    url: 'https://huggingface.co/hugging-quants/Llama-3.2-1B-Instruct-Q4_K_M-GGUF/resolve/main/llama-3.2-1b-instruct-q4_k_m.gguf',
+    size: 807690656,
   },
   {
     url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/qwen2-1_5b-instruct-q4_k_m-00001-of-00004.gguf',

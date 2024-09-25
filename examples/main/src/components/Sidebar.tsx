@@ -9,6 +9,7 @@ import {
   faTrashAlt,
   faBug,
 } from '@fortawesome/free-solid-svg-icons';
+import { WLLAMA_VERSION } from '../config';
 
 export default function Sidebar({ children }: { children: any }) {
   const { currentConvId, navigateTo, currScreen, currModel } = useWllama();
@@ -102,6 +103,10 @@ export default function Sidebar({ children }: { children: any }) {
                 </a>
               </li>
             </ul>
+
+            <div className="text-xs pl-6 pt-2">
+              Version {WLLAMA_VERSION}
+            </div>
           </div>
         </div>
       </div>
