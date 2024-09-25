@@ -4,7 +4,7 @@
 
 WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 
-👉 [Try the demo app](https://github.ngxson.com/wllama/examples/main/dist/)
+👉 [Try the demo app](https://huggingface.co/spaces/ngxson/wllama)
 
 ## Recent changes
 
@@ -40,7 +40,7 @@ Limitations:
 
 ## Demo and documentations
 
-**Main demo**: https://github.ngxson.com/wllama/examples/main/dist/
+**Main demo**: https://huggingface.co/spaces/ngxson/wllama
 
 ![](./assets/screenshot_0.png)
 
