@@ -11,6 +11,10 @@ cd _tmp_hf_space
 ./build.sh
 
 echo ">>> push"
+if [ -z "$(git status --porcelain)" ]; then
+  echo "nothing changed, skipping..."
+  exit 0
+fi
 git add -A
 git commit -m "update"
 git push
