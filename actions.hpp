@@ -35,7 +35,7 @@ struct app_t
 {
   llama_model *model;
   llama_context *ctx;
-  struct gpt_sampler *ctx_sampling = nullptr;
+  common_sampler *ctx_sampling = nullptr;
   llama_batch batch = llama_batch_init(512, 0, 1);
   std::vector<llama_token> tokens;
   int32_t seed = LLAMA_DEFAULT_SEED;
@@ -121,7 +121,7 @@ void free_all(app_t &app)
   if (app.model != nullptr)
     llama_free_model(app.model);
   if (app.ctx_sampling != nullptr)
-    gpt_sampler_free(app.ctx_sampling);
+    common_sampler_free(app.ctx_sampling);
 }
 
 json dump_metadata(app_t &app)
@@ -285,7 +285,7 @@ json action_set_options(app_t &app, json &body)
 json action_sampling_init(app_t &app, json &body)
 {
   // sampling
-  gpt_sampler_params sparams;
+  common_sampler_params sparams;
   sparams.seed = app.seed;
   if (sparams.seed == LLAMA_DEFAULT_SEED)
     sparams.seed = time(NULL);
@@ -345,15 +345,15 @@ json action_sampling_init(app_t &app, json &body)
   // maybe free before creating a new one
   if (app.ctx_sampling != nullptr)
   {
-    gpt_sampler_free(app.ctx_sampling);
+    common_sampler_free(app.ctx_sampling);
   }
-  app.ctx_sampling = gpt_sampler_init(app.model, sparams);
+  app.ctx_sampling = common_sampler_init(app.model, sparams);
   if (body.contains("tokens"))
   {
     std::vector<llama_token> tokens = body["tokens"];
     for (auto id : tokens)
     {
-      gpt_sampler_accept(app.ctx_sampling, id, false);
+      common_sampler_accept(app.ctx_sampling, id, false);
     }
   }
   return json{{"success", true}};
@@ -366,7 +366,7 @@ json action_get_vocab(app_t &app, json &body)
   std::vector<std::vector<unsigned int> > vocab(max_tokens);
   for (int32_t id = 0; id < max_tokens; id++)
   {
-    std::string token_as_str = llama_token_to_piece(app.ctx, id);
+    std::string token_as_str = common_token_to_piece(app.ctx, id);
     vocab[id] = convert_string_to_int_arr(token_as_str);
   }
   return json{
@@ -382,7 +382,7 @@ json action_lookup_token(app_t &app, json &body)
   int32_t max_tokens = llama_n_vocab(app.model);
   for (int32_t id = 0; id < max_tokens; id++)
   {
-    std::string token_as_str = llama_token_to_piece(app.ctx, id);
+    std::string token_as_str = common_token_to_piece(app.ctx, id);
     if (token_as_str == piece)
     {
       return json{
@@ -401,7 +401,7 @@ json action_tokenize(app_t &app, json &body)
   std::string text = body["text"];
   bool special = body.contains("special");
   std::vector<llama_token> tokens_list;
-  tokens_list = ::llama_tokenize(app.model, text, false, special);
+  tokens_list = common_tokenize(app.model, text, false, special);
   return json{
       {"success", true},
       {"tokens", tokens_list},
@@ -415,7 +415,7 @@ json action_detokenize(app_t &app, json &body)
   std::stringstream output;
   for (auto id : tokens)
   {
-    output << llama_token_to_piece(app.ctx, id);
+    output << common_token_to_piece(app.ctx, id);
   }
   std::string parsed_str = output.str();
   return json{
@@ -430,12 +430,12 @@ json action_decode(app_t &app, json &body)
   std::vector<llama_token> tokens_list = body["tokens"];
   bool skip_logits = body.contains("skip_logits");
   size_t i = 0;
-  llama_batch_clear(app.batch);
+  common_batch_clear(app.batch);
   for (auto id : tokens_list)
   {
     bool grp_attn_enabled = false; // TODO: maybe remove grp_attn
     int32_t n_past = app.tokens.size();
-    llama_batch_add(app.batch, id, n_past, {0}, false);
+    common_batch_add(app.batch, id, n_past, {0}, false);
     app.tokens.push_back(id);
     i++;
   }
@@ -466,10 +466,10 @@ json action_encode(app_t &app, json &body)
     return json{{"error", "this model does not have an encoder"}};
   }
   size_t n_past = 0;
-  llama_batch_clear(app.batch);
+  common_batch_clear(app.batch);
   for (auto id : tokens_list)
   {
-    llama_batch_add(app.batch, id, n_past, {0}, false);
+    common_batch_add(app.batch, id, n_past, {0}, false);
     n_past++;
   }
   if (llama_encode(app.ctx, app.batch) != 0)
@@ -489,8 +489,8 @@ json action_encode(app_t &app, json &body)
 json action_sampling_sample(app_t &app, json &body)
 {
   int32_t idx = app.batch.n_tokens - 1;
-  const llama_token new_token_id = gpt_sampler_sample(app.ctx_sampling, app.ctx, idx, false);
-  std::string piece = llama_token_to_piece(app.ctx, new_token_id);
+  const llama_token new_token_id = common_sampler_sample(app.ctx_sampling, app.ctx, idx, false);
+  std::string piece = common_token_to_piece(app.ctx, new_token_id);
   return json{
       {"success", true},
       {"piece", convert_string_to_int_arr(piece)},
@@ -504,7 +504,7 @@ json action_sampling_accept(app_t &app, json &body)
   std::vector<llama_token> tokens_list = body["tokens"];
   for (auto id : tokens_list)
   {
-    gpt_sampler_accept(app.ctx_sampling, id, false);
+    common_sampler_accept(app.ctx_sampling, id, false);
   }
   return json{{"success", true}};
 }
@@ -578,7 +578,7 @@ json action_embeddings(app_t &app, json &body)
       return json{{"error", "failed to get embeddings"}};
     }
   }
-  llama_embd_normalize(embd, out, n_embd);
+  common_embd_normalize(embd, out, n_embd);
   return json{
       {"success", true},
       {"embeddings", embeddings},

@@ -4,6 +4,8 @@ import { Message, Screen } from './types';
 import { Wllama } from '@wllama/wllama';
 import { DEFAULT_CHAT_TEMPLATE } from '../config';
 
+const textDecoder = new TextDecoder();
+
 export const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -39,10 +41,12 @@ export const formatChat = async (
   const template = new Template(
     modelWllama.getChatTemplate() ?? DEFAULT_CHAT_TEMPLATE
   );
+  const bos_token: string = textDecoder.decode(await modelWllama.detokenize([modelWllama.getBOS()]));
+  const eos_token: string = textDecoder.decode(await modelWllama.detokenize([modelWllama.getEOS()]));
   return template.render({
     messages,
-    bos_token: await modelWllama.detokenize([modelWllama.getBOS()]),
-    eos_token: await modelWllama.detokenize([modelWllama.getEOS()]),
+    bos_token,
+    eos_token,
     add_generation_prompt: true,
   });
 };
