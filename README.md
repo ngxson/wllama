@@ -6,20 +6,11 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 
 👉 [Try the demo app](https://huggingface.co/spaces/ngxson/wllama)
 
-## Recent changes
+📄 [Documentation](https://github.ngxson.com/wllama/docs/)
 
-- Version 1.14.0
-  - Added ability to use cached model when device goes offline [#90](https://github.com/ngxson/wllama/pull/90)
-  - Added experimental support for encoder-decoder architecture [#91](https://github.com/ngxson/wllama/pull/91)
-- Version 1.10.0
-  - `loadModel()` now accepts `Blob` (also works with `File`)
-  - Origin private file system (OPFS) is used for caching files (better performance)
-- Version 1.9.0
-  - Added custom logger
-  - Added `getModelMetadata()`
-  - Added support for EOT (end of turn) and `stopTokens` in `createCompletion()`
+For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
-For more details, see [releases](https://github.com/ngxson/wllama/releases)
+![](./assets/screenshot_0.png)
 
 ## Features
 
@@ -35,16 +26,12 @@ For more details, see [releases](https://github.com/ngxson/wllama/releases)
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- No WebGL support, but maybe possible in the future
+- No WebGPU support, but maybe possible in the future
 - Max file size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length). If your model is bigger than 2GB, please follow the **Split model** section below.
 
-## Demo and documentations
+## Code demo and documentation
 
-**Main demo**: https://huggingface.co/spaces/ngxson/wllama
-
-![](./assets/screenshot_0.png)
-
-**Documentation:** https://github.ngxson.com/wllama/docs/
+📄 [Documentation](https://github.ngxson.com/wllama/docs/)
 
 Demo:
 - Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/
