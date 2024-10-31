@@ -859,7 +859,6 @@ export class Wllama {
     );
     let result: any;
     for (let i = 0; i < batches.length; i++) {
-      const isLast = i === batches.length - 1;
       result = await this.proxy.wllamaAction('encode', { tokens: batches[i] });
       if (result.error) {
         throw new WllamaError(result.error);
