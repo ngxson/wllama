@@ -1,4 +1,4 @@
-import { ManageModel, ModelState } from '../utils/types';
+import { ManageModel, ModelState, Screen } from '../utils/types';
 import { useWllama } from '../utils/wllama.context';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -225,6 +225,7 @@ function ModelCard({
     unloadModel,
     removeCustomModel,
     currRuntimeInfo,
+    navigateTo,
   } = useWllama();
 
   const m = model;
@@ -321,12 +322,20 @@ function ModelCard({
             </>
           )}
           {m.state === ModelState.LOADED && (
-            <button
-              className="btn btn-outline btn-primary btn-sm mr-2"
-              onClick={() => unloadModel()}
-            >
-              Unload
-            </button>
+            <>
+              <button
+                className="btn btn-primary btn-sm mr-2"
+                onClick={() => navigateTo(Screen.CHAT)}
+              >
+                Start chat
+              </button>
+              <button
+                className="btn btn-outline btn-primary btn-sm mr-2"
+                onClick={() => unloadModel()}
+              >
+                Unload
+              </button>
+            </>
           )}
           {m.state === ModelState.NOT_DOWNLOADED && m.userAdded && (
             <button

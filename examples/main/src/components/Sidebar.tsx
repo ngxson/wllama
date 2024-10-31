@@ -31,7 +31,7 @@ export default function Sidebar({ children }: { children: any }) {
 
         <div className="h-screen lg:max-h-[calc(100vh-4rem)] flex flex-col text-base-content bg-base-200">
           <div className="grow w-80 overflow-auto p-4">
-            <ul className="grow menu gap-1">
+            <ul className="menu gap-1 overflow-x-hidden">
               <li onClick={() => navigateTo(Screen.CHAT)}>
                 <a
                   className={
@@ -45,26 +45,28 @@ export default function Sidebar({ children }: { children: any }) {
                 <li
                   key={conv.id}
                   onClick={() => navigateTo(Screen.CHAT, conv.id)}
+                  className="group flex flex-row"
                 >
                   <a
-                    className={`group ${conv.id === currentConvId ? 'active' : ''}`}
+                    className={`${conv.id === currentConvId ? 'active' : ''} flex-1 min-w-0`}
                   >
-                    {conv.messages[0]?.content}
-                    <span className="text-right hidden group-hover:inline cursor-pointer">
-                      <FontAwesomeIcon
-                        icon={faTrashAlt}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          if (
-                            confirm('Are you sure to delete this conversation?')
-                          ) {
-                            navigateTo(Screen.CHAT);
-                            deleteConversation(conv.id);
-                          }
-                        }}
-                      />
-                    </span>
+                    <div className="truncate">{conv.messages[0]?.content}</div>
                   </a>
+
+                  <span className="text-right hidden group-hover:inline">
+                    <FontAwesomeIcon
+                      icon={faTrashAlt}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (
+                          confirm('Are you sure to delete this conversation?')
+                        ) {
+                          navigateTo(Screen.CHAT);
+                          deleteConversation(conv.id);
+                        }
+                      }}
+                    />
+                  </span>
                 </li>
               ))}
             </ul>
