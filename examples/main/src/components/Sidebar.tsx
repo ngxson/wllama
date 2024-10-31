@@ -104,9 +104,7 @@ export default function Sidebar({ children }: { children: any }) {
               </li>
             </ul>
 
-            <div className="text-xs pl-6 pt-2">
-              Version {WLLAMA_VERSION}
-            </div>
+            <div className="text-xs pl-6 pt-2">Version {WLLAMA_VERSION}</div>
           </div>
         </div>
       </div>

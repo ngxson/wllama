@@ -156,6 +156,22 @@ export const LoggerWithoutDebug = {
   debug: () => {},
 };
 
+export type WllamaErrorType =
+  | 'model_not_loaded'
+  | 'download_error'
+  | 'load_error'
+  | 'kv_cache_full'
+  | 'unknown_error'
+  | 'inference_error';
+
+export class WllamaError extends Error {
+  type: WllamaErrorType;
+  constructor(message: string, type: WllamaErrorType = 'unknown_error') {
+    super(message);
+    this.type = type;
+  }
+}
+
 export class Wllama {
   // The CacheManager singleton, can be accessed by user
   public cacheManager: CacheManager;
@@ -179,7 +195,7 @@ export class Wllama {
 
   constructor(pathConfig: AssetsPathConfig, wllamaConfig: WllamaConfig = {}) {
     checkEnvironmentCompatible();
-    if (!pathConfig) throw new Error('AssetsPathConfig is required');
+    if (!pathConfig) throw new WllamaError('AssetsPathConfig is required');
     this.pathConfig = pathConfig;
     this.config = wllamaConfig;
     this.cacheManager = wllamaConfig.cacheManager ?? new CacheManager();
@@ -191,7 +207,10 @@ export class Wllama {
 
   private checkModelLoaded() {
     if (!this.isModelLoaded()) {
-      throw new Error('loadModel() is not yet called');
+      throw new WllamaError(
+        'loadModel() is not yet called',
+        'model_not_loaded'
+      );
     }
   }
 
@@ -358,12 +377,13 @@ export class Wllama {
     config: DownloadModelConfig = {}
   ): Promise<void> {
     if (modelUrl.length === 0) {
-      throw new Error(
-        'modelUrl must be an URL or a list of URLs (in the correct order)'
+      throw new WllamaError(
+        'modelUrl must be an URL or a list of URLs (in the correct order)',
+        'download_error'
       );
     }
     if (config.useCache === false) {
-      throw new Error('useCache must not be false');
+      throw new WllamaError('useCache must not be false', 'download_error');
     }
     const multiDownloads = new MultiDownloads(
       this.logger(),
@@ -401,8 +421,9 @@ export class Wllama {
     config: DownloadModelConfig = {}
   ): Promise<void> {
     if (modelUrl.length === 0) {
-      throw new Error(
-        'modelUrl must be an URL or a list of URLs (in the correct order)'
+      throw new WllamaError(
+        'modelUrl must be an URL or a list of URLs (in the correct order)',
+        'load_error'
       );
     }
     const skipCache = config.useCache === false;
@@ -435,12 +456,15 @@ export class Wllama {
   ): Promise<void> {
     const blobs = [...ggufBlobs]; // copy array
     if (blobs.some((b) => b.size === 0)) {
-      throw new Error('Input model (or splits) must be non-empty Blob or File');
+      throw new WllamaError(
+        'Input model (or splits) must be non-empty Blob or File',
+        'load_error'
+      );
     }
     maybeSortFileByName(blobs);
     const hasMultipleBuffers = blobs.length > 1;
     if (this.proxy) {
-      throw new Error('Module is already initialized');
+      throw new WllamaError('Module is already initialized', 'load_error');
     }
     // detect if we can use multi-thread
     const supportMultiThread = await isSupportMultiThread();
@@ -496,7 +520,7 @@ export class Wllama {
     // run it
     const startResult: any = await this.proxy.wllamaStart();
     if (!startResult.success) {
-      throw new Error(
+      throw new WllamaError(
         `Error while calling start function, result = ${startResult}`
       );
     }
@@ -665,7 +689,7 @@ export class Wllama {
       tokens: pastTokens,
     });
     if (!result.success) {
-      throw new Error('Failed to initialize sampling');
+      throw new WllamaError('Failed to initialize sampling');
     }
   }
 
@@ -737,7 +761,7 @@ export class Wllama {
   ): Promise<{ nPast: number }> {
     this.checkModelLoaded();
     if (this.useEmbeddings) {
-      throw new Error(
+      throw new WllamaError(
         'embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.'
       );
     }
@@ -753,9 +777,9 @@ export class Wllama {
     }
     const result = await this.proxy.wllamaAction('decode', req);
     if (result.error) {
-      throw new Error(result.error);
+      throw new WllamaError(result.error);
     } else if (!result.success) {
-      throw new Error('Cannot decode, unknown error');
+      throw new WllamaError('Cannot decode, unknown error');
     } else {
       return { nPast: result.n_past };
     }
@@ -774,11 +798,15 @@ export class Wllama {
   ): Promise<{ nPast: number }> {
     this.checkModelLoaded();
     if (!this.hasEncoder) {
-      throw new Error('This model does not use encoder-decoder architecture.');
+      throw new WllamaError(
+        'This model does not use encoder-decoder architecture.',
+        'inference_error'
+      );
     }
     if (this.useEmbeddings) {
-      throw new Error(
-        'embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.'
+      throw new WllamaError(
+        'embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.',
+        'inference_error'
       );
     }
     if (tokens.length === 0) {
@@ -790,9 +818,9 @@ export class Wllama {
     const req: any = { tokens };
     const result = await this.proxy.wllamaAction('encode', req);
     if (result.error) {
-      throw new Error(result.error);
+      throw new WllamaError(result.error);
     } else if (!result.success) {
-      throw new Error('Cannot encode, unknown error');
+      throw new WllamaError('Cannot encode, unknown error');
     } else {
       return { nPast: result.n_past };
     }
@@ -819,7 +847,7 @@ export class Wllama {
     this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('sampling_accept', { tokens });
     if (!result.success) {
-      throw new Error('samplingAccept unknown error');
+      throw new WllamaError('samplingAccept unknown error');
     }
   }
 
@@ -842,15 +870,16 @@ export class Wllama {
   async embeddings(tokens: number[]): Promise<number[]> {
     this.checkModelLoaded();
     if (!this.useEmbeddings) {
-      throw new Error(
-        'embeddings is disabled. Use wllama.setOptions({ embeddings: true }) to enable it.'
+      throw new WllamaError(
+        'embeddings is disabled. Use wllama.setOptions({ embeddings: true }) to enable it.',
+        'inference_error'
       );
     }
     const result = await this.proxy.wllamaAction('embeddings', { tokens });
     if (result.error) {
-      throw new Error(result.error);
+      throw new WllamaError(result.error);
     } else if (!result.success) {
-      throw new Error('embeddings unknown error');
+      throw new WllamaError('embeddings unknown error');
     } else {
       return result.embeddings;
     }
@@ -869,7 +898,7 @@ export class Wllama {
       n_discard: nDiscard,
     });
     if (!result.success) {
-      throw new Error('kvRemove unknown error');
+      throw new WllamaError('kvRemove unknown error');
     }
   }
 
@@ -880,7 +909,7 @@ export class Wllama {
     this.checkModelLoaded();
     const result = await this.proxy.wllamaAction('kv_clear', {});
     if (!result.success) {
-      throw new Error('kvClear unknown error');
+      throw new WllamaError('kvClear unknown error');
     }
   }
 
@@ -910,9 +939,9 @@ export class Wllama {
       session_path: filePath,
     });
     if (result.error) {
-      throw new Error(result.error);
+      throw new WllamaError(result.error);
     } else if (!result.success) {
-      throw new Error('sessionLoad unknown error');
+      throw new WllamaError('sessionLoad unknown error');
     }
   }
 

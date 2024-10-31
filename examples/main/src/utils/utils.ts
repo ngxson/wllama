@@ -41,8 +41,12 @@ export const formatChat = async (
   const template = new Template(
     modelWllama.getChatTemplate() ?? DEFAULT_CHAT_TEMPLATE
   );
-  const bos_token: string = textDecoder.decode(await modelWllama.detokenize([modelWllama.getBOS()]));
-  const eos_token: string = textDecoder.decode(await modelWllama.detokenize([modelWllama.getEOS()]));
+  const bos_token: string = textDecoder.decode(
+    await modelWllama.detokenize([modelWllama.getBOS()])
+  );
+  const eos_token: string = textDecoder.decode(
+    await modelWllama.detokenize([modelWllama.getEOS()])
+  );
   return template.render({
     messages,
     bos_token,
