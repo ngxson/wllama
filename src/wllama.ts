@@ -103,7 +103,6 @@ export interface SamplingConfig {
   n_prev?: number;
   n_probs?: number;
   min_p?: number;
-  tfs_z?: number;
   typical_p?: number;
   logit_bias?: { token: number; bias: number }[];
 }
@@ -148,6 +147,24 @@ export interface ContextOptions {
   embeddings: boolean;
 }
 
+export interface LoadedContextInfo {
+  n_vocab: number;
+  n_ctx: number;
+  n_batch: number;
+  n_ubatch: number;
+  n_ctx_train: number;
+  n_embd: number;
+  n_layer: number;
+  metadata: Record<string, string>;
+  token_bos: number;
+  token_eos: number;
+  token_eot: number;
+  has_encoder: boolean;
+  token_decoder_start: number;
+  add_bos_token: boolean;
+  add_eos_token: boolean;
+}
+
 /**
  * Logger preset with debug messages suppressed
  */
@@ -182,6 +199,7 @@ export class Wllama {
   private useMultiThread: boolean = false;
   private useEmbeddings: boolean = false;
   // available when loaded
+  private loadedContextInfo: LoadedContextInfo = null as any;
   private bosToken: number = -1;
   private eosToken: number = -1;
   private eotToken: number = -1;
@@ -192,6 +210,7 @@ export class Wllama {
   private samplingConfig: SamplingConfig = {};
   private hasEncoder: boolean = false;
   private decoderStartToken: number = -1;
+  private nCachedTokens: number = 0;
 
   constructor(pathConfig: AssetsPathConfig, wllamaConfig: WllamaConfig = {}) {
     checkEnvironmentCompatible();
@@ -525,30 +544,20 @@ export class Wllama {
       );
     }
     // load the model
-    const loadResult: {
-      n_vocab: number;
-      n_ctx_train: number;
-      n_embd: number;
-      n_layer: number;
-      metadata: Record<string, string>;
-      token_bos: number;
-      token_eos: number;
-      token_eot: number;
-      has_encoder: boolean;
-      token_decoder_start: number;
-      add_bos_token: boolean;
-      add_eos_token: boolean;
-    } = await this.proxy.wllamaAction('load', {
-      ...config,
-      use_mmap: true,
-      use_mlock: true,
-      seed: config.seed || Math.floor(Math.random() * 100000),
-      n_ctx: config.n_ctx || 1024,
-      n_threads: this.useMultiThread ? nbThreads : 1,
-      model_path: hasMultipleBuffers
-        ? `/models/model-00001-of-${padDigits(blobs.length, 5)}.gguf`
-        : '/models/model.gguf',
-    });
+    const loadResult: LoadedContextInfo = await this.proxy.wllamaAction(
+      'load',
+      {
+        ...config,
+        use_mmap: true,
+        use_mlock: true,
+        seed: config.seed || Math.floor(Math.random() * 100000),
+        n_ctx: config.n_ctx || 1024,
+        n_threads: this.useMultiThread ? nbThreads : 1,
+        model_path: hasMultipleBuffers
+          ? `/models/model-00001-of-${padDigits(blobs.length, 5)}.gguf`
+          : '/models/model.gguf',
+      }
+    );
     this.bosToken = loadResult.token_bos;
     this.eosToken = loadResult.token_eos;
     this.eotToken = loadResult.token_eot;
@@ -567,7 +576,17 @@ export class Wllama {
     this.addBosToken = loadResult.add_bos_token;
     this.addEosToken = loadResult.add_eos_token;
     this.chatTemplate = loadResult.metadata['tokenizer.chat_template'];
+    this.loadedContextInfo = loadResult;
     this.logger().debug({ loadResult });
+  }
+
+  getLoadedContextInfo(): LoadedContextInfo {
+    this.checkModelLoaded();
+    if (!this.loadedContextInfo) {
+      throw new WllamaError('Loaded context info is not available');
+    }
+    // copy object
+    return { ...this.loadedContextInfo };
   }
 
   //////////////////////////////////////////////
@@ -768,21 +787,34 @@ export class Wllama {
     if (tokens.length === 0) {
       // do not call llama_decode if list of tokens is empty
       return {
-        nPast: (await this.getCachedTokens()).length,
+        nPast: this.nCachedTokens,
       };
     }
-    const req: any = { tokens };
-    if (options.skipLogits) {
-      req.skip_logits = true;
+    if (this.nCachedTokens + tokens.length > this.loadedContextInfo.n_ctx) {
+      throw new WllamaError(
+        'Running out of context cache. Please increase n_ctx when loading the model',
+        'kv_cache_full'
+      );
     }
-    const result = await this.proxy.wllamaAction('decode', req);
-    if (result.error) {
-      throw new WllamaError(result.error);
-    } else if (!result.success) {
-      throw new WllamaError('Cannot decode, unknown error');
-    } else {
-      return { nPast: result.n_past };
+    const batches = this.breakTokensIntoBatches(
+      tokens,
+      this.loadedContextInfo.n_batch
+    );
+    let result: any;
+    for (let i = 0; i < batches.length; i++) {
+      const isNotLast = batches.length > 1 && i < batches.length - 1;
+      result = await this.proxy.wllamaAction('decode', {
+        tokens: batches[i],
+        skip_logits: options.skipLogits || isNotLast,
+      });
+      if (result.error) {
+        throw new WllamaError(result.error);
+      } else if (!result.success) {
+        throw new WllamaError('Cannot encode, unknown error');
+      }
     }
+    this.nCachedTokens = result.n_past;
+    return { nPast: result.n_past };
   }
 
   /**
@@ -812,18 +844,42 @@ export class Wllama {
     if (tokens.length === 0) {
       // do not call llama_encode if list of tokens is empty
       return {
-        nPast: (await this.getCachedTokens()).length,
+        nPast: this.nCachedTokens,
       };
     }
-    const req: any = { tokens };
-    const result = await this.proxy.wllamaAction('encode', req);
-    if (result.error) {
-      throw new WllamaError(result.error);
-    } else if (!result.success) {
-      throw new WllamaError('Cannot encode, unknown error');
-    } else {
-      return { nPast: result.n_past };
+    if (this.nCachedTokens + tokens.length > this.loadedContextInfo.n_ctx) {
+      throw new WllamaError(
+        'Running out of context cache. Please increase n_ctx when loading the model',
+        'kv_cache_full'
+      );
     }
+    const batches = this.breakTokensIntoBatches(
+      tokens,
+      this.loadedContextInfo.n_batch
+    );
+    let result: any;
+    for (let i = 0; i < batches.length; i++) {
+      const isLast = i === batches.length - 1;
+      result = await this.proxy.wllamaAction('encode', { tokens: batches[i] });
+      if (result.error) {
+        throw new WllamaError(result.error);
+      } else if (!result.success) {
+        throw new WllamaError('Cannot encode, unknown error');
+      }
+    }
+    this.nCachedTokens = result.n_past;
+    return { nPast: result.n_past };
+  }
+
+  private breakTokensIntoBatches(
+    tokens: number[],
+    maxBatchSize: number
+  ): number[][] {
+    const batches: number[][] = [];
+    for (let i = 0; i < tokens.length; i += maxBatchSize) {
+      batches.push(tokens.slice(i, i + maxBatchSize));
+    }
+    return batches;
   }
 
   /**
@@ -875,6 +931,29 @@ export class Wllama {
         'inference_error'
       );
     }
+    if (this.nCachedTokens > 0) {
+      this.logger().warn(
+        'Embeddings: KV cache is not empty, this may produce incorrect results'
+      );
+    }
+    if (this.nCachedTokens + tokens.length > this.loadedContextInfo.n_ctx) {
+      throw new WllamaError(
+        'Running out of context cache. Please increase n_ctx when loading the model',
+        'kv_cache_full'
+      );
+    }
+    if (tokens.length > this.loadedContextInfo.n_batch) {
+      throw new WllamaError(
+        'Embedding tokens does not fit into batch. Please increase n_batch when loading the model',
+        'inference_error'
+      );
+    }
+    if (tokens.length > this.loadedContextInfo.n_ubatch) {
+      throw new WllamaError(
+        'Embedding tokens does not fit into physical batch. Please increase n_ubatch when loading the model',
+        'inference_error'
+      );
+    }
     const result = await this.proxy.wllamaAction('embeddings', { tokens });
     if (result.error) {
       throw new WllamaError(result.error);
@@ -900,6 +979,7 @@ export class Wllama {
     if (!result.success) {
       throw new WllamaError('kvRemove unknown error');
     }
+    this.nCachedTokens -= nDiscard;
   }
 
   /**
@@ -911,6 +991,7 @@ export class Wllama {
     if (!result.success) {
       throw new WllamaError('kvClear unknown error');
     }
+    this.nCachedTokens = 0;
   }
 
   /**
@@ -943,6 +1024,8 @@ export class Wllama {
     } else if (!result.success) {
       throw new WllamaError('sessionLoad unknown error');
     }
+    const cachedTokens = await this.getCachedTokens();
+    this.nCachedTokens = cachedTokens.length;
   }
 
   /**

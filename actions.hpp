@@ -249,6 +249,8 @@ json action_load(app_t &app, json &body)
   return json{
       {"success", true},
       {"n_ctx", cparams.n_ctx},
+      {"n_batch", llama_n_batch(app.ctx)},
+      {"n_ubatch", llama_n_ubatch(app.ctx)},
       {"n_vocab", llama_n_vocab(app.model)},
       {"n_ctx_train", llama_n_ctx_train(app.model)},
       {"n_embd", llama_n_embd(app.model)},
@@ -325,8 +327,6 @@ json action_sampling_init(app_t &app, json &body)
     sparams.n_probs = body["n_probs"];
   if (body.contains("min_p"))
     sparams.min_p = body["min_p"];
-  if (body.contains("tfs_z"))
-    sparams.tfs_z = body["tfs_z"];
   if (body.contains("typical_p")) // for compat
     sparams.typ_p = body["typical_p"];
   if (body.contains("typ_p"))
@@ -428,7 +428,9 @@ json action_detokenize(app_t &app, json &body)
 json action_decode(app_t &app, json &body)
 {
   std::vector<llama_token> tokens_list = body["tokens"];
-  bool skip_logits = body.contains("skip_logits");
+  bool skip_logits = body.contains("skip_logits")
+    ? body.at("skip_logits").get<bool>()
+    : false;
   size_t i = 0;
   common_batch_clear(app.batch);
   for (auto id : tokens_list)
