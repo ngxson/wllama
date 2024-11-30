@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -32,9 +31,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Set node version to ${{ inputs.node-version }}
         uses: actions/setup-node@v4
         with:
@@ -44,7 +40,7 @@ jobs:
         run: npm i
 
       - name: Install Playwright Dependencies
-        run: pnpm exec playwright install chromium --with-deps
+        run: npm i -g pnpm && pnpm exec playwright install chromium --with-deps
 
       - name: Build
         run: npm run build
