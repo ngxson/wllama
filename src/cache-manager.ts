@@ -67,9 +67,9 @@ class CacheManager {
    * Open a file in cache for reading
    *
    * @param name The file name returned by `getNameFromURL()` or `list()`
-   * @returns ReadableStream, or null if file does not exist
+   * @returns Blob, or null if file does not exist
    */
-  async open(name: string): Promise<ReadableStream | null> {
+  async open(name: string): Promise<Blob | null> {
     return await opfsOpen(name);
   }
 
@@ -235,13 +235,12 @@ async function opfsWrite(
 async function opfsOpen(
   key: string,
   prefix = ''
-): Promise<ReadableStream | null> {
+): Promise<File | null> {
   try {
     const cacheDir = await getCacheDir();
     const fileName = await toFileName(key, prefix);
     const fileHandler = await cacheDir.getFileHandle(fileName);
-    const file = await fileHandler.getFile();
-    return file.stream();
+    return await fileHandler.getFile();
   } catch (e) {
     // TODO: check if exception is NotFoundError
     return null;

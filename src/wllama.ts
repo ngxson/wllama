@@ -9,8 +9,18 @@ import {
   padDigits,
 } from './utils';
 import CacheManager from './cache-manager';
-import { MultiDownloads } from './downloader/multi-downloads';
+import { DownloadProgressCallback, ModelManager } from './model-manager';
 
+const noop = () => {};
+
+export interface WllamaLogger {
+  debug: typeof console.debug;
+  log: typeof console.log;
+  warn: typeof console.warn;
+  error: typeof console.error;
+};
+
+// TODO: bring back useCache
 export interface WllamaConfig {
   /**
    * If true, suppress all log messages from native CPP code
@@ -19,16 +29,25 @@ export interface WllamaConfig {
   /**
    * Custom logger functions
    */
-  logger?: {
-    debug: typeof console.debug;
-    log: typeof console.log;
-    warn: typeof console.warn;
-    error: typeof console.error;
-  };
+  logger?: WllamaLogger;
+  /**
+   * Maximum number of parallel files to be downloaded
+   */
+  parallelDownloads?: number;
+  /**
+   * Allow offline mode. If true, the model will be loaded from cache if it's available.
+   * 
+   * Default: allowOffline = false
+   */
+  allowOffline?: boolean;
   /**
    * Custom cache manager (only for advanced usage)
    */
   cacheManager?: CacheManager;
+  /**
+   * Custom model manager (only for advanced usage)
+   */
+  modelManager?: ModelManager;
 }
 
 export interface AssetsPathConfig {
@@ -69,20 +88,6 @@ export interface LoadModelConfig {
   // optimizations
   cache_type_k?: 'f16' | 'q8_0' | 'q4_0';
   cache_type_v?: 'f16';
-}
-
-export interface DownloadModelConfig extends LoadModelConfig {
-  // download-specific params
-  parallelDownloads?: number;
-  progressCallback?: (opts: { loaded: number; total: number }) => any;
-  /**
-   * Default: useCache = true
-   */
-  useCache?: boolean;
-  /**
-   * Default: useCache = false
-   */
-  allowOffline?: boolean;
 }
 
 export interface SamplingConfig {
@@ -190,8 +195,9 @@ export class WllamaError extends Error {
 }
 
 export class Wllama {
-  // The CacheManager singleton, can be accessed by user
+  // The CacheManager and ModelManager are singleton, can be accessed by user
   public cacheManager: CacheManager;
+  public modelManager: ModelManager;
 
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
@@ -218,6 +224,12 @@ export class Wllama {
     this.pathConfig = pathConfig;
     this.config = wllamaConfig;
     this.cacheManager = wllamaConfig.cacheManager ?? new CacheManager();
+    this.modelManager = wllamaConfig.modelManager ?? new ModelManager({
+      cacheManager: this.cacheManager,
+      logger: wllamaConfig.logger ?? console,
+      parallelDownloads: wllamaConfig.parallelDownloads,
+      allowOffline: wllamaConfig.allowOffline,
+    });
   }
 
   private logger() {
@@ -357,107 +369,20 @@ export class Wllama {
   }
 
   /**
-   * Parses a model URL and returns an array of URLs based on the following patterns:
-   * - If the input URL is an array, it returns the array itself.
-   * - If the input URL is a string in the `gguf-split` format, it returns an array containing the URL of each shard in ascending order.
-   * - Otherwise, it returns an array containing the input URL as a single element array.
-   * @param modelUrl URL or list of URLs
-   */
-  private parseModelUrl(modelUrl: string | string[]): string[] {
-    if (Array.isArray(modelUrl)) {
-      return modelUrl;
-    }
-    const urlPartsRegex =
-      /(?<baseURL>.*)-(?<current>\d{5})-of-(?<total>\d{5})\.gguf$/;
-    const matches = modelUrl.match(urlPartsRegex);
-    if (
-      !matches ||
-      !matches.groups ||
-      Object.keys(matches.groups).length !== 3
-    ) {
-      return [modelUrl];
-    }
-    const { baseURL, total } = matches.groups;
-    const paddedShardIds = Array.from({ length: Number(total) }, (_, index) =>
-      (index + 1).toString().padStart(5, '0')
-    );
-    return paddedShardIds.map(
-      (current) => `${baseURL}-${current}-of-${total}.gguf`
-    );
-  }
-
-  /**
-   * Download a model to cache, without loading it
-   * @param modelUrl URL or list of URLs (in the correct order)
-   * @param config
-   */
-  async downloadModel(
-    modelUrl: string | string[],
-    config: DownloadModelConfig = {}
-  ): Promise<void> {
-    if (modelUrl.length === 0) {
-      throw new WllamaError(
-        'modelUrl must be an URL or a list of URLs (in the correct order)',
-        'download_error'
-      );
-    }
-    if (config.useCache === false) {
-      throw new WllamaError('useCache must not be false', 'download_error');
-    }
-    const multiDownloads = new MultiDownloads(
-      this.logger(),
-      this.parseModelUrl(modelUrl),
-      config.parallelDownloads ?? 3,
-      this.cacheManager,
-      {
-        progressCallback: config.progressCallback,
-        useCache: true,
-        allowOffline: !!config.allowOffline,
-        noTEE: true,
-      }
-    );
-    const blobs = await multiDownloads.run();
-    await Promise.all(
-      blobs.map(async (blob) => {
-        const reader = blob.stream().getReader();
-        while (true) {
-          const { done } = await reader.read();
-          if (done) return;
-        }
-      })
-    );
-  }
-
-  /**
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * - If the model already been downloaded (via `downloadModel()`), then we will use the cached model
    * - Else, we download the model from internet
-   * @param modelUrl URL or list of URLs (in the correct order)
+   * @param modelUrl URL to the GGUF file. If the model is splitted, pass the URL to the first shard.
    * @param config
    */
   async loadModelFromUrl(
-    modelUrl: string | string[],
-    config: DownloadModelConfig = {}
+    modelUrl: string,
+    config: LoadModelConfig & {
+      progressCallback?: DownloadProgressCallback,
+    } = {},
   ): Promise<void> {
-    if (modelUrl.length === 0) {
-      throw new WllamaError(
-        'modelUrl must be an URL or a list of URLs (in the correct order)',
-        'load_error'
-      );
-    }
-    const skipCache = config.useCache === false;
-    const multiDownloads = new MultiDownloads(
-      this.logger(),
-      this.parseModelUrl(modelUrl),
-      config.parallelDownloads ?? 3,
-      this.cacheManager,
-      {
-        progressCallback: config.progressCallback,
-        useCache: !skipCache,
-        allowOffline: !!config.allowOffline,
-      }
-    );
-    const blobs = await multiDownloads.run();
+    const model = await this.modelManager.downloadModel(modelUrl, config.progressCallback || noop);
+    const blobs = await model.open();
     return await this.loadModel(blobs, config);
   }
 
