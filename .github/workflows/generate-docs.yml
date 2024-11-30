@@ -1,9 +1,8 @@
-name: Deploy docs and demo to GitHub Pages
+name: Build docs and demo
 
 on:
-  # Runs on pushes targeting the default branch
+  # Runs on pushes
   push:
-    branches: ["master"]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -53,10 +52,12 @@ jobs:
           rm -rf node_modules
 
       - name: Upload artifact
+        if: github.ref == 'refs/heads/master'
         uses: actions/upload-pages-artifact@v3
         with:
           path: "./"
 
       - name: Deploy to GitHub Pages
         id: deployment
+        if: github.ref == 'refs/heads/master'
         uses: actions/deploy-pages@v4
