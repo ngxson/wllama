@@ -18,7 +18,7 @@ export interface WllamaLogger {
   log: typeof console.log;
   warn: typeof console.warn;
   error: typeof console.error;
-};
+}
 
 // TODO: bring back useCache
 export interface WllamaConfig {
@@ -36,7 +36,7 @@ export interface WllamaConfig {
   parallelDownloads?: number;
   /**
    * Allow offline mode. If true, the model will be loaded from cache if it's available.
-   * 
+   *
    * Default: allowOffline = false
    */
   allowOffline?: boolean;
@@ -224,12 +224,14 @@ export class Wllama {
     this.pathConfig = pathConfig;
     this.config = wllamaConfig;
     this.cacheManager = wllamaConfig.cacheManager ?? new CacheManager();
-    this.modelManager = wllamaConfig.modelManager ?? new ModelManager({
-      cacheManager: this.cacheManager,
-      logger: wllamaConfig.logger ?? console,
-      parallelDownloads: wllamaConfig.parallelDownloads,
-      allowOffline: wllamaConfig.allowOffline,
-    });
+    this.modelManager =
+      wllamaConfig.modelManager ??
+      new ModelManager({
+        cacheManager: this.cacheManager,
+        logger: wllamaConfig.logger ?? console,
+        parallelDownloads: wllamaConfig.parallelDownloads,
+        allowOffline: wllamaConfig.allowOffline,
+      });
   }
 
   private logger() {
@@ -378,10 +380,13 @@ export class Wllama {
   async loadModelFromUrl(
     modelUrl: string,
     config: LoadModelConfig & {
-      progressCallback?: DownloadProgressCallback,
-    } = {},
+      progressCallback?: DownloadProgressCallback;
+    } = {}
   ): Promise<void> {
-    const model = await this.modelManager.downloadModel(modelUrl, config.progressCallback || noop);
+    const model = await this.modelManager.downloadModel(
+      modelUrl,
+      config.progressCallback || noop
+    );
     const blobs = await model.open();
     return await this.loadModel(blobs, config);
   }

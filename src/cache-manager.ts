@@ -232,10 +232,7 @@ async function opfsWrite(
  * Opens a file in OPFS for reading
  * @returns ReadableStream
  */
-async function opfsOpen(
-  key: string,
-  prefix = ''
-): Promise<File | null> {
+async function opfsOpen(key: string, prefix = ''): Promise<File | null> {
   try {
     const cacheDir = await getCacheDir();
     const fileName = await toFileName(key, prefix);

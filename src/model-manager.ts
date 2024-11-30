@@ -1,10 +1,13 @@
-import CacheManager, { CacheEntry } from "./cache-manager";
+import CacheManager, { CacheEntry } from './cache-manager';
 import { MultiDownloads } from './downloader/multi-downloads';
-import { Wllama, WllamaError, WllamaLogger } from "./wllama";
+import { WllamaError, WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
 
-export type DownloadProgressCallback = (opts: { loaded: number; total: number }) => any;
+export type DownloadProgressCallback = (opts: {
+  loaded: number;
+  total: number;
+}) => any;
 
 export enum ModelValidationStatus {
   VALID,
@@ -21,13 +24,20 @@ export interface ModelManagerParams {
 
 export class Model {
   private modelManager: ModelManager;
-  constructor(modelManager: ModelManager, url: string, savedFiles?: CacheEntry[]) {
+  constructor(
+    modelManager: ModelManager,
+    url: string,
+    savedFiles?: CacheEntry[]
+  ) {
     this.modelManager = modelManager;
     this.url = url;
     if (savedFiles) {
       // this file is already in cache
       this.files = this.populateAllFiles(savedFiles);
-      this.size = this.files.reduce((acc, f) => acc + f.metadata.originalSize, 0);
+      this.size = this.files.reduce(
+        (acc, f) => acc + f.metadata.originalSize,
+        0
+      );
     } else {
       // this file is not in cache, we are about to download it
       this.files = [];
@@ -36,13 +46,13 @@ export class Model {
   }
   /**
    * URL to the GGUF file (in case it contains multiple shards, the URL should point to the first shard)
-   * 
+   *
    * This URL will be used to identify the model in the cache. There can't be 2 models with the same URL.
    */
   url: string;
   /**
    * Size in bytes (total size of all shards).
-   * 
+   *
    * A value of -1 means the model is deleted from the cache. You must call `ModelManager.downloadModel` to re-download the model.
    */
   size: number;
@@ -55,13 +65,18 @@ export class Model {
    */
   async open(): Promise<Blob[]> {
     if (this.size === -1) {
-      throw new WllamaError(`Model is deleted from the cache; Call ModelManager.downloadModel to re-download the model`, 'load_error');
+      throw new WllamaError(
+        `Model is deleted from the cache; Call ModelManager.downloadModel to re-download the model`,
+        'load_error'
+      );
     }
     const blobs: Blob[] = [];
     for (const file of this.files) {
       const blob = await this.modelManager.cacheManager.open(file.name);
       if (!blob) {
-        throw new Error(`Failed to open file ${file.name}; Hint: the model may be invalid, please refresh it`);
+        throw new Error(
+          `Failed to open file ${file.name}; Hint: the model may be invalid, please refresh it`
+        );
       }
       blobs.push(blob);
     }
@@ -69,9 +84,9 @@ export class Model {
   }
   /**
    * Validate the model files.
-   * 
+   *
    * If the model is invalid, the model manager will not be able to use it. You must call `refresh` to re-download the model.
-   * 
+   *
    * Cases that model is invalid:
    * - The model is deleted from the cache
    * - The model files are missing (or the download is interrupted)
@@ -82,7 +97,9 @@ export class Model {
       return ModelValidationStatus.DELETED;
     }
     for (const file of this.files) {
-      const metadata = await this.modelManager.cacheManager.getMetadata(file.name);
+      const metadata = await this.modelManager.cacheManager.getMetadata(
+        file.name
+      );
       if (!metadata || metadata.originalSize !== file.size) {
         return ModelValidationStatus.INVALID;
       }
@@ -122,8 +139,12 @@ export class Model {
    * Remove the model from the cache
    */
   async remove(): Promise<void> {
-    this.files = this.populateAllFiles(await this.modelManager.cacheManager.list());
-    await this.modelManager.cacheManager.deleteMany((f) => this.files.includes(f));
+    this.files = this.populateAllFiles(
+      await this.modelManager.cacheManager.list()
+    );
+    await this.modelManager.cacheManager.deleteMany((f) =>
+      this.files.includes(f)
+    );
     this.size = -1;
   }
 
@@ -192,7 +213,8 @@ export class ModelManager {
     const models: Model[] = [];
     for (const file of cachedFiles) {
       const shards = ModelManager.parseModelUrl(file.metadata.originalURL);
-      const isFirstShard = shards.length === 1 || shards[0] === file.metadata.originalURL;
+      const isFirstShard =
+        shards.length === 1 || shards[0] === file.metadata.originalURL;
       if (isFirstShard) {
         models.push(new Model(this, file.metadata.originalURL, cachedFiles));
       }
@@ -202,12 +224,18 @@ export class ModelManager {
 
   /**
    * Download a model from the given URL.
-   * 
+   *
    * The URL must end with `.gguf`
    */
-  async downloadModel(url: string, progressCallback: DownloadProgressCallback): Promise<Model> {
+  async downloadModel(
+    url: string,
+    progressCallback: DownloadProgressCallback
+  ): Promise<Model> {
     if (!url.endsWith('.gguf')) {
-      throw new WllamaError(`Invalid model URL: ${url}; URL must ends with ".gguf"`, 'download_error');
+      throw new WllamaError(
+        `Invalid model URL: ${url}; URL must ends with ".gguf"`,
+        'download_error'
+      );
     }
     const model = new Model(this, url, undefined);
     const validity = await model.validate();
@@ -217,7 +245,10 @@ export class ModelManager {
     return model;
   }
 
-  async getModelOrDownload(url: string, progressCallback: DownloadProgressCallback): Promise<Model> {
+  async getModelOrDownload(
+    url: string,
+    progressCallback: DownloadProgressCallback
+  ): Promise<Model> {
     const models = await this.getModels();
     const model = models.find((m) => m.url === url);
     if (model) {
