@@ -43,7 +43,8 @@ const assertNonNull = (val) => {
 
 // respond to main thread
 const resOK = () => postMessage({ ok: true });
-const resProgress = (loaded, total) => postMessage({ progress: { loaded, total } });
+const resProgress = (loaded, total) =>
+  postMessage({ progress: { loaded, total } });
 const resErr = (err) => postMessage({ err });
 
 onmessage = async (e) => {
@@ -52,15 +53,15 @@ onmessage = async (e) => {
 
     /**
      * @param {Object} e.data
-     * 
+     *
      * Fine-control FS actions:
      * - { action: 'open', filename: 'string' }
      * - { action: 'write', buf: ArrayBuffer }
      * - { action: 'close' }
-     * 
+     *
      * Simple write API:
      * - { action: 'write-simple', filename: 'string', buf: ArrayBuffer }
-     * 
+     *
      * Download API:
      * - { action: 'download', url: 'string', filename: 'string', options: Object, metadataFileName: 'string' }
      * - { action: 'download-abort' }
@@ -71,16 +72,13 @@ onmessage = async (e) => {
       assertNonNull(filename);
       await openFile(filename);
       return resOK();
-
     } else if (action === 'write') {
       assertNonNull(buf);
       await writeFile(buf);
       return resOK();
-
     } else if (action === 'close') {
       await closeFile();
       return resOK();
-    
     } else if (action === 'write-simple') {
       assertNonNull(filename);
       assertNonNull(buf);
@@ -88,7 +86,6 @@ onmessage = async (e) => {
       await writeFile(buf);
       await closeFile();
       return resOK();
-
     } else if (action === 'download') {
       assertNonNull(url);
       assertNonNull(filename);
@@ -100,20 +97,26 @@ onmessage = async (e) => {
         signal: abortController.signal,
       });
       const contentLength = response.headers.get('content-length');
-      const etag = (response.headers.get('etag') || '').replace(/[^A-Za-z0-9]/g, '');
+      const etag = (response.headers.get('etag') || '').replace(
+        /[^A-Za-z0-9]/g,
+        ''
+      );
       const total = parseInt(contentLength, 10);
       // make sure this is in-sync with CacheEntryMetadata
-      await writeTextFile(metadataFileName, JSON.stringify({
-        originalURL: url,
-        originalSize: total,
-        etag,
-      }));
+      await writeTextFile(
+        metadataFileName,
+        JSON.stringify({
+          originalURL: url,
+          originalSize: total,
+          etag,
+        })
+      );
       const reader = response.body.getReader();
       await openFile(filename);
       let loaded = 0;
       const throttledProgress = throttled(resProgress, 100);
       while (true) {
-        const {done, value} = await reader.read();
+        const { done, value } = await reader.read();
         if (done) break;
         loaded += value.byteLength;
         await writeFile(value);
@@ -122,7 +125,6 @@ onmessage = async (e) => {
       resProgress(total, total); // 100% done
       await closeFile();
       return resOK();
-
     } else if (action === 'download-abort') {
       if (abortController) {
         abortController.abort();

@@ -5,7 +5,7 @@ import { OPFS_UTILS_WORKER_CODE } from './workers-code/generated';
 const PREFIX_METADATA = '__metadata__';
 
 export type DownloadOptions = {
-  progressCallback?: DownloadProgressCallback,
+  progressCallback?: DownloadProgressCallback;
 } & Pick<RequestInit, 'headers' | 'signal'>;
 
 // To prevent breaking change, we fill etag with a pre-defined value
@@ -44,7 +44,7 @@ export interface CacheEntryMetadata {
 
 /**
  * Cache implementation using OPFS (Origin private file system)
- * 
+ *
  * This class is also responsible for downloading files from the internet.
  */
 class CacheManager {
@@ -59,7 +59,7 @@ class CacheManager {
 
   /**
    * @deprecated Use `download()` instead
-   * 
+   *
    * Write a new file to cache. This will overwrite existing file.
    *
    * @param name The file name returned by `getNameFromURL()` or `list()`
@@ -73,10 +73,7 @@ class CacheManager {
     return await opfsWrite(name, stream);
   }
 
-  async download(
-    url: string,
-    options: DownloadOptions = {},
-  ): Promise<void> {
+  async download(url: string, options: DownloadOptions = {}): Promise<void> {
     const worker = createWorker(OPFS_UTILS_WORKER_CODE);
     if (options.signal) {
       const mSignal = options.signal;
@@ -103,7 +100,7 @@ class CacheManager {
           worker.terminate();
           reject(e.data.err);
         } else if (e.data.progress) {
-          const progress: { loaded: number; total: number; } = e.data.progress;
+          const progress: { loaded: number; total: number } = e.data.progress;
           options.progressCallback?.(progress);
         } else {
           // should never happen
@@ -278,7 +275,10 @@ async function opfsWrite(
  * Opens a file in OPFS for reading
  * @returns ReadableStream
  */
-async function opfsOpen(originalURLOrName: string, prefix = ''): Promise<File | null> {
+async function opfsOpen(
+  originalURLOrName: string,
+  prefix = ''
+): Promise<File | null> {
   const getFileHandler = async (fname: string) => {
     try {
       const cacheDir = await getCacheDir();

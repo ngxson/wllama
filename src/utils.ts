@@ -157,7 +157,9 @@ export const isSafariMobile = (): boolean => {
  */
 export const createWorker = (workerCode: string | Blob): Worker => {
   const workerURL = URL.createObjectURL(
-    isString(workerCode) ? new Blob([workerCode], { type: 'text/javascript' }) : workerCode as Blob
+    isString(workerCode)
+      ? new Blob([workerCode], { type: 'text/javascript' })
+      : (workerCode as Blob)
   );
-  return new Worker(workerURL, {type: 'module'});
-}
+  return new Worker(workerURL, { type: 'module' });
+};

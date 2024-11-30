@@ -377,9 +377,9 @@ export class Wllama {
    */
   async loadModelFromUrl(
     modelUrl: string | string[],
-    config: LoadModelConfig & DownloadOptions & { useCache?: boolean } = {},
+    config: LoadModelConfig & DownloadOptions & { useCache?: boolean } = {}
   ): Promise<void> {
-    const url: string = isString(modelUrl) ? modelUrl as string : modelUrl[0];
+    const url: string = isString(modelUrl) ? (modelUrl as string) : modelUrl[0];
     const useCache = config.useCache ?? true;
     const model = useCache
       ? await this.modelManager.getModelOrDownload(url, config)
@@ -962,6 +962,7 @@ export class Wllama {
    */
   async exit(): Promise<void> {
     await this.proxy?.wllamaExit();
+    this.proxy = null as any;
   }
 
   /**

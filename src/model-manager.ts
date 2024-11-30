@@ -116,23 +116,24 @@ export class Model {
       index,
     }));
     this.modelManager.logger.debug('Downloading model files:', urls);
-    const nParallel = this.modelManager.params.parallelDownloads ?? DEFAULT_PARALLEL_DOWNLOADS;
+    const nParallel =
+      this.modelManager.params.parallelDownloads ?? DEFAULT_PARALLEL_DOWNLOADS;
     const totalSize = await this.getTotalDownloadSize(urls);
     const loadedSize: number[] = [];
     const worker = async () => {
       while (works.length > 0) {
         const w = works.shift();
         if (!w) break;
-        await this.modelManager.cacheManager.download(
-          w.url,
-          { ...options, progressCallback: ({ loaded }) => {
-            loadedSize[w.index] = loaded
+        await this.modelManager.cacheManager.download(w.url, {
+          ...options,
+          progressCallback: ({ loaded }) => {
+            loadedSize[w.index] = loaded;
             options.progressCallback?.({
               loaded: sumArr(loadedSize),
               total: totalSize,
             });
-          } },
-        );
+          },
+        });
       }
     };
     const promises: Promise<void>[] = [];
@@ -148,9 +149,7 @@ export class Model {
    * Remove the model from the cache
    */
   async remove(): Promise<void> {
-    this.files = this.getAllFiles(
-      await this.modelManager.cacheManager.list()
-    );
+    this.files = this.getAllFiles(await this.modelManager.cacheManager.list());
     await this.modelManager.cacheManager.deleteMany((f) =>
       this.files.includes(f)
     );
@@ -174,7 +173,9 @@ export class Model {
     const responses = await Promise.all(
       urls.map((url) => fetch(url, { method: 'HEAD' }))
     );
-    const sizes = responses.map((res) => Number(res.headers.get('content-length') || '0'));
+    const sizes = responses.map((res) =>
+      Number(res.headers.get('content-length') || '0')
+    );
     return sumArr(sizes);
   }
 }
@@ -246,7 +247,7 @@ export class ModelManager {
    */
   async downloadModel(
     url: string,
-    options: DownloadOptions = {},
+    options: DownloadOptions = {}
   ): Promise<Model> {
     if (!url.endsWith('.gguf')) {
       throw new WllamaError(
@@ -264,7 +265,7 @@ export class ModelManager {
 
   async getModelOrDownload(
     url: string,
-    options: DownloadOptions = {},
+    options: DownloadOptions = {}
   ): Promise<Model> {
     const models = await this.getModels();
     const model = models.find((m) => m.url === url);

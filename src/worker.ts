@@ -12,7 +12,12 @@
  */
 
 import { createWorker, isSafariMobile } from './utils';
-import { LLAMA_CPP_WORKER_CODE, WLLAMA_MULTI_THREAD_CODE, WLLAMA_MULTI_THREAD_WORKER_CODE, WLLAMA_SINGLE_THREAD_CODE } from './workers-code/generated';
+import {
+  LLAMA_CPP_WORKER_CODE,
+  WLLAMA_MULTI_THREAD_CODE,
+  WLLAMA_MULTI_THREAD_WORKER_CODE,
+  WLLAMA_SINGLE_THREAD_CODE,
+} from './workers-code/generated';
 
 interface Logger {
   debug: typeof console.debug;
@@ -68,15 +73,12 @@ export class ProxyToWorker {
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
     if (!this.pathConfig['wllama.wasm']) {
-      throw new Error(
-        '"single-thread/wllama.wasm" is missing from pathConfig'
-      );
+      throw new Error('"single-thread/wllama.wasm" is missing from pathConfig');
     }
     let moduleCode = this.multiThread
       ? WLLAMA_MULTI_THREAD_CODE
       : WLLAMA_SINGLE_THREAD_CODE;
-    moduleCode = moduleCode
-      .replace('var Module', 'var ___Module');
+    moduleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
       pathConfig: this.pathConfig,
       nbThread: this.nbThread,

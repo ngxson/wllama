@@ -56,7 +56,9 @@ const getWModuleConfig = (_argMainScriptBlob) => {
           args: [`Loading "${filename}" from WLLAMA_MULTI_THREAD_WORKER_CODE`],
         });
         const workerURL = URL.createObjectURL(
-          new Blob([WLLAMA_MULTI_THREAD_WORKER_CODE], { type: 'text/javascript' })
+          new Blob([WLLAMA_MULTI_THREAD_WORKER_CODE], {
+            type: 'text/javascript',
+          })
         );
         return workerURL.toString();
       } else {
