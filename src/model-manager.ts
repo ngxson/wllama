@@ -1,5 +1,4 @@
-import CacheManager, { CacheEntry } from './cache-manager';
-import { MultiDownloads } from './downloader/multi-downloads';
+import CacheManager, { CacheEntry, DownloadOptions } from './cache-manager';
 import { WllamaError, WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
@@ -109,29 +108,25 @@ export class Model {
   /**
    * In case the model is invalid, call this function to re-download the model
    */
-  async refresh(progressCallback: DownloadProgressCallback): Promise<void> {
-    const multiDownloads = new MultiDownloads(
-      this.modelManager.logger,
-      ModelManager.parseModelUrl(this.url),
-      this.modelManager.params.parallelDownloads ?? DEFAULT_PARALLEL_DOWNLOADS,
-      this.modelManager.cacheManager,
-      {
-        progressCallback: progressCallback,
-        useCache: true,
-        allowOffline: !!this.modelManager.params.allowOffline,
-        noTEE: true,
+  async refresh(options: DownloadOptions = {}): Promise<void> {
+    const urls = ModelManager.parseModelUrl(this.url);
+    const nParallel = this.modelManager.params.parallelDownloads ?? DEFAULT_PARALLEL_DOWNLOADS;
+    const worker = async () => {
+      while (urls.length > 0) {
+        const url = urls.shift();
+        if (!url) break;
+        await this.modelManager.cacheManager.download(
+          url,
+          await this.modelManager.cacheManager.getNameFromURL(url),
+          options,
+        );
       }
-    );
-    const blobs = await multiDownloads.run();
-    await Promise.all(
-      blobs.map(async (blob) => {
-        const reader = blob.stream().getReader();
-        while (true) {
-          const { done } = await reader.read();
-          if (done) return;
-        }
-      })
-    );
+    };
+    const promises: Promise<void>[] = [];
+    for (let i = 0; i < nParallel; i++) {
+      promises.push(worker());
+    }
+    await Promise.all(promises);
     this.populateAllFiles(await this.modelManager.cacheManager.list());
     this.size = this.files.reduce((acc, f) => acc + f.metadata.originalSize, 0);
   }
@@ -229,7 +224,7 @@ export class ModelManager {
    */
   async downloadModel(
     url: string,
-    progressCallback: DownloadProgressCallback
+    options: DownloadOptions = {},
   ): Promise<Model> {
     if (!url.endsWith('.gguf')) {
       throw new WllamaError(
@@ -240,21 +235,21 @@ export class ModelManager {
     const model = new Model(this, url, undefined);
     const validity = await model.validate();
     if (validity !== ModelValidationStatus.VALID) {
-      await model.refresh(progressCallback);
+      await model.refresh(options);
     }
     return model;
   }
 
   async getModelOrDownload(
     url: string,
-    progressCallback: DownloadProgressCallback
+    options: DownloadOptions = {},
   ): Promise<Model> {
     const models = await this.getModels();
     const model = models.find((m) => m.url === url);
     if (model) {
-      progressCallback({ loaded: model.size, total: model.size });
+      options.progressCallback?.({ loaded: model.size, total: model.size });
       return model;
     }
-    return this.downloadModel(url, progressCallback);
+    return this.downloadModel(url, options);
   }
 }

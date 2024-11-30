@@ -149,3 +149,10 @@ export const isSafari = (): boolean => {
 export const isSafariMobile = (): boolean => {
   return !!navigator.userAgent.match(/Version\/([0-9\._]+).*Mobile.*Safari.*/); // ios
 };
+
+export const createWorker = (workerCode: string): Worker => {
+  const workerURL = URL.createObjectURL(
+    new Blob([workerCode], { type: 'text/javascript' })
+  );
+  return new Worker(workerURL);
+}

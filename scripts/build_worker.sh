@@ -19,4 +19,5 @@ process_file() {
   echo "" >> ./src/workers-code/generated.ts
 }
 
-process_file ./src/workers-code/llama-cpp.js LLAMA_CPP_WORKER_CODE
+process_file ./src/workers-code/llama-cpp.js  LLAMA_CPP_WORKER_CODE
+process_file ./src/workers-code/opfs-utils.js OPFS_UTILS_WORKER_CODE

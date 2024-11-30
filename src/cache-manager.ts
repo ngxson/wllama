@@ -1,6 +1,12 @@
-import { isSafari, isSafariMobile } from './utils';
+import { DownloadProgressCallback } from './model-manager';
+import { createWorker, isSafari, isSafariMobile } from './utils';
+import { OPFS_UTILS_WORKER_CODE } from './workers-code/generated';
 
 const PREFIX_METADATA = '__metadata__';
+
+export type DownloadOptions = {
+  progressCallback?: DownloadProgressCallback,
+} & Pick<RequestInit, 'headers' | 'signal'>;
 
 // To prevent breaking change, we fill etag with a pre-defined value
 export const POLYFILL_ETAG = 'polyfill_for_older_version';
@@ -38,6 +44,8 @@ export interface CacheEntryMetadata {
 
 /**
  * Cache implementation using OPFS (Origin private file system)
+ * 
+ * This class is also responsible for downloading files from the internet.
  */
 class CacheManager {
   /**
@@ -50,6 +58,8 @@ class CacheManager {
   }
 
   /**
+   * @deprecated Use `download()` instead
+   * 
    * Write a new file to cache. This will overwrite existing file.
    *
    * @param name The file name returned by `getNameFromURL()` or `list()`
@@ -61,6 +71,45 @@ class CacheManager {
   ): Promise<void> {
     this.writeMetadata(name, metadata); // no need await
     return await opfsWrite(name, stream);
+  }
+
+  download(
+    url: string,
+    name: string,
+    options: DownloadOptions = {},
+  ): Promise<void> {
+    const worker = createWorker(OPFS_UTILS_WORKER_CODE);
+    if (options.signal) {
+      const mSignal = options.signal;
+      mSignal.addEventListener('abort', () => {
+        worker.postMessage({ action: 'download-abort' });
+      });
+      delete options.signal;
+    }
+    return new Promise((resolve, reject) => {
+      worker.postMessage({
+        action: 'download',
+        url,
+        name,
+        options: { headers: options.headers },
+      });
+      worker.onmessage = (e: MessageEvent<any>) => {
+        if (e.data.ok) {
+          worker.terminate();
+          resolve();
+        } else if (e.data.err) {
+          worker.terminate();
+          reject(e.data.err);
+        } else if (e.data.progress) {
+          const progress: { loaded: number, total: number } = e.data.progress;
+          options.progressCallback?.(progress);
+        } else {
+          // should never happen
+          reject(new Error('Unknown message from worker'));
+          console.error('Unknown message from worker', e.data);
+        }
+      };
+    });
   }
 
   /**
@@ -208,13 +257,8 @@ async function opfsWrite(
   prefix = ''
 ): Promise<void> {
   try {
-    const cacheDir = await getCacheDir();
     const fileName = await toFileName(key, prefix);
-    const writable = isSafari()
-      ? await opfsWriteViaWorker(fileName)
-      : await cacheDir
-          .getFileHandle(fileName, { create: true })
-          .then((h) => h.createWritable());
+    const writable = await opfsWriteViaWorker(fileName);
     await writable.truncate(0); // clear file content
     const reader = stream.getReader();
     while (true) {
@@ -279,57 +323,12 @@ async function getCacheDir() {
   return cacheDir;
 }
 
-/**
- * Because safari does not support createWritable(), we need to use createSyncAccessHandle() which requires to be run from a web worker.
- * See: https://bugs.webkit.org/show_bug.cgi?id=231706
- */
-const WORKER_CODE = `
-const msg = (data) => postMessage(data);
-let accessHandle;
-
-onmessage = async (e) => {
-  try {
-    if (!e.data) return;
-    const {
-      open,  // name of file to open
-      value, // value to be written
-      done,  // indicates when to close the file
-    } = e.data;
-
-    if (open) {
-      const opfsRoot = await navigator.storage.getDirectory();
-      const cacheDir = await opfsRoot.getDirectoryHandle('cache', { create: true });
-      const fileHandler = await cacheDir.getFileHandle(open, { create: true });
-      accessHandle = await fileHandler.createSyncAccessHandle();
-      accessHandle.truncate(0); // clear file content
-      return msg({ ok: true });
-
-    } else if (value) {
-      accessHandle.write(value);
-      return msg({ ok: true });
-
-    } else if (done) {
-      accessHandle.flush();
-      accessHandle.close();
-      return msg({ ok: true });
-    }
-
-    throw new Error('OPFS Worker: Invalid state');
-  } catch (err) {
-    return msg({ err });
-  }
-};
-`;
-
 async function opfsWriteViaWorker(fileName: string): Promise<{
   truncate(offset: number): Promise<void>;
   write(value: Uint8Array): Promise<void>;
   close(): Promise<void>;
 }> {
-  const workerURL = window.URL.createObjectURL(
-    new Blob([WORKER_CODE], { type: 'text/javascript' })
-  );
-  const worker = new Worker(workerURL);
+  const worker = createWorker(OPFS_UTILS_WORKER_CODE);
   let pResolve: (v: any) => void;
   let pReject: (v: any) => void;
   worker.onmessage = (e: MessageEvent<any>) => {
