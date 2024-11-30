@@ -7,7 +7,6 @@ let wllamaAction;
 let wllamaExit;
 let wllamaDebug;
 
-
 //////////////////////////////////////////////////////////////
 // UTILS
 //////////////////////////////////////////////////////////////
@@ -20,9 +19,9 @@ const cppLogToJSLog = (line) => {
   const matched = line.match(/@@(DEBUG|INFO|WARN|ERROR)@@(.*)/);
   return !!matched
     ? {
-      level: (matched[1] === 'INFO' ? 'debug' : matched[1]).toLowerCase(),
-      text: matched[2],
-    }
+        level: (matched[1] === 'INFO' ? 'debug' : matched[1]).toLowerCase(),
+        text: matched[2],
+      }
     : { level: 'log', text: line };
 };
 
@@ -34,18 +33,24 @@ const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
   return {
     noInitialRun: true,
     print: function (text) {
-      if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+      if (arguments.length > 1)
+        text = Array.prototype.slice.call(arguments).join(' ');
       msg({ verb: 'console.log', args: [text] });
     },
     printErr: function (text) {
-      if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+      if (arguments.length > 1)
+        text = Array.prototype.slice.call(arguments).join(' ');
       const logLine = cppLogToJSLog(text);
       msg({ verb: 'console.' + logLine.level, args: [logLine.text] });
     },
     locateFile: function (filename, basePath) {
       const p = pathConfig[filename];
-      const truncate = (str) => str.length > 128 ? \`\${str.substr(0, 128)}...\` : str;
-      msg({ verb: 'console.debug', args: [\`Loading "\${filename}" from "\${truncate(p)}"\`] });
+      const truncate = (str) =>
+        str.length > 128 ? \`\${str.substr(0, 128)}...\` : str;
+      msg({
+        verb: 'console.debug',
+        args: [\`Loading "\${filename}" from "\${truncate(p)}"\`],
+      });
       return p;
     },
     mainScriptUrlOrBlob: pathConfig['wllama.js'],
@@ -105,8 +110,8 @@ const getWasmMemory = () => {
  * Ref: https://github.com/emscripten-core/emscripten/blob/main/system/lib/libc/musl/src/stdio/ftell.c
  */
 
-const fsNameToFile = {};  // map Name => File
-const fsIdToFile = {};    // map ID => File
+const fsNameToFile = {}; // map Name => File
+const fsIdToFile = {}; // map ID => File
 let currFileId = 0;
 
 // Patch and redirect memfs calls to wllama
@@ -130,7 +135,13 @@ const patchMEMFS = () => {
   };
 
   // replace "read" functions
-  m.MEMFS.stream_ops.read = function (stream, buffer, offset, length, position) {
+  m.MEMFS.stream_ops.read = function (
+    stream,
+    buffer,
+    offset,
+    length,
+    position
+  ) {
     patchStream(stream);
     return m.MEMFS.stream_ops._read(stream, buffer, offset, length, position);
   };
@@ -188,7 +199,9 @@ const heapfsWrite = (id, buffer, offset) => {
     const { ptr, size } = fsIdToFile[id];
     const afterWriteByte = offset + buffer.byteLength;
     if (afterWriteByte > size) {
-      throw new Error(\`File ID \${id} write out of bound, afterWriteByte = \${afterWriteByte} while size = \${size}\`);
+      throw new Error(
+        \`File ID \${id} write out of bound, afterWriteByte = \${afterWriteByte} while size = \${size}\`
+      );
     }
     m.HEAPU8.set(buffer, ptr + offset);
     return buffer.byteLength;
@@ -217,7 +230,7 @@ const callWrapper = (name, ret, args) => {
     }
     return result;
   };
-}
+};
 
 onmessage = async (e) => {
   if (!e.data) return;
@@ -229,25 +242,26 @@ onmessage = async (e) => {
   }
 
   if (verb === 'module.init') {
-    const argPathConfig      = args[0];
+    const argPathConfig = args[0];
     const argPThreadPoolSize = args[1];
     try {
       const Module = ModuleWrapper();
-      wModule = await Module(getWModuleConfig(
-        argPathConfig,
-        argPThreadPoolSize,
-      ));
+      wModule = await Module(
+        getWModuleConfig(argPathConfig, argPThreadPoolSize)
+      );
 
       // init FS
       patchMEMFS();
 
       // init cwrap
-      wllamaStart  = callWrapper('wllama_start' , 'string', []);
-      wllamaAction = callWrapper('wllama_action', 'string', ['string', 'string']);
-      wllamaExit   = callWrapper('wllama_exit'  , 'string', []);
-      wllamaDebug  = callWrapper('wllama_debug' , 'string', []);
+      wllamaStart = callWrapper('wllama_start', 'string', []);
+      wllamaAction = callWrapper('wllama_action', 'string', [
+        'string',
+        'string',
+      ]);
+      wllamaExit = callWrapper('wllama_exit', 'string', []);
+      wllamaDebug = callWrapper('wllama_debug', 'string', []);
       msg({ callbackId, result: null });
-
     } catch (err) {
       msg({ callbackId, err });
     }
@@ -256,11 +270,18 @@ onmessage = async (e) => {
 
   if (verb === 'fs.alloc') {
     const argFilename = args[0];
-    const argSize     = args[1];
+    const argSize = args[1];
     try {
       // create blank file
       const emptyBuffer = new ArrayBuffer(0);
-      wModule['FS_createDataFile']('/models', argFilename, emptyBuffer, true, true, true);
+      wModule['FS_createDataFile'](
+        '/models',
+        argFilename,
+        emptyBuffer,
+        true,
+        true,
+        true
+      );
       // alloc data on heap
       const fileId = heapfsAlloc(argFilename, argSize);
       msg({ callbackId, result: { fileId } });
@@ -325,3 +346,4 @@ onmessage = async (e) => {
     return;
   }
 };`;
+
