@@ -10,9 +10,9 @@ export type DownloadProgressCallback = (opts: {
 }) => any;
 
 export enum ModelValidationStatus {
-  VALID,
-  INVALID,
-  DELETED,
+  VALID = 'valid',
+  INVALID = 'invalid',
+  DELETED = 'deleted',
 }
 
 export interface ModelManagerParams {

@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Build job
-  build:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

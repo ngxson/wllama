@@ -10,9 +10,7 @@ import {
   padDigits,
 } from './utils';
 import CacheManager, { DownloadOptions } from './cache-manager';
-import { DownloadProgressCallback, ModelManager } from './model-manager';
-
-const noop = () => {};
+import { ModelManager } from './model-manager';
 
 export interface WllamaLogger {
   debug: typeof console.debug;
@@ -33,6 +31,8 @@ export interface WllamaConfig {
   logger?: WllamaLogger;
   /**
    * Maximum number of parallel files to be downloaded
+   *
+   * Default: parallelDownloads = 3
    */
   parallelDownloads?: number;
   /**
