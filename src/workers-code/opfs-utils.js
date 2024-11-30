@@ -24,6 +24,23 @@ async function writeTextFile(filename, str) {
   await closeFile();
 }
 
+const throttled = (func, delay) => {
+  let lastRun = 0;
+  return (...args) => {
+    const now = Date.now();
+    if (now - lastRun > delay) {
+      lastRun = now;
+      func.apply(null, args);
+    }
+  };
+};
+
+const assertNonNull = (val) => {
+  if (val === null || val === undefined) {
+    throw new Error('OPFS Worker: Assertion failed');
+  }
+};
+
 // respond to main thread
 const resOK = () => postMessage({ ok: true });
 const resProgress = (loaded, total) => postMessage({ progress: { loaded, total } });
@@ -45,30 +62,38 @@ onmessage = async (e) => {
      * - { action: 'write-simple', filename: 'string', buf: ArrayBuffer }
      * 
      * Download API:
-     * - { action: 'download', url: 'string', options: Object, metadataFileName: 'string' }
+     * - { action: 'download', url: 'string', filename: 'string', options: Object, metadataFileName: 'string' }
      * - { action: 'download-abort' }
      */
     const { action, filename, buf, url, options, metadataFileName } = e.data;
 
     if (action === 'open') {
+      assertNonNull(filename);
       await openFile(filename);
-      return resOK;
+      return resOK();
 
     } else if (action === 'write') {
+      assertNonNull(buf);
       await writeFile(buf);
-      return resOK;
+      return resOK();
 
     } else if (action === 'close') {
       await closeFile();
-      return resOK;
+      return resOK();
     
     } else if (action === 'write-simple') {
+      assertNonNull(filename);
+      assertNonNull(buf);
       await openFile(filename);
       await writeFile(buf);
       await closeFile();
-      return resOK;
+      return resOK();
 
     } else if (action === 'download') {
+      assertNonNull(url);
+      assertNonNull(filename);
+      assertNonNull(metadataFileName);
+      assertNonNull(options);
       abortController = new AbortController();
       const response = await fetch(url, {
         ...options,
@@ -85,16 +110,18 @@ onmessage = async (e) => {
       }));
       const reader = response.body.getReader();
       await openFile(filename);
+      let loaded = 0;
+      const throttledProgress = throttled(resProgress, 100);
       while (true) {
         const {done, value} = await reader.read();
         if (done) break;
         loaded += value.byteLength;
         await writeFile(value);
-        resProgress(loaded, total);
+        throttledProgress(loaded, total);
       }
       resProgress(total, total); // 100% done
       await closeFile();
-      return resOK;
+      return resOK();
 
     } else if (action === 'download-abort') {
       if (abortController) {

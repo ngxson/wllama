@@ -3,12 +3,13 @@ import {
   absoluteUrl,
   bufToText,
   checkEnvironmentCompatible,
+  isString,
   isSupportMultiThread,
   joinBuffers,
   maybeSortFileByName,
   padDigits,
 } from './utils';
-import CacheManager from './cache-manager';
+import CacheManager, { DownloadOptions } from './cache-manager';
 import { DownloadProgressCallback, ModelManager } from './model-manager';
 
 const noop = () => {};
@@ -51,11 +52,8 @@ export interface WllamaConfig {
 }
 
 export interface AssetsPathConfig {
-  'single-thread/wllama.js': string;
   'single-thread/wllama.wasm': string;
-  'multi-thread/wllama.js'?: string;
   'multi-thread/wllama.wasm'?: string;
-  'multi-thread/wllama.worker.mjs'?: string;
 }
 
 export interface LoadModelConfig {
@@ -378,15 +376,14 @@ export class Wllama {
    * @param config
    */
   async loadModelFromUrl(
-    modelUrl: string,
-    config: LoadModelConfig & {
-      progressCallback?: DownloadProgressCallback;
-    } = {}
+    modelUrl: string | string[],
+    config: LoadModelConfig & DownloadOptions & { useCache?: boolean } = {},
   ): Promise<void> {
-    const model = await this.modelManager.downloadModel(
-      modelUrl,
-      config.progressCallback || noop
-    );
+    const url: string = isString(modelUrl) ? modelUrl as string : modelUrl[0];
+    const useCache = config.useCache ?? true;
+    const model = useCache
+      ? await this.modelManager.getModelOrDownload(url, config)
+      : await this.modelManager.downloadModel(url, config);
     const blobs = await model.open();
     return await this.loadModel(blobs, config);
   }
@@ -422,13 +419,10 @@ export class Wllama {
         'Multi-threads are not supported in this environment, falling back to single-thread'
       );
     }
-    const hasPathMultiThread =
-      !!this.pathConfig['multi-thread/wllama.js'] &&
-      !!this.pathConfig['multi-thread/wllama.wasm'] &&
-      !!this.pathConfig['multi-thread/wllama.worker.mjs'];
+    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm'];
     if (!hasPathMultiThread) {
       this.logger().warn(
-        'Missing paths to "wllama.js", "wllama.wasm" or "wllama.worker.mjs", falling back to single-thread'
+        'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
       );
     }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
@@ -437,16 +431,11 @@ export class Wllama {
       supportMultiThread && hasPathMultiThread && nbThreads > 1;
     const mPathConfig = this.useMultiThread
       ? {
-          'wllama.js': absoluteUrl(this.pathConfig['multi-thread/wllama.js']!!),
           'wllama.wasm': absoluteUrl(
             this.pathConfig['multi-thread/wllama.wasm']!!
           ),
-          'wllama.worker.mjs': absoluteUrl(
-            this.pathConfig['multi-thread/wllama.worker.mjs']!!
-          ),
         }
       : {
-          'wllama.js': absoluteUrl(this.pathConfig['single-thread/wllama.js']),
           'wllama.wasm': absoluteUrl(
             this.pathConfig['single-thread/wllama.wasm']
           ),

@@ -1,4 +1,5 @@
 import CacheManager, { CacheEntry, DownloadOptions } from './cache-manager';
+import { sumArr } from './utils';
 import { WllamaError, WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
@@ -32,11 +33,8 @@ export class Model {
     this.url = url;
     if (savedFiles) {
       // this file is already in cache
-      this.files = this.populateAllFiles(savedFiles);
-      this.size = this.files.reduce(
-        (acc, f) => acc + f.metadata.originalSize,
-        0
-      );
+      this.files = this.getAllFiles(savedFiles);
+      this.size = sumArr(this.files.map((f) => f.metadata.originalSize));
     } else {
       // this file is not in cache, we are about to download it
       this.files = [];
@@ -95,6 +93,9 @@ export class Model {
     if (this.size === -1) {
       return ModelValidationStatus.DELETED;
     }
+    if (this.size < 16) {
+      return ModelValidationStatus.INVALID;
+    }
     for (const file of this.files) {
       const metadata = await this.modelManager.cacheManager.getMetadata(
         file.name
@@ -110,31 +111,44 @@ export class Model {
    */
   async refresh(options: DownloadOptions = {}): Promise<void> {
     const urls = ModelManager.parseModelUrl(this.url);
+    const works = urls.map((url, index) => ({
+      url,
+      index,
+    }));
+    this.modelManager.logger.debug('Downloading model files:', urls);
     const nParallel = this.modelManager.params.parallelDownloads ?? DEFAULT_PARALLEL_DOWNLOADS;
+    const totalSize = await this.getTotalDownloadSize(urls);
+    const loadedSize: number[] = [];
     const worker = async () => {
-      while (urls.length > 0) {
-        const url = urls.shift();
-        if (!url) break;
+      while (works.length > 0) {
+        const w = works.shift();
+        if (!w) break;
         await this.modelManager.cacheManager.download(
-          url,
-          await this.modelManager.cacheManager.getNameFromURL(url),
-          options,
+          w.url,
+          { ...options, progressCallback: ({ loaded }) => {
+            loadedSize[w.index] = loaded
+            options.progressCallback?.({
+              loaded: sumArr(loadedSize),
+              total: totalSize,
+            });
+          } },
         );
       }
     };
     const promises: Promise<void>[] = [];
     for (let i = 0; i < nParallel; i++) {
       promises.push(worker());
+      loadedSize.push(0);
     }
     await Promise.all(promises);
-    this.populateAllFiles(await this.modelManager.cacheManager.list());
+    this.files = this.getAllFiles(await this.modelManager.cacheManager.list());
     this.size = this.files.reduce((acc, f) => acc + f.metadata.originalSize, 0);
   }
   /**
    * Remove the model from the cache
    */
   async remove(): Promise<void> {
-    this.files = this.populateAllFiles(
+    this.files = this.getAllFiles(
       await this.modelManager.cacheManager.list()
     );
     await this.modelManager.cacheManager.deleteMany((f) =>
@@ -143,7 +157,7 @@ export class Model {
     this.size = -1;
   }
 
-  private populateAllFiles(savedFiles: CacheEntry[]): CacheEntry[] {
+  private getAllFiles(savedFiles: CacheEntry[]): CacheEntry[] {
     const allUrls = new Set(ModelManager.parseModelUrl(this.url));
     const allFiles: CacheEntry[] = [];
     for (const url of allUrls) {
@@ -154,6 +168,14 @@ export class Model {
       allFiles.push(file);
     }
     return allFiles;
+  }
+
+  private async getTotalDownloadSize(urls: string[]): Promise<number> {
+    const responses = await Promise.all(
+      urls.map((url) => fetch(url, { method: 'HEAD' }))
+    );
+    const sizes = responses.map((res) => Number(res.headers.get('content-length') || '0'));
+    return sumArr(sizes);
   }
 }
 

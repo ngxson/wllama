@@ -11,8 +11,8 @@
  * - Unidirection: { verb, args }
  */
 
-import { isSafariMobile } from './utils';
-import { LLAMA_CPP_WORKER_CODE } from './workers-code/generated';
+import { createWorker, isSafariMobile } from './utils';
+import { LLAMA_CPP_WORKER_CODE, WLLAMA_MULTI_THREAD_CODE, WLLAMA_MULTI_THREAD_WORKER_CODE, WLLAMA_SINGLE_THREAD_CODE } from './workers-code/generated';
 
 interface Logger {
   debug: typeof console.debug;
@@ -67,35 +67,35 @@ export class ProxyToWorker {
   }
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
-    if (!this.pathConfig['wllama.js']) {
+    if (!this.pathConfig['wllama.wasm']) {
       throw new Error(
-        '"single-thread/wllama.js" or "multi-thread/wllama.js" is missing from pathConfig'
+        '"single-thread/wllama.wasm" is missing from pathConfig'
       );
     }
-    const Module = await import(this.pathConfig['wllama.js']);
-    let moduleCode = Module.default.toString();
-    // monkey-patch: remove all "import.meta"
-    // FIXME: this monkey-patch will remove support for nodejs
-    moduleCode = moduleCode.replace(/import\.meta/g, 'importMeta');
-    const completeCode = [
-      'const importMeta = {}',
-      `function ModuleWrapper() {
-        const _scriptDir = ${JSON.stringify(window.location.href)};
-        return ${moduleCode};
-      }`,
+    let moduleCode = this.multiThread
+      ? WLLAMA_MULTI_THREAD_CODE
+      : WLLAMA_SINGLE_THREAD_CODE;
+    moduleCode = moduleCode
+      .replace('var Module', 'var ___Module');
+    const runOptions = {
+      pathConfig: this.pathConfig,
+      nbThread: this.nbThread,
+    };
+    const completeCode: string = [
+      this.multiThread
+        ? `const WLLAMA_MULTI_THREAD_WORKER_CODE = ${JSON.stringify(WLLAMA_MULTI_THREAD_WORKER_CODE)};`
+        : '// single-thread build',
+      `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,
+      `function wModuleInit() { ${moduleCode}; return Module; }`,
       LLAMA_CPP_WORKER_CODE,
     ].join(';\n\n');
-    // https://stackoverflow.com/questions/5408406/web-workers-without-a-separate-javascript-file
-    const workerURL = window.URL.createObjectURL(
-      new Blob([completeCode], { type: 'text/javascript' })
-    );
-    this.worker = new Worker(workerURL);
+    this.worker = createWorker(completeCode);
     this.worker.onmessage = this.onRecvMsg.bind(this);
     this.worker.onerror = this.logger.error;
 
     const res = await this.pushTask({
       verb: 'module.init',
-      args: [this.pathConfig, this.nbThread],
+      args: [new Blob([moduleCode], { type: 'text/javascript' })],
       callbackId: this.taskId++,
     });
 

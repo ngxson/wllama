@@ -1,20 +1,14 @@
 // See: https://vitejs.dev/guide/assets#explicit-url-imports
-import wllamaSingleJS from '@wllama/wllama/src/single-thread/wllama.js?url';
 import wllamaSingle from '@wllama/wllama/src/single-thread/wllama.wasm?url';
-import wllamaMultiJS from '@wllama/wllama/src/multi-thread/wllama.js?url';
 import wllamaMulti from '@wllama/wllama/src/multi-thread/wllama.wasm?url';
-import wllamaMultiWorker from '@wllama/wllama/src/multi-thread/wllama.worker.mjs?url';
 import wllamaPackageJson from '@wllama/wllama/package.json';
 import { InferenceParams, Model } from './utils/types';
 
 export const WLLAMA_VERSION = wllamaPackageJson.version;
 
 export const WLLAMA_CONFIG_PATHS = {
-  'single-thread/wllama.js': wllamaSingleJS,
   'single-thread/wllama.wasm': wllamaSingle,
-  'multi-thread/wllama.js': wllamaMultiJS,
   'multi-thread/wllama.wasm': wllamaMulti,
-  'multi-thread/wllama.worker.mjs': wllamaMultiWorker,
 };
 
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB

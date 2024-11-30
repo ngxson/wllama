@@ -8,11 +8,8 @@ cd $CURRENT_PATH/..
 mkdir -p esm/single-thread
 mkdir -p esm/multi-thread
 
-cp src/multi-thread/wllama.js           esm/multi-thread
-cp src/multi-thread/wllama.wasm         esm/multi-thread
-cp src/multi-thread/wllama.worker.mjs   esm/multi-thread
-cp src/single-thread/wllama.js          esm/single-thread
-cp src/single-thread/wllama.wasm        esm/single-thread
+cp src/multi-thread/wllama.wasm  esm/multi-thread
+cp src/single-thread/wllama.wasm esm/single-thread
 
 # https://stackoverflow.com/questions/62619058/appending-js-extension-on-relative-import-statements-during-typescript-compilat
 

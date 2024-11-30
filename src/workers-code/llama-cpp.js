@@ -1,9 +1,10 @@
 // Start the main llama.cpp
-let wModule;
 let wllamaStart;
 let wllamaAction;
 let wllamaExit;
 let wllamaDebug;
+
+let Module = null;
 
 //////////////////////////////////////////////////////////////
 // UTILS
@@ -24,9 +25,13 @@ const cppLogToJSLog = (line) => {
 };
 
 // Get module config that forwards stdout/err to main thread
-const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
-  if (!pathConfig['wllama.js']) {
-    throw new Error('"wllama.js" is missing in pathConfig');
+const getWModuleConfig = (_argMainScriptBlob) => {
+  var pathConfig = RUN_OPTIONS.pathConfig;
+  var pthreadPoolSize = RUN_OPTIONS.nbThread;
+  var argMainScriptBlob = _argMainScriptBlob;
+
+  if (!pathConfig['wllama.wasm']) {
+    throw new Error('"wllama.wasm" is missing in pathConfig');
   }
   return {
     noInitialRun: true,
@@ -45,13 +50,24 @@ const getWModuleConfig = (pathConfig, pthreadPoolSize) => {
       const p = pathConfig[filename];
       const truncate = (str) =>
         str.length > 128 ? `${str.substr(0, 128)}...` : str;
-      msg({
-        verb: 'console.debug',
-        args: [`Loading "${filename}" from "${truncate(p)}"`],
-      });
-      return p;
+      if (filename.match(/wllama\.worker\.js/)) {
+        msg({
+          verb: 'console.debug',
+          args: [`Loading "${filename}" from WLLAMA_MULTI_THREAD_WORKER_CODE`],
+        });
+        const workerURL = URL.createObjectURL(
+          new Blob([WLLAMA_MULTI_THREAD_WORKER_CODE], { type: 'text/javascript' })
+        );
+        return workerURL.toString();
+      } else {
+        msg({
+          verb: 'console.debug',
+          args: [`Loading "${filename}" from "${truncate(p)}"`],
+        });
+        return p;
+      }
     },
-    mainScriptUrlOrBlob: pathConfig['wllama.js'],
+    mainScriptUrlOrBlob: argMainScriptBlob,
     pthreadPoolSize,
     wasmMemory: pthreadPoolSize > 1 ? getWasmMemory() : null,
     onAbort: function (text) {
@@ -114,7 +130,7 @@ let currFileId = 0;
 
 // Patch and redirect memfs calls to wllama
 const patchMEMFS = () => {
-  const m = wModule;
+  const m = Module;
   // save functions
   m.MEMFS.stream_ops._read = m.MEMFS.stream_ops.read;
   m.MEMFS.stream_ops._write = m.MEMFS.stream_ops.write;
@@ -178,7 +194,7 @@ const heapfsAlloc = (name, size) => {
   if (size < 1) {
     throw new Error('File size must be bigger than 0');
   }
-  const m = wModule;
+  const m = Module;
   const ptr = m.mmapAlloc(size);
   const file = {
     ptr: ptr,
@@ -192,7 +208,7 @@ const heapfsAlloc = (name, size) => {
 
 // Add new file to wllama heapfs, return number of written bytes
 const heapfsWrite = (id, buffer, offset) => {
-  const m = wModule;
+  const m = Module;
   if (fsIdToFile[id]) {
     const { ptr, size } = fsIdToFile[id];
     const afterWriteByte = offset + buffer.byteLength;
@@ -213,7 +229,7 @@ const heapfsWrite = (id, buffer, offset) => {
 //////////////////////////////////////////////////////////////
 
 const callWrapper = (name, ret, args) => {
-  const fn = wModule.cwrap(name, ret, args);
+  const fn = Module.cwrap(name, ret, args);
   return async (action, req) => {
     let result;
     try {
@@ -240,26 +256,24 @@ onmessage = async (e) => {
   }
 
   if (verb === 'module.init') {
-    const argPathConfig = args[0];
-    const argPThreadPoolSize = args[1];
+    const argMainScriptBlob = args[0];
     try {
-      const Module = ModuleWrapper();
-      wModule = await Module(
-        getWModuleConfig(argPathConfig, argPThreadPoolSize)
-      );
-
-      // init FS
-      patchMEMFS();
-
-      // init cwrap
-      wllamaStart = callWrapper('wllama_start', 'string', []);
-      wllamaAction = callWrapper('wllama_action', 'string', [
-        'string',
-        'string',
-      ]);
-      wllamaExit = callWrapper('wllama_exit', 'string', []);
-      wllamaDebug = callWrapper('wllama_debug', 'string', []);
-      msg({ callbackId, result: null });
+      Module = getWModuleConfig(argMainScriptBlob);
+      Module.onRuntimeInitialized = () => {
+        // async call once module is ready
+        // init FS
+        patchMEMFS();
+        // init cwrap
+        wllamaStart = callWrapper('wllama_start', 'string', []);
+        wllamaAction = callWrapper('wllama_action', 'string', [
+          'string',
+          'string',
+        ]);
+        wllamaExit = callWrapper('wllama_exit', 'string', []);
+        wllamaDebug = callWrapper('wllama_debug', 'string', []);
+        msg({ callbackId, result: null });
+      };
+      wModuleInit();
     } catch (err) {
       msg({ callbackId, err });
     }
@@ -272,7 +286,7 @@ onmessage = async (e) => {
     try {
       // create blank file
       const emptyBuffer = new ArrayBuffer(0);
-      wModule['FS_createDataFile'](
+      Module['FS_createDataFile'](
         '/models',
         argFilename,
         emptyBuffer,

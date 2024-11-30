@@ -71,6 +71,8 @@ export const padDigits = (number: number, digits: number) => {
 export const sumArr = (arr: number[]) =>
   arr.reduce((prev, curr) => prev + curr, 0);
 
+export const isString = (value: any): boolean => !!value?.startsWith;
+
 /**
  * Browser feature detection
  * Copied from https://unpkg.com/wasm-feature-detect?module (Apache License)
@@ -150,9 +152,12 @@ export const isSafariMobile = (): boolean => {
   return !!navigator.userAgent.match(/Version\/([0-9\._]+).*Mobile.*Safari.*/); // ios
 };
 
-export const createWorker = (workerCode: string): Worker => {
+/**
+ * Create a worker from a string
+ */
+export const createWorker = (workerCode: string | Blob): Worker => {
   const workerURL = URL.createObjectURL(
-    new Blob([workerCode], { type: 'text/javascript' })
+    isString(workerCode) ? new Blob([workerCode], { type: 'text/javascript' }) : workerCode as Blob
   );
-  return new Worker(workerURL);
+  return new Worker(workerURL, {type: 'module'});
 }

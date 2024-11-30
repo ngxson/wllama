@@ -67,11 +67,8 @@ import { Wllama } from './esm/index.js';
 
 (async () => {
   const CONFIG_PATHS = {
-    'single-thread/wllama.js'       : './esm/single-thread/wllama.js',
-    'single-thread/wllama.wasm'     : './esm/single-thread/wllama.wasm',
-    'multi-thread/wllama.js'        : './esm/multi-thread/wllama.js',
-    'multi-thread/wllama.wasm'      : './esm/multi-thread/wllama.wasm',
-    'multi-thread/wllama.worker.mjs': './esm/multi-thread/wllama.worker.mjs',
+    'single-thread/wllama.wasm': './esm/single-thread/wllama.wasm',
+    'multi-thread/wllama.wasm' : './esm/multi-thread/wllama.wasm',
   };
   // Automatically switch between single-thread and multi-thread version based on browser support
   // If you want to enforce single-thread, add { "n_threads": 1 } to LoadModelConfig

@@ -54,7 +54,7 @@ class CacheManager {
    * Format of the file name: `${hashSHA1(fullURL)}_${fileName}`
    */
   async getNameFromURL(url: string): Promise<string> {
-    return await toFileName(url, '');
+    return await urlToFileName(url, '');
   }
 
   /**
@@ -73,9 +73,8 @@ class CacheManager {
     return await opfsWrite(name, stream);
   }
 
-  download(
+  async download(
     url: string,
-    name: string,
     options: DownloadOptions = {},
   ): Promise<void> {
     const worker = createWorker(OPFS_UTILS_WORKER_CODE);
@@ -86,11 +85,14 @@ class CacheManager {
       });
       delete options.signal;
     }
-    return new Promise((resolve, reject) => {
+    const metadataFileName: string = await urlToFileName(url, PREFIX_METADATA);
+    const filename: string = await urlToFileName(url, '');
+    return await new Promise((resolve, reject) => {
       worker.postMessage({
         action: 'download',
         url,
-        name,
+        filename,
+        metadataFileName,
         options: { headers: options.headers },
       });
       worker.onmessage = (e: MessageEvent<any>) => {
@@ -101,7 +103,7 @@ class CacheManager {
           worker.terminate();
           reject(e.data.err);
         } else if (e.data.progress) {
-          const progress: { loaded: number, total: number } = e.data.progress;
+          const progress: { loaded: number; total: number; } = e.data.progress;
           options.progressCallback?.(progress);
         } else {
           // should never happen
@@ -118,8 +120,8 @@ class CacheManager {
    * @param name The file name returned by `getNameFromURL()` or `list()`
    * @returns Blob, or null if file does not exist
    */
-  async open(name: string): Promise<Blob | null> {
-    return await opfsOpen(name);
+  async open(nameOrURL: string): Promise<Blob | null> {
+    return await opfsOpen(nameOrURL);
   }
 
   /**
@@ -257,7 +259,7 @@ async function opfsWrite(
   prefix = ''
 ): Promise<void> {
   try {
-    const fileName = await toFileName(key, prefix);
+    const fileName = await urlToFileName(key, prefix);
     const writable = await opfsWriteViaWorker(fileName);
     await writable.truncate(0); // clear file content
     const reader = stream.getReader();
@@ -276,26 +278,35 @@ async function opfsWrite(
  * Opens a file in OPFS for reading
  * @returns ReadableStream
  */
-async function opfsOpen(key: string, prefix = ''): Promise<File | null> {
-  try {
-    const cacheDir = await getCacheDir();
-    const fileName = await toFileName(key, prefix);
-    const fileHandler = await cacheDir.getFileHandle(fileName);
-    return await fileHandler.getFile();
-  } catch (e) {
-    // TODO: check if exception is NotFoundError
-    return null;
+async function opfsOpen(originalURLOrName: string, prefix = ''): Promise<File | null> {
+  const getFileHandler = async (fname: string) => {
+    try {
+      const cacheDir = await getCacheDir();
+      const fileHandler = await cacheDir.getFileHandle(fname);
+      return await fileHandler.getFile();
+    } catch (e) {
+      // TODO: check if exception is NotFoundError
+      return null;
+    }
+  };
+  let handler = await getFileHandler(originalURLOrName);
+  if (handler) {
+    return handler;
   }
+  // retry if needed
+  const fileName = await urlToFileName(originalURLOrName, prefix);
+  handler = await getFileHandler(fileName);
+  return handler;
 }
 
 /**
  * Get file size of a file in OPFS
  * @returns number of bytes, or -1 if file does not exist
  */
-async function opfsFileSize(key: string, prefix = ''): Promise<number> {
+async function opfsFileSize(originalURL: string, prefix = ''): Promise<number> {
   try {
     const cacheDir = await getCacheDir();
-    const fileName = await toFileName(key, prefix);
+    const fileName = await urlToFileName(originalURL, prefix);
     const fileHandler = await cacheDir.getFileHandle(fileName);
     const file = await fileHandler.getFile();
     return file.size;
@@ -305,16 +316,16 @@ async function opfsFileSize(key: string, prefix = ''): Promise<number> {
   }
 }
 
-async function toFileName(str: string, prefix: string) {
+async function urlToFileName(url: string, prefix: string) {
   const hashBuffer = await crypto.subtle.digest(
     'SHA-1',
-    new TextEncoder().encode(str)
+    new TextEncoder().encode(url)
   );
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  return `${prefix}${hashHex}_${str.split('/').pop()}`;
+  return `${prefix}${hashHex}_${url.split('/').pop()}`;
 }
 
 async function getCacheDir() {
