@@ -12,6 +12,8 @@ const TINY_MODEL =
 const SPLIT_MODEL =
   'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf';
 
+const EMBD_MODEL = TINY_MODEL; // for better speed
+
 test('loads single model file', async () => {
   const wllama = new Wllama(CONFIG_PATHS, {
     logger: LoggerWithoutDebug,
@@ -154,6 +156,43 @@ test('gets logits', async () => {
   expect(logits[0]).toHaveProperty('p');
   expect(logits[0].token).toBeGreaterThan(0);
   // expect(logits[0].p).toBeGreaterThan(0.5); // FIXME
+
+  await wllama.exit();
+});
+
+test('generates embeddings', async () => {
+  const wllama = new Wllama(CONFIG_PATHS, {
+    logger: LoggerWithoutDebug, 
+  });
+
+  await wllama.loadModelFromUrl(EMBD_MODEL, {
+    n_ctx: 1024,
+    embeddings: true,
+  });
+
+  expect(wllama.isModelLoaded()).toBe(true);
+
+  const text = 'This is a test sentence';
+  const embedding = await wllama.createEmbedding(text);
+
+  expect(embedding).toBeDefined();
+  expect(Array.isArray(embedding)).toBe(true);
+  expect(embedding.length).toBeGreaterThan(0);
+  expect(typeof embedding[0]).toBe('number');
+  for (const e of embedding) {
+    expect(typeof e).toBe('number');
+    expect(e).toBeLessThan(1);
+  }
+
+  // make sure the vector is normalized
+  const normVec = Math.sqrt(embedding.reduce((acc, v) => acc + v * v, 0));
+  expect(Math.abs(normVec - 1)).toBeLessThan(1e-6);
+
+  // slightly different text should have different embedding
+  const embedding2 = await wllama.createEmbedding(text + ' ');
+  const cosineDist = embedding.reduce((acc, v, i) => acc + v * embedding2[i], 0);
+  expect(cosineDist).toBeGreaterThan(1 - 0.05);
+  expect(cosineDist).toBeLessThan(1);
 
   await wllama.exit();
 });
