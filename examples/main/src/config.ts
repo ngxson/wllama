@@ -2,7 +2,7 @@
 import wllamaSingle from '@wllama/wllama/src/single-thread/wllama.wasm?url';
 import wllamaMulti from '@wllama/wllama/src/multi-thread/wllama.wasm?url';
 import wllamaPackageJson from '@wllama/wllama/package.json';
-import { InferenceParams, Model } from './utils/types';
+import { InferenceParams } from './utils/types';
 
 export const WLLAMA_VERSION = wllamaPackageJson.version;
 
@@ -13,12 +13,7 @@ export const WLLAMA_CONFIG_PATHS = {
 
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
-export const LIST_MODELS: Model[] = [
-  // FIXME: chat template for tinyllama is broken
-  // {
-  //   url: 'https://huggingface.co/ngxson/wllama-split-models/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M-00001-of-00003.gguf',
-  //   size: 668788416,
-  // },
+export const LIST_MODELS = [
   {
     url: 'https://huggingface.co/ngxson/SmolLM2-360M-Instruct-Q8_0-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf',
     size: 386404992,

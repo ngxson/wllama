@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Template } from '@huggingface/jinja';
 import { Message, Screen } from './types';
 import { Wllama } from '@wllama/wllama';
@@ -102,3 +102,15 @@ export const DebugLogger = {
       .join(' ');
   },
 };
+
+export function useDebounce<T extends any[]>(
+  effect: (...args: T) => void,
+  dependencies: any[],
+  delay: number
+): void {
+  const callback = useCallback(effect, dependencies);
+  useEffect(() => {
+    const timeout = setTimeout(callback, delay);
+    return () => clearTimeout(timeout);
+  }, [callback, delay]);
+}

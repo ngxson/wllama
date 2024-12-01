@@ -1,4 +1,4 @@
-import { ManageModel, ModelState, Screen } from '../utils/types';
+import { ModelState, Screen } from '../utils/types';
 import { useWllama } from '../utils/wllama.context';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -8,23 +8,24 @@ import {
   faCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import { DEFAULT_INFERENCE_PARAMS, MAX_GGUF_SIZE } from '../config';
-import { toHumanReadableSize } from '../utils/utils';
-import { useState } from 'react';
+import { toHumanReadableSize, useDebounce } from '../utils/utils';
+import { useEffect, useState } from 'react';
 import ScreenWrapper from './ScreenWrapper';
+import { DisplayedModel } from '../utils/displayed-model';
 
 export default function ModelScreen() {
   const [showAddCustom, setShowAddCustom] = useState(false);
   const {
     models,
-    removeModel,
+    removeCachedModel,
     isLoadingModel,
     isDownloading,
-    currModel,
+    loadedModel,
     currParams,
     setParams,
   } = useWllama();
 
-  const blockModelBtn = !!(currModel || isDownloading || isLoadingModel);
+  const blockModelBtn = !!(loadedModel || isDownloading || isLoadingModel);
 
   const onChange = (key: keyof typeof currParams) => (e: any) => {
     setParams({ ...currParams, [key]: parseFloat(e.target.value || -1) });
@@ -101,7 +102,7 @@ export default function ModelScreen() {
               )
             ) {
               for (const m of models) {
-                await removeModel(m);
+                await removeCachedModel(m);
               }
             }
           }}
@@ -123,7 +124,7 @@ export default function ModelScreen() {
         </h1>
 
         {models
-          .filter((m) => m.userAdded)
+          .filter((m) => m.isUserAdded)
           .map((m) => (
             <ModelCard key={m.url} model={m} blockModelBtn={blockModelBtn} />
           ))}
@@ -133,7 +134,7 @@ export default function ModelScreen() {
         <h1 className="text-2xl mt-6 mb-4">Recommended models</h1>
 
         {models
-          .filter((m) => !m.userAdded)
+          .filter((m) => !m.isUserAdded)
           .map((m) => (
             <ModelCard key={m.url} model={m} blockModelBtn={blockModelBtn} />
           ))}
@@ -150,12 +151,58 @@ export default function ModelScreen() {
 
 function AddCustomModelDialog({ onClose }: { onClose(): void }) {
   const { isLoadingModel, addCustomModel } = useWllama();
-  const [url, setUrl] = useState<string>('');
+  const [hfRepo, setHfRepo] = useState<string>('');
+  const [hfFile, setHfFile] = useState<string>('');
+  const [hfFiles, setHfFiles] = useState<string[]>([]);
+  const [abortSignal, setAbortSignal] = useState<AbortController>(
+    new AbortController()
+  );
   const [err, setErr] = useState<string>();
+
+  useDebounce(
+    async () => {
+      if (hfRepo.length < 2) {
+        setHfFiles([]);
+        return;
+      }
+      try {
+        const res = await fetch(`https://huggingface.co/api/models/${hfRepo}`, {
+          signal: abortSignal.signal,
+        });
+        const data: { siblings?: { rfilename: string }[] } = await res.json();
+        if (data.siblings) {
+          setHfFiles(
+            data.siblings
+              .map((s) => s.rfilename)
+              .filter((f) => f.endsWith('.gguf'))
+          );
+          setErr('');
+        } else {
+          setErr('no model found or it is private');
+          setHfFiles([]);
+        }
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') {
+          setErr((e as any)?.message ?? 'unknown error');
+          setHfFiles([]);
+        }
+      }
+    },
+    [hfRepo],
+    500
+  );
+
+  useEffect(() => {
+    if (hfFiles.length === 0) {
+      setHfFile('');
+    }
+  }, [hfFiles]);
 
   const onSubmit = async () => {
     try {
-      await addCustomModel(url);
+      await addCustomModel(
+        `https://huggingface.co/${hfRepo}/resolve/main/${hfFile}`
+      );
       onClose();
     } catch (e) {
       setErr((e as any)?.message ?? 'unknown error');
@@ -180,21 +227,36 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
         </div>
         <div className="mt-4">
           <label className="input input-bordered flex items-center gap-2 mb-2">
-            URL
+            HF repo
             <input
               type="text"
               className="grow"
-              placeholder="https://example.com/your_model-00001-of-00XXX.gguf"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              placeholder="{username}/{repo}"
+              value={hfRepo}
+              onChange={(e) => {
+                abortSignal.abort();
+                setHfRepo(e.target.value);
+                setAbortSignal(new AbortController());
+              }}
             />
           </label>
+          <select
+            className="select select-bordered w-full"
+            onChange={(e) => setHfFile(e.target.value)}
+          >
+            <option value="">Select a model file</option>
+            {hfFiles.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
         </div>
         {err && <div className="mt-4 text-error">Error: {err}</div>}
         <div className="modal-action">
           <button
             className="btn btn-primary"
-            disabled={isLoadingModel || url.length < 5}
+            disabled={isLoadingModel || hfRepo.length < 2 || hfFile.length < 5}
             onClick={onSubmit}
           >
             {isLoadingModel && (
@@ -215,12 +277,12 @@ function ModelCard({
   model,
   blockModelBtn,
 }: {
-  model: ManageModel;
+  model: DisplayedModel;
   blockModelBtn: boolean;
 }) {
   const {
     downloadModel,
-    removeModel,
+    removeCachedModel,
     loadModel,
     unloadModel,
     removeCustomModel,
@@ -237,9 +299,11 @@ function ModelCard({
     >
       <div className="card-body p-4 flex flex-row">
         <div className="grow">
-          <b>{m.name}</b>
+          <b>{m.hfPath.replace(/-\d{5}-of-\d{5}/, '-(shards)')}</b>
           <br />
           <small>
+            HF repo: {m.hfModel}
+            <br />
             Size: {toHumanReadableSize(m.size)}
             {m.size > MAX_GGUF_SIZE && (
               <div
@@ -312,7 +376,7 @@ function ModelCard({
                   if (
                     confirm('Are you sure to remove this model from cache?')
                   ) {
-                    removeModel(m);
+                    removeCachedModel(m);
                   }
                 }}
                 disabled={blockModelBtn}
@@ -337,7 +401,7 @@ function ModelCard({
               </button>
             </>
           )}
-          {m.state === ModelState.NOT_DOWNLOADED && m.userAdded && (
+          {m.state === ModelState.NOT_DOWNLOADED && m.isUserAdded && (
             <button
               className="btn btn-outline btn-error btn-sm mr-2"
               onClick={() => {

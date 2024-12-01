@@ -1,10 +1,10 @@
 import { MAX_GGUF_SIZE } from '../config';
-import { Model } from './types';
+import { DisplayedModel } from './displayed-model';
 import { WllamaStorage } from './utils';
 
 const ggufMagicNumber = new Uint8Array([0x47, 0x47, 0x55, 0x46]);
 
-export async function verifyCustomModel(url: string): Promise<Model> {
+export async function verifyCustomModel(url: string): Promise<DisplayedModel> {
   const _url = url.replace(/\?.*/, '');
 
   const response = await fetch(_url, {
@@ -24,11 +24,7 @@ export async function verifyCustomModel(url: string): Promise<Model> {
     throw new Error(`Fetch error with status code = ${response.status}`);
   }
 
-  return {
-    url: _url,
-    size: await getModelSize(_url),
-    userAdded: true,
-  };
+  return new DisplayedModel(_url, await getModelSize(_url), true, undefined);
 }
 
 const checkBuffer = (buffer: Uint8Array, header: Uint8Array) => {
@@ -92,7 +88,7 @@ const sumArr = (arr: number[]) => arr.reduce((sum, num) => sum + num, 0);
 // for debugging only
 // @ts-ignore
 window._exportModelList = function () {
-  const list: Model[] = WllamaStorage.load('custom_models', []);
+  const list: any[] = WllamaStorage.load('custom_models', []);
   const listExported = list.map((m) => {
     delete m.userAdded;
     return m;
