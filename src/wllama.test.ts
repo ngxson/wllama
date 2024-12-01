@@ -208,6 +208,25 @@ test('generates embeddings', async () => {
   await wllama.exit();
 });
 
+test('allowOffline', async () => {
+  const wllama = new Wllama(CONFIG_PATHS, {
+    allowOffline: true,
+  });
+
+  // Mock fetch to simulate offline
+  const origFetch = window.fetch;
+  window.fetch = () => Promise.reject(new Error('offline'));
+
+  try {
+    await wllama.loadModelFromUrl(TINY_MODEL);
+    expect(wllama.isModelLoaded()).toBe(true);
+    await wllama.exit();
+  } catch (e) {
+    window.fetch = origFetch;
+    throw e;
+  }
+});
+
 test('cleans up resources', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
   await wllama.loadModelFromUrl(TINY_MODEL);
