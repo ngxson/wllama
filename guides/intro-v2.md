@@ -33,11 +33,9 @@ await model.refresh();
 // Remove model from cache
 await model.remove();
 
-// Get model files as Blobs
-// Then, you can load the blobs into Wllama instance
-const blobs = await model.open();
+// Load the selected model into llama.cpp
 const wllama = new Wllama(CONFIG_PATHS);
-await wllama.loadModel(blobs);
+await wllama.loadModel(model);
 
 // Alternatively, you can also pass directly model URL like in v1.x
 // This will automatically download the model to cache

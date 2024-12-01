@@ -10,7 +10,7 @@ import {
   padDigits,
 } from './utils';
 import CacheManager, { DownloadOptions } from './cache-manager';
-import { ModelManager } from './model-manager';
+import { ModelManager, Model } from './model-manager';
 
 const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
 const HF_MODEL_ID_REGEX_EXPLAIN =
@@ -421,14 +421,17 @@ export class Wllama {
    *
    * You can pass multiple buffers into the function (in case the model contains multiple shards).
    *
-   * @param ggufBlobs List of Blob that holds data of gguf file.
+   * @param ggufBlobsOrModel Can be either list of Blobs (in case you use local file), or a Model object (in case you use ModelManager)
    * @param config LoadModelConfig
    */
   async loadModel(
-    ggufBlobs: Blob[],
+    ggufBlobsOrModel: Blob[] | Model,
     config: LoadModelConfig = {}
   ): Promise<void> {
-    const blobs = [...ggufBlobs]; // copy array
+    const blobs: Blob[] =
+      ggufBlobsOrModel instanceof Model
+        ? await ggufBlobsOrModel.open()
+        : [...(ggufBlobsOrModel as Blob[])]; // copy array
     if (blobs.some((b) => b.size === 0)) {
       throw new WllamaError(
         'Input model (or splits) must be non-empty Blob or File',

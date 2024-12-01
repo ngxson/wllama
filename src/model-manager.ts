@@ -180,8 +180,8 @@ export class Model {
    */
   async remove(): Promise<void> {
     this.files = this.getAllFiles(await this.modelManager.cacheManager.list());
-    await this.modelManager.cacheManager.deleteMany((f) =>
-      this.files.includes(f)
+    await this.modelManager.cacheManager.deleteMany(
+      (f) => !!this.files.find((file) => file.name === f.name)
     );
     this.size = -1;
   }

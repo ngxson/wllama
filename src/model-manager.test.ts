@@ -100,3 +100,28 @@ test('model size calculation', async () => {
   const model = await manager.downloadModel(TINY_MODEL);
   expect(model.size).toBe(1185376);
 });
+
+test('remove model from cache', async () => {
+  const manager = new ModelManager();
+  await manager.clear();
+
+  // Download model first
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect((await manager.getModels()).length).toBe(1);
+  expect(model.size).toBeGreaterThan(0);
+
+  // Remove model
+  await model.remove();
+  expect(model.size).toBe(-1);
+
+  // Try to open removed model
+  await expect(model.open()).rejects.toThrow('deleted from the cache');
+
+  // Validate removed model
+  const status = await model.validate();
+  expect(status).toBe(ModelValidationStatus.DELETED);
+
+  // Cannot see it in list of models
+  const models = await manager.getModels();
+  expect(models.find((m) => m.url === TINY_MODEL)).toBeUndefined();
+});
