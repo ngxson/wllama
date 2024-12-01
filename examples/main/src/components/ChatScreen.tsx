@@ -16,7 +16,7 @@ export default function ChatScreen() {
     isGenerating,
     createCompletion,
     navigateTo,
-    currModel,
+    loadedModel,
     getWllamaInstance,
     stopCompletion,
   } = useWllama();
@@ -64,8 +64,8 @@ export default function ChatScreen() {
     }
 
     // generate response
-    if (!currModel) {
-      throw new Error('currModel is null');
+    if (!loadedModel) {
+      throw new Error('loadedModel is null');
     }
     const formattedChat = await formatChat(getWllamaInstance(), [
       ...currHistory,
@@ -118,7 +118,7 @@ export default function ChatScreen() {
           </div>
         )}
 
-        {currModel && (
+        {loadedModel && (
           <textarea
             className="textarea textarea-bordered w-full"
             placeholder="Your message..."
@@ -134,7 +134,7 @@ export default function ChatScreen() {
           />
         )}
 
-        {!currModel && <WarnNoModel />}
+        {!loadedModel && <WarnNoModel />}
 
         <small className="text-center mx-auto opacity-70 pt-2">
           wllama may generate inaccurate information. Use with your own risk.

@@ -287,7 +287,7 @@ json action_set_options(app_t &app, json &body)
 json action_sampling_init(app_t &app, json &body)
 {
   // sampling
-  common_sampler_params sparams;
+  common_params_sampling sparams;
   sparams.seed = app.seed;
   if (sparams.seed == LLAMA_DEFAULT_SEED)
     sparams.seed = time(NULL);

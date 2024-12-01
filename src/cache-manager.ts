@@ -1,6 +1,23 @@
-import { isSafari, isSafariMobile } from './utils';
+import { DownloadProgressCallback } from './model-manager';
+import { createWorker, isSafariMobile } from './utils';
+import { OPFS_UTILS_WORKER_CODE } from './workers-code/generated';
 
 const PREFIX_METADATA = '__metadata__';
+
+export type DownloadOptions = {
+  /**
+   * Callback function to track download progress
+   */
+  progressCallback?: DownloadProgressCallback;
+  /**
+   * Custom headers for the request. Useful for authentication (e.g. Bearer token)
+   */
+  headers?: Record<string, string>;
+  /**
+   * Abort signal for the request
+   */
+  signal?: AbortSignal;
+};
 
 // To prevent breaking change, we fill etag with a pre-defined value
 export const POLYFILL_ETAG = 'polyfill_for_older_version';
@@ -38,6 +55,8 @@ export interface CacheEntryMetadata {
 
 /**
  * Cache implementation using OPFS (Origin private file system)
+ *
+ * This class is also responsible for downloading files from the internet.
  */
 class CacheManager {
   /**
@@ -46,10 +65,12 @@ class CacheManager {
    * Format of the file name: `${hashSHA1(fullURL)}_${fileName}`
    */
   async getNameFromURL(url: string): Promise<string> {
-    return await toFileName(url, '');
+    return await urlToFileName(url, '');
   }
 
   /**
+   * @deprecated Use `download()` instead
+   *
    * Write a new file to cache. This will overwrite existing file.
    *
    * @param name The file name returned by `getNameFromURL()` or `list()`
@@ -63,14 +84,55 @@ class CacheManager {
     return await opfsWrite(name, stream);
   }
 
+  async download(url: string, options: DownloadOptions = {}): Promise<void> {
+    const worker = createWorker(OPFS_UTILS_WORKER_CODE);
+    let aborted = false;
+    if (options.signal) {
+      aborted = options.signal.aborted;
+      const mSignal = options.signal;
+      mSignal.addEventListener('abort', () => {
+        aborted = true;
+        worker.postMessage({ action: 'download-abort' });
+      });
+      delete options.signal;
+    }
+    const metadataFileName: string = await urlToFileName(url, PREFIX_METADATA);
+    const filename: string = await urlToFileName(url, '');
+    return await new Promise((resolve, reject) => {
+      worker.postMessage({
+        action: 'download',
+        url,
+        filename,
+        metadataFileName,
+        options: { headers: options.headers, aborted },
+      });
+      worker.onmessage = (e: MessageEvent<any>) => {
+        if (e.data.ok) {
+          worker.terminate();
+          resolve();
+        } else if (e.data.err) {
+          worker.terminate();
+          reject(e.data.err);
+        } else if (e.data.progress) {
+          const progress: { loaded: number; total: number } = e.data.progress;
+          options.progressCallback?.(progress);
+        } else {
+          // should never happen
+          reject(new Error('Unknown message from worker'));
+          console.error('Unknown message from worker', e.data);
+        }
+      };
+    });
+  }
+
   /**
    * Open a file in cache for reading
    *
-   * @param name The file name returned by `getNameFromURL()` or `list()`
-   * @returns ReadableStream, or null if file does not exist
+   * @param nameOrURL The file name returned by `getNameFromURL()` or `list()`, or the original URL of the remote file
+   * @returns Blob, or null if file does not exist
    */
-  async open(name: string): Promise<ReadableStream | null> {
-    return await opfsOpen(name);
+  async open(nameOrURL: string): Promise<Blob | null> {
+    return await opfsOpen(nameOrURL);
   }
 
   /**
@@ -208,13 +270,8 @@ async function opfsWrite(
   prefix = ''
 ): Promise<void> {
   try {
-    const cacheDir = await getCacheDir();
-    const fileName = await toFileName(key, prefix);
-    const writable = isSafari()
-      ? await opfsWriteViaWorker(fileName)
-      : await cacheDir
-          .getFileHandle(fileName, { create: true })
-          .then((h) => h.createWritable());
+    const fileName = await urlToFileName(key, prefix);
+    const writable = await opfsWriteViaWorker(fileName);
     await writable.truncate(0); // clear file content
     const reader = stream.getReader();
     while (true) {
@@ -233,29 +290,37 @@ async function opfsWrite(
  * @returns ReadableStream
  */
 async function opfsOpen(
-  key: string,
+  originalURLOrName: string,
   prefix = ''
-): Promise<ReadableStream | null> {
-  try {
-    const cacheDir = await getCacheDir();
-    const fileName = await toFileName(key, prefix);
-    const fileHandler = await cacheDir.getFileHandle(fileName);
-    const file = await fileHandler.getFile();
-    return file.stream();
-  } catch (e) {
-    // TODO: check if exception is NotFoundError
-    return null;
+): Promise<File | null> {
+  const getFileHandler = async (fname: string) => {
+    try {
+      const cacheDir = await getCacheDir();
+      const fileHandler = await cacheDir.getFileHandle(fname);
+      return await fileHandler.getFile();
+    } catch (e) {
+      // TODO: check if exception is NotFoundError
+      return null;
+    }
+  };
+  let handler = await getFileHandler(originalURLOrName);
+  if (handler) {
+    return handler;
   }
+  // retry if needed
+  const fileName = await urlToFileName(originalURLOrName, prefix);
+  handler = await getFileHandler(fileName);
+  return handler;
 }
 
 /**
  * Get file size of a file in OPFS
  * @returns number of bytes, or -1 if file does not exist
  */
-async function opfsFileSize(key: string, prefix = ''): Promise<number> {
+async function opfsFileSize(originalURL: string, prefix = ''): Promise<number> {
   try {
     const cacheDir = await getCacheDir();
-    const fileName = await toFileName(key, prefix);
+    const fileName = await urlToFileName(originalURL, prefix);
     const fileHandler = await cacheDir.getFileHandle(fileName);
     const file = await fileHandler.getFile();
     return file.size;
@@ -265,16 +330,16 @@ async function opfsFileSize(key: string, prefix = ''): Promise<number> {
   }
 }
 
-async function toFileName(str: string, prefix: string) {
+async function urlToFileName(url: string, prefix: string) {
   const hashBuffer = await crypto.subtle.digest(
     'SHA-1',
-    new TextEncoder().encode(str)
+    new TextEncoder().encode(url)
   );
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  return `${prefix}${hashHex}_${str.split('/').pop()}`;
+  return `${prefix}${hashHex}_${url.split('/').pop()}`;
 }
 
 async function getCacheDir() {
@@ -283,57 +348,12 @@ async function getCacheDir() {
   return cacheDir;
 }
 
-/**
- * Because safari does not support createWritable(), we need to use createSyncAccessHandle() which requires to be run from a web worker.
- * See: https://bugs.webkit.org/show_bug.cgi?id=231706
- */
-const WORKER_CODE = `
-const msg = (data) => postMessage(data);
-let accessHandle;
-
-onmessage = async (e) => {
-  try {
-    if (!e.data) return;
-    const {
-      open,  // name of file to open
-      value, // value to be written
-      done,  // indicates when to close the file
-    } = e.data;
-
-    if (open) {
-      const opfsRoot = await navigator.storage.getDirectory();
-      const cacheDir = await opfsRoot.getDirectoryHandle('cache', { create: true });
-      const fileHandler = await cacheDir.getFileHandle(open, { create: true });
-      accessHandle = await fileHandler.createSyncAccessHandle();
-      accessHandle.truncate(0); // clear file content
-      return msg({ ok: true });
-
-    } else if (value) {
-      accessHandle.write(value);
-      return msg({ ok: true });
-
-    } else if (done) {
-      accessHandle.flush();
-      accessHandle.close();
-      return msg({ ok: true });
-    }
-
-    throw new Error('OPFS Worker: Invalid state');
-  } catch (err) {
-    return msg({ err });
-  }
-};
-`;
-
 async function opfsWriteViaWorker(fileName: string): Promise<{
   truncate(offset: number): Promise<void>;
   write(value: Uint8Array): Promise<void>;
   close(): Promise<void>;
 }> {
-  const workerURL = window.URL.createObjectURL(
-    new Blob([WORKER_CODE], { type: 'text/javascript' })
-  );
-  const worker = new Worker(workerURL);
+  const worker = createWorker(OPFS_UTILS_WORKER_CODE);
   let pResolve: (v: any) => void;
   let pReject: (v: any) => void;
   worker.onmessage = (e: MessageEvent<any>) => {

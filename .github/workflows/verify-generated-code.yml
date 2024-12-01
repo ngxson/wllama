@@ -1,0 +1,34 @@
+name: Verify generated worker code is up-to-date
+
+on:
+  # Runs on pushes
+  push:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify generated code
+        run: |
+          git config --global --add safe.directory $(realpath .)
+          git status
+          npm run build:worker
+          git status
+          modified_files="$(git status -s)"
+          echo "Modified files: ${modified_files}"
+          if [ -n "${modified_files}" ]; then
+            echo "Generated code file is not up-to-date"
+            echo "Hint: You may need to run: npm run build:worker"
+            echo "${modified_files}"
+            exit 1
+          fi

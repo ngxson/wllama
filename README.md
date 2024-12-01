@@ -10,6 +10,9 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
+> [!IMPORTANT]  
+> Version 2.0 is released 👉 [read more](./guides/intro-v2.md)
+
 ![](./assets/screenshot_0.png)
 
 ## Features
@@ -35,8 +38,8 @@ Limitations:
 
 Demo:
 - Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/
-- Advanced example using low-level API: https://github.ngxson.com/wllama/examples/advanced/
 - Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/
+- For more advanced example using low-level API, have a look at test file: [wllama.test.ts](./src/wllama.test.ts)
 
 ## How to use
 
@@ -48,7 +51,15 @@ Install it:
 npm i @wllama/wllama
 ```
 
-For complete code, see [examples/reactjs](./examples/reactjs)
+Then, import the module:
+
+```ts
+import { Wllama } from '@wllama/wllama';
+let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, ...);
+// (the rest is the same with earlier example)
+```
+
+For complete code example, see [examples/main/utils/wllama.context.tsx](./examples/main/utils/wllama.context.tsx)
 
 NOTE: this example only covers completions usage. For embeddings, please see [examples/embeddings/index.html](./examples/embeddings/index.html)
 
@@ -67,11 +78,8 @@ import { Wllama } from './esm/index.js';
 
 (async () => {
   const CONFIG_PATHS = {
-    'single-thread/wllama.js'       : './esm/single-thread/wllama.js',
-    'single-thread/wllama.wasm'     : './esm/single-thread/wllama.wasm',
-    'multi-thread/wllama.js'        : './esm/multi-thread/wllama.js',
-    'multi-thread/wllama.wasm'      : './esm/multi-thread/wllama.wasm',
-    'multi-thread/wllama.worker.mjs': './esm/multi-thread/wllama.worker.mjs',
+    'single-thread/wllama.wasm': './esm/single-thread/wllama.wasm',
+    'multi-thread/wllama.wasm' : './esm/multi-thread/wllama.wasm',
   };
   // Automatically switch between single-thread and multi-thread version based on browser support
   // If you want to enforce single-thread, add { "n_threads": 1 } to LoadModelConfig
@@ -83,8 +91,11 @@ import { Wllama } from './esm/index.js';
     // Log the progress in a user-friendly format
     console.log(`Downloading... ${progressPercentage}%`);
   };
-  await wllama.loadModelFromUrl(
-    "https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf",
+  // Load GGUF from Hugging Face hub
+  // (alternatively, you can use loadModelFromUrl if the model is not from HF hub)
+  await wllama.loadModelFromHF(
+    'ggml-org/models',
+    'tinyllamas/stories260K.gguf',
     {
       progressCallback,
     }
@@ -99,6 +110,14 @@ import { Wllama } from './esm/index.js';
   });
   console.log(outputText);
 })();
+```
+
+Alternatively, you can use the `*.wasm` files from CDN:
+
+```js
+import WasmFromCDN from '@wllama/wllama/esm/wasm-from-cdn.js';
+const wllama = new Wllama(WasmFromCDN);
+// NOTE: this is not recommended, only use when you can't embed wasm files in your project
 ```
 
 ### Split model
@@ -116,14 +135,15 @@ We use `llama-gguf-split` to split a big gguf file into smaller files. You can d
 
 This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`, and so on.
 
-You can then pass to `loadModelFromUrl` the URL of the first file and it will automatically load all the chunks:
+You can then pass to `loadModelFromUrl` or `loadModelFromHF` the URL of the first file and it will automatically load all the chunks:
 
 ```js
-await wllama.loadModelFromUrl(
-  'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf',
-  {
-    parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
-  },
+const wllama = new Wllama(CONFIG_PATHS, {
+  parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
+});
+await wllama.loadModelFromHF(
+  'ngxson/tinyllama_split_test',
+  'stories15M-q8_0-00001-of-00003.gguf'
 );
 ```
 
@@ -184,11 +204,7 @@ npm run build
 
 ## TODO
 
-Short term:
-- Add a more pratical embedding example (using a better model)
-- Maybe doing a full RAG-in-browser example using tinyllama?
-
-Long term:
+- Add support for LoRA adapter
 - Support GPU inference via WebGL
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
 - Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp

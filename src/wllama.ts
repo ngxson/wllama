@@ -3,14 +3,27 @@ import {
   absoluteUrl,
   bufToText,
   checkEnvironmentCompatible,
+  isString,
   isSupportMultiThread,
   joinBuffers,
   maybeSortFileByName,
   padDigits,
 } from './utils';
-import CacheManager from './cache-manager';
-import { MultiDownloads } from './downloader/multi-downloads';
+import CacheManager, { DownloadOptions } from './cache-manager';
+import { ModelManager, Model } from './model-manager';
 
+const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
+const HF_MODEL_ID_REGEX_EXPLAIN =
+  "Hugging Face model ID is incorrect. Only regular alphanumeric characters, '-', '.' and '_' supported";
+
+export interface WllamaLogger {
+  debug: typeof console.debug;
+  log: typeof console.log;
+  warn: typeof console.warn;
+  error: typeof console.error;
+}
+
+// TODO: bring back useCache
 export interface WllamaConfig {
   /**
    * If true, suppress all log messages from native CPP code
@@ -19,24 +32,32 @@ export interface WllamaConfig {
   /**
    * Custom logger functions
    */
-  logger?: {
-    debug: typeof console.debug;
-    log: typeof console.log;
-    warn: typeof console.warn;
-    error: typeof console.error;
-  };
+  logger?: WllamaLogger;
+  /**
+   * Maximum number of parallel files to be downloaded
+   *
+   * Default: parallelDownloads = 3
+   */
+  parallelDownloads?: number;
+  /**
+   * Allow offline mode. If true, the model will be loaded from cache if it's available.
+   *
+   * Default: allowOffline = false
+   */
+  allowOffline?: boolean;
   /**
    * Custom cache manager (only for advanced usage)
    */
   cacheManager?: CacheManager;
+  /**
+   * Custom model manager (only for advanced usage)
+   */
+  modelManager?: ModelManager;
 }
 
 export interface AssetsPathConfig {
-  'single-thread/wllama.js': string;
   'single-thread/wllama.wasm': string;
-  'multi-thread/wllama.js'?: string;
   'multi-thread/wllama.wasm'?: string;
-  'multi-thread/wllama.worker.mjs'?: string;
 }
 
 export interface LoadModelConfig {
@@ -69,20 +90,6 @@ export interface LoadModelConfig {
   // optimizations
   cache_type_k?: 'f16' | 'q8_0' | 'q4_0';
   cache_type_v?: 'f16';
-}
-
-export interface DownloadModelConfig extends LoadModelConfig {
-  // download-specific params
-  parallelDownloads?: number;
-  progressCallback?: (opts: { loaded: number; total: number }) => any;
-  /**
-   * Default: useCache = true
-   */
-  useCache?: boolean;
-  /**
-   * Default: useCache = false
-   */
-  allowOffline?: boolean;
 }
 
 export interface SamplingConfig {
@@ -190,8 +197,9 @@ export class WllamaError extends Error {
 }
 
 export class Wllama {
-  // The CacheManager singleton, can be accessed by user
+  // The CacheManager and ModelManager are singleton, can be accessed by user
   public cacheManager: CacheManager;
+  public modelManager: ModelManager;
 
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
@@ -218,6 +226,14 @@ export class Wllama {
     this.pathConfig = pathConfig;
     this.config = wllamaConfig;
     this.cacheManager = wllamaConfig.cacheManager ?? new CacheManager();
+    this.modelManager =
+      wllamaConfig.modelManager ??
+      new ModelManager({
+        cacheManager: this.cacheManager,
+        logger: wllamaConfig.logger ?? console,
+        parallelDownloads: wllamaConfig.parallelDownloads,
+        allowOffline: wllamaConfig.allowOffline,
+      });
   }
 
   private logger() {
@@ -357,108 +373,47 @@ export class Wllama {
   }
 
   /**
-   * Parses a model URL and returns an array of URLs based on the following patterns:
-   * - If the input URL is an array, it returns the array itself.
-   * - If the input URL is a string in the `gguf-split` format, it returns an array containing the URL of each shard in ascending order.
-   * - Otherwise, it returns an array containing the input URL as a single element array.
-   * @param modelUrl URL or list of URLs
-   */
-  private parseModelUrl(modelUrl: string | string[]): string[] {
-    if (Array.isArray(modelUrl)) {
-      return modelUrl;
-    }
-    const urlPartsRegex =
-      /(?<baseURL>.*)-(?<current>\d{5})-of-(?<total>\d{5})\.gguf$/;
-    const matches = modelUrl.match(urlPartsRegex);
-    if (
-      !matches ||
-      !matches.groups ||
-      Object.keys(matches.groups).length !== 3
-    ) {
-      return [modelUrl];
-    }
-    const { baseURL, total } = matches.groups;
-    const paddedShardIds = Array.from({ length: Number(total) }, (_, index) =>
-      (index + 1).toString().padStart(5, '0')
-    );
-    return paddedShardIds.map(
-      (current) => `${baseURL}-${current}-of-${total}.gguf`
-    );
-  }
-
-  /**
-   * Download a model to cache, without loading it
-   * @param modelUrl URL or list of URLs (in the correct order)
-   * @param config
-   */
-  async downloadModel(
-    modelUrl: string | string[],
-    config: DownloadModelConfig = {}
-  ): Promise<void> {
-    if (modelUrl.length === 0) {
-      throw new WllamaError(
-        'modelUrl must be an URL or a list of URLs (in the correct order)',
-        'download_error'
-      );
-    }
-    if (config.useCache === false) {
-      throw new WllamaError('useCache must not be false', 'download_error');
-    }
-    const multiDownloads = new MultiDownloads(
-      this.logger(),
-      this.parseModelUrl(modelUrl),
-      config.parallelDownloads ?? 3,
-      this.cacheManager,
-      {
-        progressCallback: config.progressCallback,
-        useCache: true,
-        allowOffline: !!config.allowOffline,
-        noTEE: true,
-      }
-    );
-    const blobs = await multiDownloads.run();
-    await Promise.all(
-      blobs.map(async (blob) => {
-        const reader = blob.stream().getReader();
-        while (true) {
-          const { done } = await reader.read();
-          if (done) return;
-        }
-      })
-    );
-  }
-
-  /**
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * - If the model already been downloaded (via `downloadModel()`), then we will use the cached model
    * - Else, we download the model from internet
-   * @param modelUrl URL or list of URLs (in the correct order)
+   * @param modelUrl URL to the GGUF file. If the model is splitted, pass the URL to the first shard.
    * @param config
    */
   async loadModelFromUrl(
     modelUrl: string | string[],
-    config: DownloadModelConfig = {}
+    config: LoadModelConfig & DownloadOptions & { useCache?: boolean } = {}
   ): Promise<void> {
-    if (modelUrl.length === 0) {
-      throw new WllamaError(
-        'modelUrl must be an URL or a list of URLs (in the correct order)',
-        'load_error'
-      );
-    }
-    const skipCache = config.useCache === false;
-    const multiDownloads = new MultiDownloads(
-      this.logger(),
-      this.parseModelUrl(modelUrl),
-      config.parallelDownloads ?? 3,
-      this.cacheManager,
-      {
-        progressCallback: config.progressCallback,
-        useCache: !skipCache,
-        allowOffline: !!config.allowOffline,
-      }
-    );
-    const blobs = await multiDownloads.run();
+    const url: string = isString(modelUrl) ? (modelUrl as string) : modelUrl[0];
+    const useCache = config.useCache ?? true;
+    const model = useCache
+      ? await this.modelManager.getModelOrDownload(url, config)
+      : await this.modelManager.downloadModel(url, config);
+    const blobs = await model.open();
     return await this.loadModel(blobs, config);
+  }
+
+  /**
+   * Load model from a given Hugging Face model ID and file path.
+   *
+   * @param modelId The HF model ID, for example: 'ggml-org/models'
+   * @param filePath The GGUF file path, for example: 'tinyllamas/stories15M-q4_0.gguf'
+   * @param config
+   */
+  async loadModelFromHF(
+    modelId: string,
+    filePath: string,
+    config: LoadModelConfig & DownloadOptions & { useCache?: boolean } = {}
+  ) {
+    if (!modelId.match(HF_MODEL_ID_REGEX)) {
+      throw new WllamaError(HF_MODEL_ID_REGEX_EXPLAIN, 'download_error');
+    }
+    if (!filePath.endsWith('.gguf')) {
+      throw new WllamaError('Only GGUF file is supported', 'download_error');
+    }
+    return await this.loadModelFromUrl(
+      `https://huggingface.co/${modelId}/resolve/main/${filePath}`,
+      config
+    );
   }
 
   /**
@@ -466,14 +421,17 @@ export class Wllama {
    *
    * You can pass multiple buffers into the function (in case the model contains multiple shards).
    *
-   * @param ggufBlobs List of Blob that holds data of gguf file.
+   * @param ggufBlobsOrModel Can be either list of Blobs (in case you use local file), or a Model object (in case you use ModelManager)
    * @param config LoadModelConfig
    */
   async loadModel(
-    ggufBlobs: Blob[],
+    ggufBlobsOrModel: Blob[] | Model,
     config: LoadModelConfig = {}
   ): Promise<void> {
-    const blobs = [...ggufBlobs]; // copy array
+    const blobs: Blob[] =
+      ggufBlobsOrModel instanceof Model
+        ? await ggufBlobsOrModel.open()
+        : [...(ggufBlobsOrModel as Blob[])]; // copy array
     if (blobs.some((b) => b.size === 0)) {
       throw new WllamaError(
         'Input model (or splits) must be non-empty Blob or File',
@@ -492,13 +450,10 @@ export class Wllama {
         'Multi-threads are not supported in this environment, falling back to single-thread'
       );
     }
-    const hasPathMultiThread =
-      !!this.pathConfig['multi-thread/wllama.js'] &&
-      !!this.pathConfig['multi-thread/wllama.wasm'] &&
-      !!this.pathConfig['multi-thread/wllama.worker.mjs'];
+    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm'];
     if (!hasPathMultiThread) {
       this.logger().warn(
-        'Missing paths to "wllama.js", "wllama.wasm" or "wllama.worker.mjs", falling back to single-thread'
+        'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
       );
     }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
@@ -507,16 +462,11 @@ export class Wllama {
       supportMultiThread && hasPathMultiThread && nbThreads > 1;
     const mPathConfig = this.useMultiThread
       ? {
-          'wllama.js': absoluteUrl(this.pathConfig['multi-thread/wllama.js']!!),
           'wllama.wasm': absoluteUrl(
             this.pathConfig['multi-thread/wllama.wasm']!!
           ),
-          'wllama.worker.mjs': absoluteUrl(
-            this.pathConfig['multi-thread/wllama.worker.mjs']!!
-          ),
         }
       : {
-          'wllama.js': absoluteUrl(this.pathConfig['single-thread/wllama.js']),
           'wllama.wasm': absoluteUrl(
             this.pathConfig['single-thread/wllama.wasm']
           ),
@@ -1043,6 +993,7 @@ export class Wllama {
    */
   async exit(): Promise<void> {
     await this.proxy?.wllamaExit();
+    this.proxy = null as any;
   }
 
   /**

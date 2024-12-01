@@ -1,6 +1,6 @@
 {
   "name": "@wllama/wllama",
-  "version": "1.17.1",
+  "version": "2.0.0",
   "description": "Low-level WASM binding for llama.cpp",
   "main": "index.js",
   "type": "module",
@@ -11,12 +11,16 @@
     "serve": "node ./scripts/http_server.js",
     "serve:mt": "MULTITHREAD=1 node ./scripts/http_server.js",
     "clean": "rm -rf ./esm && rm -rf ./docs && rm -rf ./wasm",
+    "build:worker": "./scripts/build_worker.sh",
     "build:wasm": "./scripts/build_wasm.sh",
-    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "build": "npm run clean && npm run build:worker && tsc -p tsconfig.build.json",
     "postbuild": "./scripts/post_build.sh && npm run docs",
     "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts",
-    "upload": "npm run build && npm publish --access public",
-    "format": "prettier --write ."
+    "upload": "npm run format && npm run build && npm publish --access public",
+    "format": "prettier --write .",
+    "test": "vitest",
+    "test:firefox": "BROWSER=firefox vitest",
+    "test:safari": "BROWSER=safari vitest"
   },
   "repository": {
     "type": "git",
@@ -39,11 +43,14 @@
   },
   "homepage": "https://github.com/ngxson/wllama#readme",
   "devDependencies": {
+    "@vitest/browser": "^2.1.6",
     "express": "^4.18.3",
     "mime-types": "^2.1.35",
+    "playwright": "^1.49.0",
     "prettier": "^3.3.3",
-    "typedoc": "^0.25.12",
-    "typescript": "^5.4.2"
+    "typedoc": "^0.27.2",
+    "typescript": "^5.4.2",
+    "webdriverio": "^9.4.1"
   },
   "prettier": {
     "trailingComma": "es5",

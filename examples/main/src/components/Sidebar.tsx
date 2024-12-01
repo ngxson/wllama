@@ -12,7 +12,7 @@ import {
 import { WLLAMA_VERSION } from '../config';
 
 export default function Sidebar({ children }: { children: any }) {
-  const { currentConvId, navigateTo, currScreen, currModel } = useWllama();
+  const { currentConvId, navigateTo, currScreen, loadedModel } = useWllama();
   const { conversations, getConversationById, deleteConversation } =
     useMessages();
 
@@ -75,8 +75,10 @@ export default function Sidebar({ children }: { children: any }) {
           <div className="w-80 px-4 pt-0 pb-8">
             <div className="divider my-2"></div>
 
-            {currModel && (
-              <div className="text-sm px-4 pb-2">Model: {currModel.name}</div>
+            {loadedModel && (
+              <div className="text-sm px-4 pb-2">
+                Model: {loadedModel.hfModel}
+              </div>
             )}
 
             <ul className="menu gap-1">

@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        node_version: [22]
+        # include:
+        #   - os: macos-14
+        #     node_version: 22
+        #   - os: windows-latest
+        #     node_version: 22
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set node version to ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install
+        run: npm ci --include=dev
+
+      - name: Install Playwright Dependencies
+        run: npx playwright install --with-deps
+
+      - name: Build
+        run: npm run build
+
+      - name: Test (Chrome)
+        run: npm run test
+
+      - name: Test (Firefox)
+        run: npm run test:firefox
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install
+        run: npm ci --include=dev
+
+      - name: Check format
+        run: |
+          git config --global --add safe.directory $(realpath .)
+          git status
+          npm run format
+          git status
+          modified_files="$(git status -s)"
+          echo "Modified files: ${modified_files}"
+          if [ -n "${modified_files}" ]; then
+            echo "Detect unformatted files"
+            echo "You may need to run: npm run format"
+            echo "${modified_files}"
+            exit 1
+          fi
