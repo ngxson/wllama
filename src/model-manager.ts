@@ -166,6 +166,9 @@ export class Model {
       }
       allFiles.push(file);
     }
+    allFiles.sort((a, b) =>
+      a.metadata.originalURL.localeCompare(b.metadata.originalURL)
+    );
     return allFiles;
   }
 
@@ -187,7 +190,7 @@ export class ModelManager {
   public params: ModelManagerParams;
   public logger: WllamaLogger;
 
-  constructor(params: ModelManagerParams) {
+  constructor(params: ModelManagerParams = {}) {
     this.cacheManager = params.cacheManager || new CacheManager();
     this.params = params;
     this.logger = params.logger || console;
@@ -263,6 +266,9 @@ export class ModelManager {
     return model;
   }
 
+  /**
+   * Get a model from the cache or download it if it's not available.
+   */
   async getModelOrDownload(
     url: string,
     options: DownloadOptions = {}
@@ -274,5 +280,12 @@ export class ModelManager {
       return model;
     }
     return this.downloadModel(url, options);
+  }
+
+  /**
+   * Remove all models from the cache
+   */
+  async clear(): Promise<void> {
+    await this.cacheManager.clear();
   }
 }

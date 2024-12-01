@@ -91,7 +91,9 @@ onmessage = async (e) => {
       assertNonNull(filename);
       assertNonNull(metadataFileName);
       assertNonNull(options);
+      assertNonNull(options.aborted);
       abortController = new AbortController();
+      if (options.aborted) abortController.abort();
       const response = await fetch(url, {
         ...options,
         signal: abortController.signal,
@@ -134,6 +136,6 @@ onmessage = async (e) => {
 
     throw new Error('OPFS Worker: Invalid action', e.data);
   } catch (err) {
-    return resErr({ err });
+    return resErr(err);
   }
 };

@@ -142,11 +142,8 @@ test('cleans up resources', async () => {
   await wllama.loadModelFromUrl(TINY_MODEL);
   expect(wllama.isModelLoaded()).toBe(true);
   await wllama.exit();
-  let exception = null;
-  try {
-    await wllama.tokenize('test');
-  } catch (e) {
-    exception = e;
-  }
-  expect(exception).toBeDefined();
+  await expect(wllama.tokenize('test')).rejects.toThrow();
+
+  // Double check that the model is really unloaded
+  expect(wllama.isModelLoaded()).toBe(false);
 });

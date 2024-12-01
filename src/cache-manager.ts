@@ -75,9 +75,12 @@ class CacheManager {
 
   async download(url: string, options: DownloadOptions = {}): Promise<void> {
     const worker = createWorker(OPFS_UTILS_WORKER_CODE);
+    let aborted = false;
     if (options.signal) {
+      aborted = options.signal.aborted;
       const mSignal = options.signal;
       mSignal.addEventListener('abort', () => {
+        aborted = true;
         worker.postMessage({ action: 'download-abort' });
       });
       delete options.signal;
@@ -90,7 +93,7 @@ class CacheManager {
         url,
         filename,
         metadataFileName,
-        options: { headers: options.headers },
+        options: { headers: options.headers, aborted },
       });
       worker.onmessage = (e: MessageEvent<any>) => {
         if (e.data.ok) {
