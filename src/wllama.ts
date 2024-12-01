@@ -12,6 +12,10 @@ import {
 import CacheManager, { DownloadOptions } from './cache-manager';
 import { ModelManager } from './model-manager';
 
+const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
+const HF_MODEL_ID_REGEX_EXPLAIN =
+  "Hugging Face model ID is incorrect. Only regular alphanumeric characters, '-', '.' and '_' supported";
+
 export interface WllamaLogger {
   debug: typeof console.debug;
   log: typeof console.log;
@@ -386,6 +390,30 @@ export class Wllama {
       : await this.modelManager.downloadModel(url, config);
     const blobs = await model.open();
     return await this.loadModel(blobs, config);
+  }
+
+  /**
+   * Load model from a given Hugging Face model ID and file path.
+   *
+   * @param modelId The HF model ID, for example: 'ggml-org/models'
+   * @param filePath The GGUF file path, for example: 'tinyllamas/stories15M-q4_0.gguf'
+   * @param config
+   */
+  async loadModelFromHF(
+    modelId: string,
+    filePath: string,
+    config: LoadModelConfig & DownloadOptions & { useCache?: boolean } = {}
+  ) {
+    if (!modelId.match(HF_MODEL_ID_REGEX)) {
+      throw new WllamaError(HF_MODEL_ID_REGEX_EXPLAIN, 'download_error');
+    }
+    if (!filePath.endsWith('.gguf')) {
+      throw new WllamaError('Only GGUF file is supported', 'download_error');
+    }
+    return await this.loadModelFromUrl(
+      `https://huggingface.co/${modelId}/resolve/main/${filePath}`,
+      config
+    );
   }
 
   /**

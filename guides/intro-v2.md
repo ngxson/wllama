@@ -50,6 +50,17 @@ Key features of `ModelManager`:
 - Parallel downloads of model shards
 - Cache management with refresh and removal options
 
+## Added `loadModelFromHF`
+
+A new helper function to load models directly from Hugging Face Hub. This is a convenient wrapper over `loadModelFromUrl` that handles HF repository URLs.
+
+```js
+await wllama.loadModelFromHF(
+  'ggml-org/models',
+  'tinyllamas/stories260K.gguf'
+);
+```
+
 ## Migration to v2.0
 
 ### Simplified `new Wllama()` constructor

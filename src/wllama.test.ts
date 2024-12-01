@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { Wllama, LoggerWithoutDebug } from './wllama';
+import { Wllama } from './wllama';
 
 const CONFIG_PATHS = {
   'single-thread/wllama.wasm': '/src/single-thread/wllama.wasm',
@@ -15,9 +15,7 @@ const SPLIT_MODEL =
 const EMBD_MODEL = TINY_MODEL; // for better speed
 
 test('loads single model file', async () => {
-  const wllama = new Wllama(CONFIG_PATHS, {
-    logger: LoggerWithoutDebug,
-  });
+  const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -32,12 +30,27 @@ test('loads single model file', async () => {
   const metadata = wllama.getModelMetadata();
   expect(metadata.hparams).toBeDefined();
   expect(metadata.meta).toBeDefined();
+  await wllama.exit();
+});
+
+test('loads single model file from HF', async () => {
+  const wllama = new Wllama(CONFIG_PATHS);
+
+  await wllama.loadModelFromHF(
+    'ggml-org/models',
+    'tinyllamas/stories15M-q4_0.gguf',
+    {
+      n_ctx: 1024,
+      n_threads: 2,
+    }
+  );
+
+  expect(wllama.isModelLoaded()).toBe(true);
+  await wllama.exit();
 });
 
 test('loads single thread model', async () => {
-  const wllama = new Wllama(CONFIG_PATHS, {
-    logger: LoggerWithoutDebug,
-  });
+  const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -50,12 +63,11 @@ test('loads single thread model', async () => {
   const completion = await wllama.createCompletion('Hello', { nPredict: 10 });
   expect(completion).toBeDefined();
   expect(completion.length).toBeGreaterThan(10);
+  await wllama.exit();
 });
 
 test('loads model with progress callback', async () => {
-  const wllama = new Wllama(CONFIG_PATHS, {
-    logger: LoggerWithoutDebug,
-  });
+  const wllama = new Wllama(CONFIG_PATHS);
 
   let progressCalled = false;
   let lastLoaded = 0;
@@ -90,9 +102,7 @@ test('loads split model files', async () => {
 });
 
 test('tokenizes and detokenizes text', async () => {
-  const wllama = new Wllama(CONFIG_PATHS, {
-    logger: LoggerWithoutDebug,
-  });
+  const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -161,9 +171,7 @@ test('gets logits', async () => {
 });
 
 test('generates embeddings', async () => {
-  const wllama = new Wllama(CONFIG_PATHS, {
-    logger: LoggerWithoutDebug,
-  });
+  const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(EMBD_MODEL, {
     n_ctx: 1024,

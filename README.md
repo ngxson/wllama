@@ -91,8 +91,11 @@ import { Wllama } from './esm/index.js';
     // Log the progress in a user-friendly format
     console.log(`Downloading... ${progressPercentage}%`);
   };
-  await wllama.loadModelFromUrl(
-    "https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf",
+  // Load GGUF from Hugging Face hub
+  // (alternatively, you can use loadModelFromUrl if the model is not from HF hub)
+  await wllama.loadModelFromHF(
+    'ggml-org/models',
+    'tinyllamas/stories260K.gguf',
     {
       progressCallback,
     }
@@ -132,13 +135,16 @@ We use `llama-gguf-split` to split a big gguf file into smaller files. You can d
 
 This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`, and so on.
 
-You can then pass to `loadModelFromUrl` the URL of the first file and it will automatically load all the chunks:
+You can then pass to `loadModelFromUrl` or `loadModelFromHF` the URL of the first file and it will automatically load all the chunks:
 
 ```js
 const wllama = new Wllama(CONFIG_PATHS, {
   parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
 });
-await wllama.loadModelFromUrl('https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf');
+await wllama.loadModelFromHF(
+  'ngxson/tinyllama_split_test',
+  'stories15M-q8_0-00001-of-00003.gguf'
+);
 ```
 
 ### Custom logger (suppress debug messages)
