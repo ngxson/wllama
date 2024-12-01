@@ -9,11 +9,8 @@ const CONFIG_PATHS = {
 const TINY_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
 
-const SPLIT_MODEL = [
-  'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf',
-  'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00002-of-00003.gguf',
-  'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00003-of-00003.gguf',
-];
+const SPLIT_MODEL =
+  'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf';
 
 test('loads single model file', async () => {
   const wllama = new Wllama(CONFIG_PATHS, {
@@ -51,6 +48,30 @@ test('loads single thread model', async () => {
   const completion = await wllama.createCompletion('Hello', { nPredict: 10 });
   expect(completion).toBeDefined();
   expect(completion.length).toBeGreaterThan(10);
+});
+
+test('loads model with progress callback', async () => {
+  const wllama = new Wllama(CONFIG_PATHS, {
+    logger: LoggerWithoutDebug,
+  });
+
+  let progressCalled = false;
+  let lastLoaded = 0;
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 1024,
+    progressCallback: ({ loaded, total }) => {
+      expect(loaded).toBeGreaterThan(0);
+      expect(total).toBeGreaterThan(0);
+      expect(loaded).toBeLessThanOrEqual(total);
+      expect(loaded).toBeGreaterThanOrEqual(lastLoaded);
+      progressCalled = true;
+      lastLoaded = loaded;
+    },
+  });
+
+  expect(progressCalled).toBe(true);
+  expect(wllama.isModelLoaded()).toBe(true);
+  await wllama.exit();
 });
 
 test('loads split model files', async () => {

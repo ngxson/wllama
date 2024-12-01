@@ -61,6 +61,28 @@ test('download with abort signal', async () => {
   expect((await manager.getModels()).length).toBe(0);
 });
 
+test('download with progress callback', async () => {
+  const manager = new ModelManager();
+  await manager.clear();
+
+  let progressCalled = false;
+  let lastLoaded = 0;
+  const model = await manager.downloadModel(TINY_MODEL, {
+    progressCallback: ({ loaded, total }) => {
+      expect(loaded).toBeGreaterThan(0);
+      expect(total).toBeGreaterThan(0);
+      expect(loaded).toBeLessThanOrEqual(total);
+      expect(loaded).toBeGreaterThanOrEqual(lastLoaded);
+      progressCalled = true;
+      lastLoaded = loaded;
+    },
+  });
+
+  expect(progressCalled).toBe(true);
+  expect(model).toBeDefined();
+  expect(model.size).toBeGreaterThan(0);
+});
+
 test('model validation status for new model', async () => {
   const manager = new ModelManager();
   const model = new Model(manager, TINY_MODEL);

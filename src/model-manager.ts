@@ -35,13 +35,13 @@ export interface ModelManagerParams {
   logger?: WllamaLogger;
   /**
    * Number of parallel downloads
-   * 
+   *
    * Default: 3
    */
   parallelDownloads?: number;
   /**
    * Allow offline mode
-   * 
+   *
    * Default: false
    */
   allowOffline?: boolean;
@@ -49,7 +49,7 @@ export interface ModelManagerParams {
 
 /**
  * Model class
- * 
+ *
  * One model can have multiple shards, each shard is a GGUF file.
  */
 export class Model {

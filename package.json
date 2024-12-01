@@ -16,7 +16,7 @@
     "build": "npm run clean && npm run build:worker && tsc -p tsconfig.build.json",
     "postbuild": "./scripts/post_build.sh && npm run docs",
     "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts",
-    "upload": "npm run build && npm publish --access public",
+    "upload": "npm run format && npm run build && npm publish --access public",
     "format": "prettier --write .",
     "test": "vitest",
     "test:firefox": "BROWSER=firefox vitest",
