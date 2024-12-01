@@ -6,12 +6,12 @@ const TINY_MODEL =
 const SPLIT_MODEL =
   'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf';
 
-test('parseModelUrl handles single model URL', () => {
+test.sequential('parseModelUrl handles single model URL', () => {
   const urls = ModelManager.parseModelUrl(TINY_MODEL);
   expect(urls).toEqual([TINY_MODEL]);
 });
 
-test('parseModelUrl handles array of URLs', () => {
+test.sequential('parseModelUrl handles array of URLs', () => {
   const urls = ModelManager.parseModelUrl(SPLIT_MODEL);
   expect(urls.length).toBe(3);
   expect(urls[0]).toMatch(/-00001-of-00003\.gguf$/);
@@ -19,7 +19,7 @@ test('parseModelUrl handles array of URLs', () => {
   expect(urls[2]).toMatch(/-00003-of-00003\.gguf$/);
 });
 
-test('download split model', async () => {
+test.sequential('download split model', async () => {
   const manager = new ModelManager();
   const model = await manager.downloadModel(SPLIT_MODEL);
   expect(model.files.length).toBe(3);
@@ -33,22 +33,35 @@ test('download split model', async () => {
   expect(model.files[2].size).toBe(5773312);
 });
 
-test('download invalid model URL', async () => {
+test.sequential(
+  'interrupt download split model (partial files downloaded)',
+  async () => {
+    return; // skip on CI, only run locally with a slow connection
+    const manager = new ModelManager();
+    await manager.clear();
+    const controller = new AbortController();
+    const downloadPromise = manager.downloadModel(SPLIT_MODEL, {
+      signal: controller.signal,
+      progressCallback: ({ loaded, total }) => {
+        const progress = loaded / total;
+        if (progress > 0.8) {
+          controller.abort();
+        }
+      },
+    });
+    await expect(downloadPromise).rejects.toThrow('aborted');
+    expect((await manager.getModels()).length).toBe(0);
+    expect((await manager.getModels({ includeInvalid: true })).length).toBe(1);
+  }
+);
+
+test.sequential('download invalid model URL', async () => {
   const manager = new ModelManager();
   const invalidUrl = 'https://invalid.example.com/model.gguf';
   await expect(manager.downloadModel(invalidUrl)).rejects.toThrow();
 });
 
-test('clear model manager', async () => {
-  const manager = new ModelManager();
-  const model = await manager.downloadModel(TINY_MODEL);
-  expect(model).toBeDefined();
-  expect((await manager.getModels()).length).toBeGreaterThan(0);
-  await manager.clear();
-  expect((await manager.getModels()).length).toBe(0);
-});
-
-test('download with abort signal', async () => {
+test.sequential('download with abort signal', async () => {
   const manager = new ModelManager();
   await manager.clear();
   const controller = new AbortController();
@@ -61,7 +74,7 @@ test('download with abort signal', async () => {
   expect((await manager.getModels()).length).toBe(0);
 });
 
-test('download with progress callback', async () => {
+test.sequential('download with progress callback', async () => {
   const manager = new ModelManager();
   await manager.clear();
 
@@ -83,25 +96,25 @@ test('download with progress callback', async () => {
   expect(model.size).toBeGreaterThan(0);
 });
 
-test('model validation status for new model', async () => {
+test.sequential('model validation status for new model', async () => {
   const manager = new ModelManager();
   const model = new Model(manager, TINY_MODEL);
   const status = await model.validate();
   expect(status).toBe(ModelValidationStatus.INVALID);
 });
 
-test('downloadModel throws on invalid URL', async () => {
+test.sequential('downloadModel throws on invalid URL', async () => {
   const manager = new ModelManager();
   await expect(manager.downloadModel('invalid.txt')).rejects.toThrow();
 });
 
-test('model size calculation', async () => {
+test.sequential('model size calculation', async () => {
   const manager = new ModelManager();
   const model = await manager.downloadModel(TINY_MODEL);
   expect(model.size).toBe(1185376);
 });
 
-test('remove model from cache', async () => {
+test.sequential('remove model from cache', async () => {
   const manager = new ModelManager();
   await manager.clear();
 
@@ -124,4 +137,13 @@ test('remove model from cache', async () => {
   // Cannot see it in list of models
   const models = await manager.getModels();
   expect(models.find((m) => m.url === TINY_MODEL)).toBeUndefined();
+});
+
+test.sequential('clear model manager', async () => {
+  const manager = new ModelManager();
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect(model).toBeDefined();
+  expect((await manager.getModels()).length).toBeGreaterThan(0);
+  await manager.clear();
+  expect((await manager.getModels()).length).toBe(0);
 });

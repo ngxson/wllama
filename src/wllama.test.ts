@@ -14,7 +14,7 @@ const SPLIT_MODEL =
 
 const EMBD_MODEL = TINY_MODEL; // for better speed
 
-test('loads single model file', async () => {
+test.sequential('loads single model file', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
@@ -33,7 +33,7 @@ test('loads single model file', async () => {
   await wllama.exit();
 });
 
-test('loads single model file from HF', async () => {
+test.sequential('loads single model file from HF', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromHF(
@@ -49,7 +49,7 @@ test('loads single model file from HF', async () => {
   await wllama.exit();
 });
 
-test('loads single thread model', async () => {
+test.sequential('loads single thread model', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
@@ -66,7 +66,7 @@ test('loads single thread model', async () => {
   await wllama.exit();
 });
 
-test('loads model with progress callback', async () => {
+test.sequential('loads model with progress callback', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   let progressCalled = false;
@@ -88,7 +88,7 @@ test('loads model with progress callback', async () => {
   await wllama.exit();
 });
 
-test('loads split model files', async () => {
+test.sequential('loads split model files', async () => {
   const wllama = new Wllama(CONFIG_PATHS, {
     parallelDownloads: 5,
   });
@@ -101,7 +101,7 @@ test('loads split model files', async () => {
   await wllama.exit();
 });
 
-test('tokenizes and detokenizes text', async () => {
+test.sequential('tokenizes and detokenizes text', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
@@ -122,7 +122,7 @@ test('tokenizes and detokenizes text', async () => {
   await wllama.exit();
 });
 
-test('generates completion', async () => {
+test.sequential('generates completion', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
@@ -151,7 +151,7 @@ test('generates completion', async () => {
   await wllama.exit();
 });
 
-test('gets logits', async () => {
+test.sequential('gets logits', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
@@ -170,7 +170,7 @@ test('gets logits', async () => {
   await wllama.exit();
 });
 
-test('generates embeddings', async () => {
+test.sequential('generates embeddings', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromUrl(EMBD_MODEL, {
@@ -208,7 +208,7 @@ test('generates embeddings', async () => {
   await wllama.exit();
 });
 
-test('allowOffline', async () => {
+test.sequential('allowOffline', async () => {
   const wllama = new Wllama(CONFIG_PATHS, {
     allowOffline: true,
   });
@@ -224,10 +224,12 @@ test('allowOffline', async () => {
   } catch (e) {
     window.fetch = origFetch;
     throw e;
+  } finally {
+    window.fetch = origFetch;
   }
 });
 
-test('cleans up resources', async () => {
+test.sequential('cleans up resources', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
   await wllama.loadModelFromUrl(TINY_MODEL);
   expect(wllama.isModelLoaded()).toBe(true);

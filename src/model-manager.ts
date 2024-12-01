@@ -118,19 +118,16 @@ export class Model {
    * - The model is deleted from the cache
    * - The model files are missing (or the download is interrupted)
    */
-  async validate(): Promise<ModelValidationStatus> {
-    // TODO: valid number of shards
+  validate(): ModelValidationStatus {
+    const nbShards = ModelManager.parseModelUrl(this.url).length;
     if (this.size === -1) {
       return ModelValidationStatus.DELETED;
     }
-    if (this.size < 16) {
+    if (this.size < 16 || this.files.length !== nbShards) {
       return ModelValidationStatus.INVALID;
     }
     for (const file of this.files) {
-      const metadata = await this.modelManager.cacheManager.getMetadata(
-        file.name
-      );
-      if (!metadata || metadata.originalSize !== file.size) {
+      if (!file.metadata || file.metadata.originalSize !== file.size) {
         return ModelValidationStatus.INVALID;
       }
     }
@@ -259,9 +256,9 @@ export class ModelManager {
   /**
    * Get all models in the cache
    */
-  async getModels(): Promise<Model[]> {
+  async getModels(opts: { includeInvalid?: boolean } = {}): Promise<Model[]> {
     const cachedFiles = await this.cacheManager.list();
-    const models: Model[] = [];
+    let models: Model[] = [];
     for (const file of cachedFiles) {
       const shards = ModelManager.parseModelUrl(file.metadata.originalURL);
       const isFirstShard =
@@ -269,6 +266,11 @@ export class ModelManager {
       if (isFirstShard) {
         models.push(new Model(this, file.metadata.originalURL, cachedFiles));
       }
+    }
+    if (!opts.includeInvalid) {
+      models = models.filter(
+        (m) => m.validate() === ModelValidationStatus.VALID
+      );
     }
     return models;
   }
