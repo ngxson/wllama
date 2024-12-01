@@ -162,7 +162,7 @@ test('gets logits', async () => {
 
 test('generates embeddings', async () => {
   const wllama = new Wllama(CONFIG_PATHS, {
-    logger: LoggerWithoutDebug, 
+    logger: LoggerWithoutDebug,
   });
 
   await wllama.loadModelFromUrl(EMBD_MODEL, {
@@ -190,7 +190,10 @@ test('generates embeddings', async () => {
 
   // slightly different text should have different embedding
   const embedding2 = await wllama.createEmbedding(text + ' ');
-  const cosineDist = embedding.reduce((acc, v, i) => acc + v * embedding2[i], 0);
+  const cosineDist = embedding.reduce(
+    (acc, v, i) => acc + v * embedding2[i],
+    0
+  );
   expect(cosineDist).toBeGreaterThan(1 - 0.05);
   expect(cosineDist).toBeLessThan(1);
 

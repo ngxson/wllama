@@ -10,6 +10,9 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
+> [!IMPORTANT]  
+> Version 2.0 is released 👉 [read more](./guides/intro-v2.md)
+
 ![](./assets/screenshot_0.png)
 
 ## Features

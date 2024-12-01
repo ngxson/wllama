@@ -4,6 +4,8 @@ const SAFARI = process.env.BROWSER === 'safari';
 
 export default defineConfig({
   test: {
+    exclude: ['**/node_modules/**', '**/esm/**', '**/docs/**', '**/examples/**'],
+    include: ['**/src/*.test.*'],
     browser: {
       enabled: true,
       name: process.env.BROWSER ?? 'chromium',
