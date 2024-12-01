@@ -48,7 +48,15 @@ Install it:
 npm i @wllama/wllama
 ```
 
-For complete code, see [examples/reactjs](./examples/reactjs)
+Then, import the module:
+
+```ts
+import { Wllama } from '@wllama/wllama';
+let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, ...);
+// (the rest is the same with earlier example)
+```
+
+For complete code example, see [examples/main/utils/wllama.context.tsx](./examples/main/utils/wllama.context.tsx)
 
 NOTE: this example only covers completions usage. For embeddings, please see [examples/embeddings/index.html](./examples/embeddings/index.html)
 
