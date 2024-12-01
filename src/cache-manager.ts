@@ -5,8 +5,19 @@ import { OPFS_UTILS_WORKER_CODE } from './workers-code/generated';
 const PREFIX_METADATA = '__metadata__';
 
 export type DownloadOptions = {
+  /**
+   * Callback function to track download progress
+   */
   progressCallback?: DownloadProgressCallback;
-} & Pick<RequestInit, 'headers' | 'signal'>;
+  /**
+   * Custom headers for the request. Useful for authentication (e.g. Bearer token)
+   */
+  headers?: Record<string, string>;
+  /**
+   * Abort signal for the request
+   */
+  signal?: AbortSignal;
+};
 
 // To prevent breaking change, we fill etag with a pre-defined value
 export const POLYFILL_ETAG = 'polyfill_for_older_version';

@@ -4,24 +4,54 @@ import { WllamaError, WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
 
+/**
+ * Callback function to track download progress
+ */
 export type DownloadProgressCallback = (opts: {
+  /**
+   * Number of bytes loaded (sum of all shards)
+   */
   loaded: number;
+  /**
+   * Total number of bytes (sum of all shards)
+   */
   total: number;
 }) => any;
 
+/**
+ * Status of the model validation
+ */
 export enum ModelValidationStatus {
   VALID = 'valid',
   INVALID = 'invalid',
   DELETED = 'deleted',
 }
 
+/**
+ * Parameters for ModelManager constructor
+ */
 export interface ModelManagerParams {
   cacheManager?: CacheManager;
   logger?: WllamaLogger;
+  /**
+   * Number of parallel downloads
+   * 
+   * Default: 3
+   */
   parallelDownloads?: number;
+  /**
+   * Allow offline mode
+   * 
+   * Default: false
+   */
   allowOffline?: boolean;
 }
 
+/**
+ * Model class
+ * 
+ * One model can have multiple shards, each shard is a GGUF file.
+ */
 export class Model {
   private modelManager: ModelManager;
   constructor(
@@ -54,7 +84,7 @@ export class Model {
    */
   size: number;
   /**
-   * This of all GGUF files
+   * List of all shards in the cache, sorted by original URL (ascending order)
    */
   files: CacheEntry[];
   /**
