@@ -38,6 +38,10 @@ await model.remove();
 const blobs = await model.open();
 const wllama = new Wllama(CONFIG_PATHS);
 await wllama.loadModel(blobs);
+
+// Alternatively, you can also pass directly model URL like in v1.x
+// This will automatically download the model to cache
+await wllama.loadModelFromUrl('https://example.com/model.gguf');
 ```
 
 Key features of `ModelManager`:
@@ -94,3 +98,9 @@ const wllama = new Wllama(CONFIG_PATHS, {
 As mentioned earlier, some options are moved to `Wllama` constructor, including:
 - `parallelDownloads`
 - `allowOffline`
+
+### Other changes
+
+- `Wllama.downloadModel` is removed. Please use `ModelManager.downloadModel` instead
+- Added `CacheManager.download` function. You may need to implement it if you're using your own implementation of `CacheManager`
+- `loadModelFromUrl` won't check if cached model is up-to-date. You may need to manually call `Model.refresh()` to re-download the model.

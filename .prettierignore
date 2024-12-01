@@ -20,6 +20,7 @@
 
 /src/multi-thread
 /src/single-thread
+/src/workers-code/generated.ts
 
 *.md
 *.mdx

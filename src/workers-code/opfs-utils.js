@@ -104,15 +104,6 @@ onmessage = async (e) => {
         ''
       );
       const total = parseInt(contentLength, 10);
-      // make sure this is in-sync with CacheEntryMetadata
-      await writeTextFile(
-        metadataFileName,
-        JSON.stringify({
-          originalURL: url,
-          originalSize: total,
-          etag,
-        })
-      );
       const reader = response.body.getReader();
       await openFile(filename);
       let loaded = 0;
@@ -126,6 +117,15 @@ onmessage = async (e) => {
       }
       resProgress(total, total); // 100% done
       await closeFile();
+      // make sure this is in-sync with CacheEntryMetadata
+      await writeTextFile(
+        metadataFileName,
+        JSON.stringify({
+          originalURL: url,
+          originalSize: total,
+          etag,
+        })
+      );
       return resOK();
     } else if (action === 'download-abort') {
       if (abortController) {

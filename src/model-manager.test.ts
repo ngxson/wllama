@@ -58,6 +58,7 @@ test('download with abort signal', async () => {
   setTimeout(() => controller.abort(), 10);
   await downloadPromise.catch(console.error);
   await expect(downloadPromise).rejects.toThrow('aborted');
+  expect((await manager.getModels()).length).toBe(0);
 });
 
 test('model validation status for new model', async () => {

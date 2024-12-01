@@ -1,5 +1,5 @@
 import { DownloadProgressCallback } from './model-manager';
-import { createWorker, isSafari, isSafariMobile } from './utils';
+import { createWorker, isSafariMobile } from './utils';
 import { OPFS_UTILS_WORKER_CODE } from './workers-code/generated';
 
 const PREFIX_METADATA = '__metadata__';
