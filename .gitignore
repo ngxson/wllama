@@ -8,3 +8,5 @@ node_modules
 /esm
 /models
 _tmp
+
+/scripts/_tmp_hf_space
