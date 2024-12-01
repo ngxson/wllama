@@ -37,7 +37,7 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - name: Install
-        run: npm i
+        run: npm ci --include=dev
 
       - name: Install Playwright Dependencies
         run: npx playwright install --with-deps
@@ -62,7 +62,7 @@ jobs:
           node-version: '22'
 
       - name: Install
-        run: npm i
+        run: npm ci --include=dev
 
       - name: Check format
         run: |
