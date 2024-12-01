@@ -21,6 +21,7 @@
 /src/multi-thread
 /src/single-thread
 /src/workers-code/generated.ts
+/src/WasmFromCDN.ts
 
 *.md
 *.mdx

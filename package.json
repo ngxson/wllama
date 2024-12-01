@@ -1,6 +1,6 @@
 {
   "name": "@wllama/wllama",
-  "version": "1.17.1",
+  "version": "2.0.0",
   "description": "Low-level WASM binding for llama.cpp",
   "main": "index.js",
   "type": "module",
@@ -48,7 +48,7 @@
     "mime-types": "^2.1.35",
     "playwright": "^1.49.0",
     "prettier": "^3.3.3",
-    "typedoc": "^0.25.12",
+    "typedoc": "^0.27.2",
     "typescript": "^5.4.2",
     "webdriverio": "^9.4.1"
   },

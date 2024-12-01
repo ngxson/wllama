@@ -80,6 +80,14 @@ const CONFIG_PATHS = {
 const wllama = new Wllama(CONFIG_PATHS);
 ```
 
+Alternatively, you can use the `*.wasm` files from CDN:
+
+```js
+import WasmFromCDN from '@wllama/wllama/esm/wasm-from-cdn.js';
+const wllama = new Wllama(WasmFromCDN);
+// NOTE: this is not recommended, only use when you can't embed wasm files in your project
+```
+
 In addition to this, the constructor of `Wllama` also accepts second param of type `WllamaConfig`.
 
 NOTE: Most of these parameters are moved from `DownloadModelConfig` which is used by `wllama.loadModelFromUrl`
@@ -102,5 +110,7 @@ As mentioned earlier, some options are moved to `Wllama` constructor, including:
 ### Other changes
 
 - `Wllama.downloadModel` is removed. Please use `ModelManager.downloadModel` instead
-- Added `CacheManager.download` function. You may need to implement it if you're using your own implementation of `CacheManager`
 - `loadModelFromUrl` won't check if cached model is up-to-date. You may need to manually call `Model.refresh()` to re-download the model.
+- Changes in `CacheManager`:
+  - Added `CacheManager.download` function
+  - `CacheManager.open(nameOrURL)` now accepts both file name and original URL. It now returns a `Blob` instead of a `ReadableStream`

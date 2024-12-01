@@ -128,7 +128,7 @@ class CacheManager {
   /**
    * Open a file in cache for reading
    *
-   * @param name The file name returned by `getNameFromURL()` or `list()`
+   * @param nameOrURL The file name returned by `getNameFromURL()` or `list()`, or the original URL of the remote file
    * @returns Blob, or null if file does not exist
    */
   async open(nameOrURL: string): Promise<Blob | null> {

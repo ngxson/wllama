@@ -98,6 +98,14 @@ import { Wllama } from './esm/index.js';
 })();
 ```
 
+Alternatively, you can use the `*.wasm` files from CDN:
+
+```js
+import WasmFromCDN from '@wllama/wllama/esm/wasm-from-cdn.js';
+const wllama = new Wllama(WasmFromCDN);
+// NOTE: this is not recommended, only use when you can't embed wasm files in your project
+```
+
 ### Split model
 
 Cases where we want to split the model:
