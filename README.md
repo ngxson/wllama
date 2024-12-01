@@ -35,8 +35,8 @@ Limitations:
 
 Demo:
 - Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/
-- Advanced example using low-level API: https://github.ngxson.com/wllama/examples/advanced/
 - Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/
+- For more advanced example using low-level API, have a look at test file: [wllama.test.ts](./src/wllama.test.ts)
 
 ## How to use
 
@@ -124,12 +124,10 @@ This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf
 You can then pass to `loadModelFromUrl` the URL of the first file and it will automatically load all the chunks:
 
 ```js
-await wllama.loadModelFromUrl(
-  'https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf',
-  {
-    parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
-  },
-);
+const wllama = new Wllama(CONFIG_PATHS, {
+  parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
+});
+await wllama.loadModelFromUrl('https://huggingface.co/ngxson/tinyllama_split_test/resolve/main/stories15M-q8_0-00001-of-00003.gguf');
 ```
 
 ### Custom logger (suppress debug messages)
@@ -189,11 +187,7 @@ npm run build
 
 ## TODO
 
-Short term:
-- Add a more pratical embedding example (using a better model)
-- Maybe doing a full RAG-in-browser example using tinyllama?
-
-Long term:
+- Add support for LoRA adapter
 - Support GPU inference via WebGL
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
 - Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp
