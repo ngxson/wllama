@@ -287,7 +287,7 @@ export class ModelManager {
       );
     }
     const model = new Model(this, url, undefined);
-    const validity = await model.validate();
+    const validity = model.validate();
     if (validity !== ModelValidationStatus.VALID) {
       await model.refresh(options);
     }

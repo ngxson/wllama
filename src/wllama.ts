@@ -6,7 +6,7 @@ import {
   isString,
   isSupportMultiThread,
   joinBuffers,
-  maybeSortFileByName,
+  sortFileByShard,
   padDigits,
 } from './utils';
 import CacheManager, { DownloadOptions } from './cache-manager';
@@ -438,7 +438,7 @@ export class Wllama {
         'load_error'
       );
     }
-    maybeSortFileByName(blobs);
+    sortFileByShard(blobs);
     const hasMultipleBuffers = blobs.length > 1;
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
