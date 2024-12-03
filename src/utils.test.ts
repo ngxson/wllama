@@ -7,6 +7,9 @@ import {
   isString,
   delay,
   absoluteUrl,
+  parseShardNumber,
+  parseModelUrl,
+  sortFileByShard,
 } from './utils';
 
 describe('joinBuffers', () => {
@@ -72,5 +75,80 @@ describe('absoluteUrl', () => {
 
     expect(absoluteUrl('test.html')).toBe('http://example.com/app/test.html');
     expect(absoluteUrl('/test.html')).toBe('http://example.com/test.html');
+  });
+});
+
+describe('shard processing', () => {
+  test('parseShardNumber extracts correct info', () => {
+    expect(parseShardNumber('abcdef-123456-00001-of-00005.gguf')).toEqual({
+      baseURL: 'abcdef-123456',
+      current: 1,
+      total: 5,
+    });
+
+    expect(parseShardNumber('abcdef-123456.9090-q8_0.gguf')).toEqual({
+      baseURL: 'abcdef-123456.9090-q8_0.gguf',
+      current: 1,
+      total: 1,
+    });
+  });
+
+  test('parseModelUrl generates correct shard URLs', () => {
+    const singleFile = 'model.gguf';
+    expect(parseModelUrl(singleFile)).toEqual(['model.gguf']);
+
+    const shardedFile = 'model-00001-of-00003.gguf';
+    expect(parseModelUrl(shardedFile)).toEqual([
+      'model-00001-of-00003.gguf',
+      'model-00002-of-00003.gguf',
+      'model-00003-of-00003.gguf',
+    ]);
+
+    const complexPath = 'https://example.com/models/llama-00001-of-00002.gguf';
+    expect(parseModelUrl(complexPath)).toEqual([
+      'https://example.com/models/llama-00001-of-00002.gguf',
+      'https://example.com/models/llama-00002-of-00002.gguf',
+    ]);
+  });
+
+  test('sortFileByShard sorts files by shard number', () => {
+    const files = [
+      new File(
+        [],
+        'e2fc714c4727ee9395f324cd2e7f331f-model-00003-of-00005.gguf'
+      ),
+      new File(
+        [],
+        '187ef4436122d1cc2f40dc2b92f0eba0-model-00001-of-00005.gguf'
+      ),
+      new File(
+        [],
+        'c4357687ea2b461cb07cf0a0a3de939f-model-00002-of-00005.gguf'
+      ),
+      new File(
+        [],
+        '6a4d40512eabd63221cbdf3df4636cd7-model-00005-of-00005.gguf'
+      ),
+      new File(
+        [],
+        '0952e4c6ba320f5278605eb5333eec0f-model-00004-of-00005.gguf'
+      ),
+    ];
+
+    sortFileByShard(files);
+
+    expect(files.map((f) => parseShardNumber(f.name).current)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+
+    // Single file should not be affected
+    const singleFile = [new File([], 'model.gguf')];
+    sortFileByShard(singleFile);
+    expect(singleFile[0].name).toBe('model.gguf');
+
+    // Regular blobs should not be affected
+    const blobs = [new Blob(), new Blob()];
+    sortFileByShard(blobs);
+    expect(blobs.length).toBe(2);
   });
 });

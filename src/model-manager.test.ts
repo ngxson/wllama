@@ -8,7 +8,8 @@ const SPLIT_MODEL =
 
 test.sequential('parseModelUrl handles single model URL', () => {
   const urls = ModelManager.parseModelUrl(TINY_MODEL);
-  expect(urls).toEqual([TINY_MODEL]);
+  expect(urls.length).toBe(1);
+  expect(urls[0]).toBe(TINY_MODEL);
 });
 
 test.sequential('parseModelUrl handles array of URLs', () => {
@@ -33,27 +34,36 @@ test.sequential('download split model', async () => {
   expect(model.files[2].size).toBe(5773312);
 });
 
-test.sequential(
-  'interrupt download split model (partial files downloaded)',
-  async () => {
-    return; // skip on CI, only run locally with a slow connection
-    const manager = new ModelManager();
-    await manager.clear();
-    const controller = new AbortController();
-    const downloadPromise = manager.downloadModel(SPLIT_MODEL, {
-      signal: controller.signal,
-      progressCallback: ({ loaded, total }) => {
-        const progress = loaded / total;
-        if (progress > 0.8) {
-          controller.abort();
-        }
-      },
-    });
-    await expect(downloadPromise).rejects.toThrow('aborted');
-    expect((await manager.getModels()).length).toBe(0);
-    expect((await manager.getModels({ includeInvalid: true })).length).toBe(1);
-  }
-);
+test.sequential('get downloaded split model', async () => {
+  const manager = new ModelManager();
+  const models = await manager.getModels();
+  const model = models.find((m) => m.url === SPLIT_MODEL);
+  expect(model).toBeDefined();
+  if (!model) throw new Error();
+  // check names
+  expect(model.files[0].metadata.originalURL).toMatch(/-00001-of-00003\.gguf$/);
+  expect(model.files[1].metadata.originalURL).toMatch(/-00002-of-00003\.gguf$/);
+  expect(model.files[2].metadata.originalURL).toMatch(/-00003-of-00003\.gguf$/);
+});
+
+// skip on CI, only run locally with a slow connection
+test.skip('interrupt download split model (partial files downloaded)', async () => {
+  const manager = new ModelManager();
+  await manager.clear();
+  const controller = new AbortController();
+  const downloadPromise = manager.downloadModel(SPLIT_MODEL, {
+    signal: controller.signal,
+    progressCallback: ({ loaded, total }) => {
+      const progress = loaded / total;
+      if (progress > 0.8) {
+        controller.abort();
+      }
+    },
+  });
+  await expect(downloadPromise).rejects.toThrow('aborted');
+  expect((await manager.getModels()).length).toBe(0);
+  expect((await manager.getModels({ includeInvalid: true })).length).toBe(1);
+});
 
 test.sequential('download invalid model URL', async () => {
   const manager = new ModelManager();

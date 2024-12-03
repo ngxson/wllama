@@ -46,14 +46,68 @@ export const getWModuleConfig = (pathConfig: {
   };
 };
 
+export interface ShardInfo {
+  baseURL: string;
+  current: number;
+  total: number;
+}
+
+const URL_PARTS_REGEX = /-(\d{5})-of-(\d{5})\.gguf$/;
+
 /**
- * Check if the given blobs are files or not, then sort them by name
+ * Parse shard number and total from a file name or URL
  */
-export const maybeSortFileByName = (blobs: Blob[]): void => {
+export const parseShardNumber = (fnameOrUrl: string): ShardInfo => {
+  const matches = fnameOrUrl.match(URL_PARTS_REGEX);
+  if (!matches) {
+    return {
+      baseURL: fnameOrUrl,
+      current: 1,
+      total: 1,
+    };
+  } else {
+    return {
+      baseURL: fnameOrUrl.replace(URL_PARTS_REGEX, ''),
+      current: parseInt(matches[1]),
+      total: parseInt(matches[2]),
+    };
+  }
+};
+
+/**
+ * Parses a model URL and returns an array of URLs based on the following patterns:
+ * - If the input URL is an array, it returns the array itself.
+ * - If the input URL is a string in the `gguf-split` format, it returns an array containing the URL of each shard in ascending order.
+ * - Otherwise, it returns an array containing the input URL as a single element array.
+ * @param modelUrl URL or list of URLs
+ */
+export const parseModelUrl = (modelUrl: string): string[] => {
+  const { baseURL, current, total } = parseShardNumber(modelUrl);
+  if (current == total && total == 1) {
+    return [modelUrl];
+  } else {
+    const paddedShardIds = Array.from({ length: total }, (_, index) =>
+      (index + 1).toString().padStart(5, '0')
+    );
+    return paddedShardIds.map(
+      (current) =>
+        `${baseURL}-${current}-of-${total.toString().padStart(5, '0')}.gguf`
+    );
+  }
+};
+
+/**
+ * Check if the given blobs are files or not, then sort them by shard number
+ */
+export const sortFileByShard = (blobs: Blob[]): void => {
   const isFiles = blobs.every((b) => !!(b as File).name);
-  if (isFiles) {
+  if (isFiles && blobs.length > 1) {
     const files = blobs as File[];
-    files.sort((a, b) => a.name.localeCompare(b.name));
+    files.sort((a, b) => {
+      const infoA = parseShardNumber(a.name);
+      const infoB = parseShardNumber(b.name);
+      return infoA.current - infoB.current;
+    });
   }
 };
 
