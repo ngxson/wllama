@@ -234,17 +234,13 @@ export class ModelManager {
     if (Array.isArray(modelUrl)) {
       return modelUrl;
     }
-    const urlPartsRegex =
-      /(?<baseURL>.*)-(?<current>\d{5})-of-(?<total>\d{5})\.gguf$/;
+    const urlPartsRegex = /-(\d{5})-of-(\d{5})\.gguf$/;
     const matches = modelUrl.match(urlPartsRegex);
-    if (
-      !matches ||
-      !matches.groups ||
-      Object.keys(matches.groups).length !== 3
-    ) {
+    if (!matches) {
       return [modelUrl];
     }
-    const { baseURL, total } = matches.groups;
+    const baseURL = modelUrl.replace(urlPartsRegex, '');
+    const total = matches[2];
     const paddedShardIds = Array.from({ length: Number(total) }, (_, index) =>
       (index + 1).toString().padStart(5, '0')
     );

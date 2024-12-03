@@ -15,7 +15,7 @@ const textDecoder = new TextDecoder();
  * @param buffer
  * @returns a string
  */
-export const bufToText = (buffer: ArrayBuffer): string => {
+export const bufToText = (buffer: ArrayBuffer | Uint8Array): string => {
   return textDecoder.decode(buffer);
 };
 

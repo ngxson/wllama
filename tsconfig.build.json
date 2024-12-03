@@ -20,7 +20,7 @@
     "experimentalDecorators": true,
 
     "noEmit": false,
-    "module": "es2020",
+    "module": "es2015",
     "outDir": "esm",
     "rootDir": "./src",
     "baseUrl": ".",

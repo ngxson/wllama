@@ -190,6 +190,7 @@ export class ProxyToWorker {
           args: [fileId, value, offset],
           callbackId: this.taskId++,
         },
+        // @ts-ignore Type 'ArrayBufferLike' is not assignable to type 'ArrayBuffer'
         [value.buffer]
       );
       offset += size;

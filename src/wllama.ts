@@ -623,6 +623,7 @@ export class Wllama {
       if (stopTokens.includes(sampled.token)) {
         break; // stop token
       }
+      // @ts-ignore Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'Uint8Array<ArrayBuffer>'
       outBuf = joinBuffers([outBuf, sampled.piece]);
       if (options.onNewToken) {
         options.onNewToken(sampled.token, sampled.piece, bufToText(outBuf), {
