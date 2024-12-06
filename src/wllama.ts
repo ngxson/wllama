@@ -55,6 +55,11 @@ export interface WllamaConfig {
   modelManager?: ModelManager;
 }
 
+export interface WllamaChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
 export interface AssetsPathConfig {
   'single-thread/wllama.wasm': string;
   'multi-thread/wllama.wasm'?: string;
@@ -575,6 +580,20 @@ export class Wllama {
   }
 
   /**
+   * Make completion for a given chat messages.
+   * @param messages Chat messages
+   * @param options
+   * @returns Output completion text (only the completion part)
+   */
+  async createChatCompletion(
+    messages: WllamaChatMessage[],
+    options: ChatCompletionOptions
+  ): Promise<string> {
+    const prompt = await this.formatChat(messages, true);
+    return await this.createCompletion(prompt, options);
+  }
+
+  /**
    * Make completion for a given text.
    * @param prompt Input text
    * @param options
@@ -962,7 +981,6 @@ export class Wllama {
    * Load session from file (virtual file system)
    * TODO: add ability to download the file
    * @param filePath
-   *
    */
   async sessionLoad(filePath: string): Promise<void> {
     this.checkModelLoaded();
@@ -976,6 +994,33 @@ export class Wllama {
     }
     const cachedTokens = await this.getCachedTokens();
     this.nCachedTokens = cachedTokens.length;
+  }
+
+  /**
+   * Apply chat template to a list of messages
+   *
+   * @param messages list of messages
+   * @param addAssistant whether to add assistant prompt at the end
+   * @param template (optional) custom template, see llama-server --chat-template argument for more details
+   * @returns formatted chat
+   */
+  async formatChat(
+    messages: WllamaChatMessage[],
+    addAssistant: boolean,
+    template?: string
+  ): Promise<string> {
+    this.checkModelLoaded();
+    const result = await this.proxy.wllamaAction('chat_format', {
+      messages: messages,
+      tmpl: template,
+      add_ass: addAssistant,
+    });
+    if (result.error) {
+      throw new WllamaError(result.error);
+    } else if (!result.success) {
+      throw new WllamaError('formatChat unknown error');
+    }
+    return result.formatted_chat;
   }
 
   /**
