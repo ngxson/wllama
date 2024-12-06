@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { Wllama } from './wllama';
+import { Wllama, WllamaChatMessage } from './wllama';
 
 const CONFIG_PATHS = {
   'single-thread/wllama.wasm': '/src/single-thread/wllama.wasm',
@@ -227,6 +227,72 @@ test.sequential('allowOffline', async () => {
   } finally {
     window.fetch = origFetch;
   }
+});
+
+test.sequential('formatChat', async () => {
+  const wllama = new Wllama(CONFIG_PATHS, {
+    allowOffline: true,
+  });
+
+  await wllama.loadModelFromUrl(TINY_MODEL);
+  expect(wllama.isModelLoaded()).toBe(true);
+  const messages: WllamaChatMessage[] = [
+    { role: 'system', content: 'You are helpful.' },
+    { role: 'user', content: 'Hi!' },
+    { role: 'assistant', content: 'Hello!' },
+    { role: 'user', content: 'How are you?' },
+  ];
+
+  const formatted = await wllama.formatChat(messages, false);
+  expect(formatted).toBe(
+    '<|im_start|>system\nYou are helpful.<|im_end|>\n<|im_start|>user\nHi!<|im_end|>\n<|im_start|>assistant\nHello!<|im_end|>\n<|im_start|>user\nHow are you?<|im_end|>\n'
+  );
+
+  const formatted1 = await wllama.formatChat(messages, true);
+  expect(formatted1).toBe(
+    '<|im_start|>system\nYou are helpful.<|im_end|>\n<|im_start|>user\nHi!<|im_end|>\n<|im_start|>assistant\nHello!<|im_end|>\n<|im_start|>user\nHow are you?<|im_end|>\n<|im_start|>assistant\n'
+  );
+
+  const formatted2 = await wllama.formatChat(messages, true, 'zephyr');
+  expect(formatted2).toBe(
+    '<|system|>\nYou are helpful.<|endoftext|>\n<|user|>\nHi!<|endoftext|>\n<|assistant|>\nHello!<|endoftext|>\n<|user|>\nHow are you?<|endoftext|>\n<|assistant|>\n'
+  );
+
+  await wllama.exit();
+});
+
+test.sequential('generates chat completion', async () => {
+  const wllama = new Wllama(CONFIG_PATHS);
+
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 1024,
+  });
+
+  const config = {
+    seed: 42,
+    temp: 0.0,
+    top_p: 0.95,
+    top_k: 40,
+  };
+
+  await wllama.samplingInit(config);
+
+  const messages: WllamaChatMessage[] = [
+    { role: 'system', content: 'You are helpful.' },
+    { role: 'user', content: 'Hi!' },
+    { role: 'assistant', content: 'Hello!' },
+    { role: 'user', content: 'How are you?' },
+  ];
+  const completion = await wllama.createChatCompletion(messages, {
+    nPredict: 10,
+    sampling: config,
+  });
+
+  expect(completion).toBeDefined();
+  expect(completion).toMatch(/(Sudden|big|scary)+/);
+  expect(completion.length).toBeGreaterThan(10);
+
+  await wllama.exit();
 });
 
 test.sequential('cleans up resources', async () => {

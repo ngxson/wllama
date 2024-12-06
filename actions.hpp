@@ -339,7 +339,7 @@ json action_sampling_init(app_t &app, json &body)
     {
       llama_token token = item["token"];
       float bias = item["bias"];
-      sparams.logit_bias.push_back({ token, bias });
+      sparams.logit_bias.push_back({token, bias});
     }
   }
   // maybe free before creating a new one
@@ -363,7 +363,7 @@ json action_sampling_init(app_t &app, json &body)
 json action_get_vocab(app_t &app, json &body)
 {
   int32_t max_tokens = llama_n_vocab(app.model);
-  std::vector<std::vector<unsigned int> > vocab(max_tokens);
+  std::vector<std::vector<unsigned int>> vocab(max_tokens);
   for (int32_t id = 0; id < max_tokens; id++)
   {
     std::string token_as_str = common_token_to_piece(app.ctx, id);
@@ -429,8 +429,8 @@ json action_decode(app_t &app, json &body)
 {
   std::vector<llama_token> tokens_list = body["tokens"];
   bool skip_logits = body.contains("skip_logits")
-    ? body.at("skip_logits").get<bool>()
-    : false;
+                         ? body.at("skip_logits").get<bool>()
+                         : false;
   size_t i = 0;
   common_batch_clear(app.batch);
   for (auto id : tokens_list)
@@ -585,6 +585,34 @@ json action_embeddings(app_t &app, json &body)
       {"success", true},
       {"embeddings", embeddings},
   };
+}
+
+// apply chat template
+json action_chat_format(app_t &app, json &body)
+{
+  std::string tmpl = body.contains("tmpl") ? body["tmpl"] : "";
+  bool add_ass = body.contains("add_ass") ? body.at("add_ass").get<bool>() : false;
+  if (!body.contains("messages"))
+  {
+    return json{{"error", "messages is required"}};
+  }
+  std::vector<common_chat_msg> chat;
+  for (auto &item : body["messages"])
+  {
+    chat.push_back({item["role"], item["content"]});
+  }
+  try
+  {
+    std::string formatted_chat = common_chat_apply_template(app.model, tmpl, chat, add_ass);
+    return json{
+        {"success", true},
+        {"formatted_chat", formatted_chat},
+    };
+  }
+  catch (const std::exception &e)
+  {
+    return json{{"error", e.what()}};
+  }
 }
 
 // remove tokens in kv, for context-shifting

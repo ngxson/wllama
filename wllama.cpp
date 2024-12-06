@@ -80,6 +80,7 @@ extern "C" const char *wllama_action(const char *name, const char *body)
     WLLAMA_ACTION(encode);
     WLLAMA_ACTION(get_logits);
     WLLAMA_ACTION(embeddings);
+    WLLAMA_ACTION(chat_format);
     WLLAMA_ACTION(kv_remove);
     WLLAMA_ACTION(kv_clear);
     WLLAMA_ACTION(current_status);
