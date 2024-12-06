@@ -261,6 +261,40 @@ test.sequential('formatChat', async () => {
   await wllama.exit();
 });
 
+test.sequential('generates chat completion', async () => {
+  const wllama = new Wllama(CONFIG_PATHS);
+
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 1024,
+  });
+
+  const config = {
+    seed: 42,
+    temp: 0.0,
+    top_p: 0.95,
+    top_k: 40,
+  };
+
+  await wllama.samplingInit(config);
+
+  const messages: WllamaChatMessage[] = [
+    { role: 'system', content: 'You are helpful.' },
+    { role: 'user', content: 'Hi!' },
+    { role: 'assistant', content: 'Hello!' },
+    { role: 'user', content: 'How are you?' },
+  ];
+  const completion = await wllama.createChatCompletion(messages, {
+    nPredict: 10,
+    sampling: config,
+  });
+
+  expect(completion).toBeDefined();
+  expect(completion).toMatch(/(Sudden|big|scary)+/);
+  expect(completion.length).toBeGreaterThan(10);
+
+  await wllama.exit();
+});
+
 test.sequential('cleans up resources', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
   await wllama.loadModelFromUrl(TINY_MODEL);

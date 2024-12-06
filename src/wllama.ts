@@ -581,6 +581,9 @@ export class Wllama {
 
   /**
    * Make completion for a given chat messages.
+   *
+   * NOTE: this function uses the chat template (if available) to format the chat messages. If the template is not available, it will use the default format (chatml). It can throw an error if the chat template is not compatible.
+   *
    * @param messages Chat messages
    * @param options
    * @returns Output completion text (only the completion part)
