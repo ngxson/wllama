@@ -311,8 +311,6 @@ json action_sampling_init(app_t &app, json &body)
     sparams.penalty_freq = body["penalty_freq"];
   if (body.contains("penalty_present"))
     sparams.penalty_present = body["penalty_present"];
-  if (body.contains("penalize_nl"))
-    sparams.penalize_nl = body["penalize_nl"];
   if (body.contains("dynatemp_range"))
     sparams.dynatemp_range = body["dynatemp_range"];
   if (body.contains("dynatemp_exponent"))
@@ -580,7 +578,7 @@ json action_embeddings(app_t &app, json &body)
       return json{{"error", "failed to get embeddings"}};
     }
   }
-  common_embd_normalize(embd, out, n_embd);
+  common_embd_normalize(embd, out, n_embd, 2);
   return json{
       {"success", true},
       {"embeddings", embeddings},
