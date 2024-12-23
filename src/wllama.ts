@@ -108,7 +108,6 @@ export interface SamplingConfig {
   penalty_repeat?: number;
   penalty_freq?: number;
   penalty_present?: number;
-  penalize_nl?: boolean;
   dynatemp_range?: number;
   dynatemp_exponent?: number;
   grammar?: string;
