@@ -35,9 +35,10 @@ struct app_t
 {
   llama_model *model;
   llama_context *ctx;
+  const llama_vocab *vocab;
   common_sampler *ctx_sampling = nullptr;
   llama_batch batch = llama_batch_init(512, 0, 1);
-  std::vector<llama_token> tokens;
+  llama_tokens tokens;
   int32_t seed = LLAMA_DEFAULT_SEED;
 };
 
@@ -119,7 +120,7 @@ void free_all(app_t &app)
   if (app.ctx != nullptr)
     llama_free(app.ctx);
   if (app.model != nullptr)
-    llama_free_model(app.model);
+    llama_model_free(app.model);
   if (app.ctx_sampling != nullptr)
     common_sampler_free(app.ctx_sampling);
 }
@@ -210,15 +211,16 @@ json action_load(app_t &app, json &body)
     cparams.type_k = kv_cache_type_from_str(body["cache_type_k"]);
   if (body.contains("cache_type_v"))
     cparams.type_k = kv_cache_type_from_str(body["cache_type_v"]);
-  app.model = llama_load_model_from_file(model_path.c_str(), mparams);
+  app.model = llama_model_load_from_file(model_path.c_str(), mparams);
   if (app.model == nullptr)
   {
     free_all(app);
     throw app_exception("Error while loading model");
   }
+  app.vocab = llama_model_get_vocab(app.model);
   for (; cparams.n_ctx > 0; cparams.n_ctx -= 1024)
   {
-    app.ctx = llama_new_context_with_model(app.model, cparams);
+    app.ctx = llama_init_from_model(app.model, cparams);
     if (app.ctx != nullptr)
     {
       break; // OK
@@ -244,23 +246,31 @@ json action_load(app_t &app, json &body)
   auto decoder_start_token = llama_model_decoder_start_token(app.model);
   if (decoder_start_token < 0)
   {
-    decoder_start_token = llama_token_bos(app.model);
+    decoder_start_token = llama_vocab_bos(app.vocab);
+  }
+  int n_vocab = llama_vocab_n_tokens(app.vocab);
+  llama_tokens list_tokens_eog;
+  for (int i = 0; i < n_vocab; i++) {
+    if (llama_vocab_is_eog(app.vocab, i)) {
+      list_tokens_eog.push_back(i);
+    }
   }
   return json{
       {"success", true},
       {"n_ctx", cparams.n_ctx},
       {"n_batch", llama_n_batch(app.ctx)},
       {"n_ubatch", llama_n_ubatch(app.ctx)},
-      {"n_vocab", llama_n_vocab(app.model)},
-      {"n_ctx_train", llama_n_ctx_train(app.model)},
-      {"n_embd", llama_n_embd(app.model)},
-      {"n_layer", llama_n_layer(app.model)},
+      {"n_vocab", n_vocab},
+      {"n_ctx_train", llama_model_n_ctx_train(app.model)},
+      {"n_embd", llama_model_n_embd(app.model)},
+      {"n_layer", llama_model_n_layer(app.model)},
       {"metadata", dump_metadata(app)},
-      {"token_bos", llama_token_bos(app.model)},
-      {"token_eos", llama_token_eos(app.model)},
-      {"token_eot", llama_token_eot(app.model)},
-      {"add_bos_token", llama_add_bos_token(app.model) == 1},
-      {"add_eos_token", llama_add_eos_token(app.model) == 1},
+      {"token_bos", llama_vocab_bos(app.vocab)},
+      {"token_eos", llama_vocab_eos(app.vocab)},
+      {"token_eot", llama_vocab_eot(app.vocab)},
+      {"list_tokens_eog", list_tokens_eog},
+      {"add_bos_token", llama_vocab_get_add_bos(app.vocab) == 1},
+      {"add_eos_token", llama_vocab_get_add_eos(app.vocab) == 1},
       {"has_encoder", llama_model_has_encoder(app.model)},
       {"token_decoder_start", llama_model_decoder_start_token(app.model)},
   };
@@ -348,7 +358,7 @@ json action_sampling_init(app_t &app, json &body)
   app.ctx_sampling = common_sampler_init(app.model, sparams);
   if (body.contains("tokens"))
   {
-    std::vector<llama_token> tokens = body["tokens"];
+    llama_tokens tokens = body["tokens"];
     for (auto id : tokens)
     {
       common_sampler_accept(app.ctx_sampling, id, false);
@@ -360,7 +370,7 @@ json action_sampling_init(app_t &app, json &body)
 // get map token ID to vocab (be careful, it is slow!)
 json action_get_vocab(app_t &app, json &body)
 {
-  int32_t max_tokens = llama_n_vocab(app.model);
+  int32_t max_tokens = llama_vocab_n_tokens(app.vocab);
   std::vector<std::vector<unsigned int>> vocab(max_tokens);
   for (int32_t id = 0; id < max_tokens; id++)
   {
@@ -377,7 +387,7 @@ json action_get_vocab(app_t &app, json &body)
 json action_lookup_token(app_t &app, json &body)
 {
   std::string piece = body["piece"];
-  int32_t max_tokens = llama_n_vocab(app.model);
+  int32_t max_tokens = llama_vocab_n_tokens(app.vocab);
   for (int32_t id = 0; id < max_tokens; id++)
   {
     std::string token_as_str = common_token_to_piece(app.ctx, id);
@@ -398,8 +408,8 @@ json action_tokenize(app_t &app, json &body)
 {
   std::string text = body["text"];
   bool special = body.contains("special");
-  std::vector<llama_token> tokens_list;
-  tokens_list = common_tokenize(app.model, text, false, special);
+  llama_tokens tokens_list;
+  tokens_list = common_tokenize(app.vocab, text, false, special);
   return json{
       {"success", true},
       {"tokens", tokens_list},
@@ -409,7 +419,7 @@ json action_tokenize(app_t &app, json &body)
 // detokenize a list of tokens
 json action_detokenize(app_t &app, json &body)
 {
-  std::vector<llama_token> tokens = body["tokens"];
+  llama_tokens tokens = body["tokens"];
   std::stringstream output;
   for (auto id : tokens)
   {
@@ -425,7 +435,7 @@ json action_detokenize(app_t &app, json &body)
 // decode an array of tokens
 json action_decode(app_t &app, json &body)
 {
-  std::vector<llama_token> tokens_list = body["tokens"];
+  llama_tokens tokens_list = body["tokens"];
   bool skip_logits = body.contains("skip_logits")
                          ? body.at("skip_logits").get<bool>()
                          : false;
@@ -460,7 +470,7 @@ json action_decode(app_t &app, json &body)
 // encode an array of tokens
 json action_encode(app_t &app, json &body)
 {
-  std::vector<llama_token> tokens_list = body["tokens"];
+  llama_tokens tokens_list = body["tokens"];
   if (!llama_model_has_encoder(app.model))
   {
     return json{{"error", "this model does not have an encoder"}};
@@ -501,7 +511,7 @@ json action_sampling_sample(app_t &app, json &body)
 // accept this token
 json action_sampling_accept(app_t &app, json &body)
 {
-  std::vector<llama_token> tokens_list = body["tokens"];
+  llama_tokens tokens_list = body["tokens"];
   for (auto id : tokens_list)
   {
     common_sampler_accept(app.ctx_sampling, id, false);
@@ -515,7 +525,7 @@ json action_get_logits(app_t &app, json &body)
   int top_k = body["top_k"]; // if is -1, we take all logits (will be slow!)
   int32_t idx = app.batch.n_tokens - 1;
   float *logits = llama_get_logits_ith(app.ctx, idx);
-  int32_t n_vocab = llama_n_vocab(app.model);
+  int32_t n_vocab = llama_vocab_n_tokens(app.vocab);
   auto sort_fn = [](llama_token_data &a, llama_token_data &b) -> bool
   {
     return b.logit < a.logit;
@@ -555,9 +565,9 @@ json action_get_logits(app_t &app, json &body)
 // get embeddings, this will call action_decode internally
 json action_embeddings(app_t &app, json &body)
 {
-  std::vector<llama_token> tokens_list = body["tokens"];
+  llama_tokens tokens_list = body["tokens"];
   // allocate output
-  const int n_embd = llama_n_embd(app.model);
+  const int n_embd = llama_model_n_embd(app.model);
   std::vector<float> embeddings(n_embd, 0); // single seq
   float *out = embeddings.data();
   // decode
@@ -645,7 +655,7 @@ json action_kv_clear(app_t &app, json &body)
 json action_session_save(app_t &app, json &body)
 {
   std::string session_path = body["session_path"];
-  std::vector<llama_token> dummy;
+  llama_tokens dummy;
   if (!llama_state_seq_save_file(
           app.ctx,
           session_path.c_str(),
@@ -666,10 +676,10 @@ json action_session_save(app_t &app, json &body)
 json action_session_load(app_t &app, json &body)
 {
   std::string session_path = body["session_path"];
-  std::vector<llama_token> saved_tokens = body["tokens"];
+  llama_tokens saved_tokens = body["tokens"];
   auto n_ctx = llama_n_ctx(app.ctx);
   size_t n_token_count_out = 0;
-  std::vector<llama_token> dummy;
+  llama_tokens dummy;
   if (!llama_state_seq_load_file(
           app.ctx,
           session_path.c_str(),
