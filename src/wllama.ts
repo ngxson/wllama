@@ -170,6 +170,7 @@ export interface LoadedContextInfo {
   token_bos: number;
   token_eos: number;
   token_eot: number;
+  list_tokens_eog: number[];
   has_encoder: boolean;
   token_decoder_start: number;
   add_bos_token: boolean;
@@ -215,6 +216,7 @@ export class Wllama {
   private bosToken: number = -1;
   private eosToken: number = -1;
   private eotToken: number = -1;
+  private eogTokens: Set<number> = new Set();
   private addBosToken: boolean = false;
   private addEosToken: boolean = false;
   private chatTemplate?: string;
@@ -291,6 +293,20 @@ export class Wllama {
    */
   getEOT(): number {
     return this.eotToken;
+  }
+
+  /**
+   * Check if a given token is end-of-generation token (e.g. EOS, EOT, etc.)
+   *
+   * @param token the token ID to be checked
+   * @returns true if the token is EOS, EOT, or any other end-of-generation tokens
+   */
+  isTokenEOG(token: number): boolean {
+    return (
+      token === this.eosToken ||
+      token === this.eotToken ||
+      this.eogTokens.has(token)
+    );
   }
 
   /**
@@ -531,6 +547,7 @@ export class Wllama {
     this.addEosToken = loadResult.add_eos_token;
     this.chatTemplate = loadResult.metadata['tokenizer.chat_template'];
     this.loadedContextInfo = loadResult;
+    this.eogTokens = new Set(loadResult.list_tokens_eog);
     this.logger().debug({ loadResult });
   }
 
@@ -608,11 +625,7 @@ export class Wllama {
     this.checkModelLoaded();
     this.samplingConfig = options.sampling ?? {};
     await this.samplingInit(this.samplingConfig);
-    const stopTokens = [
-      this.eosToken,
-      this.eotToken,
-      ...(options.stopTokens ?? []),
-    ];
+    const stopTokens = new Set(options.stopTokens ?? []);
     // process prompt
     let tokens = await this.tokenize(prompt, true);
     if (this.addBosToken && tokens[0] !== this.bosToken) {
@@ -641,7 +654,7 @@ export class Wllama {
     // predict next tokens
     for (let i = 0; i < (options.nPredict ?? Infinity); i++) {
       const sampled = await this.samplingSample();
-      if (stopTokens.includes(sampled.token)) {
+      if (this.isTokenEOG(sampled.token) || stopTokens.has(sampled.token)) {
         break; // stop token
       }
       // @ts-ignore Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'Uint8Array<ArrayBuffer>'
