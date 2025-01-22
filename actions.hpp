@@ -140,7 +140,7 @@ json dump_metadata(app_t &app)
       continue;
     if (res > buf.size())
     {
-      buf.resize(res);
+      buf.resize(res + 1);
       res = llama_model_meta_val_str_by_index(app.model, i, buf.data(), buf.size());
     }
     val = std::string(buf.data(), res);
@@ -149,7 +149,7 @@ json dump_metadata(app_t &app)
       continue;
     if (res > buf.size())
     {
-      buf.resize(res);
+      buf.resize(res + 1);
       res = llama_model_meta_key_by_index(app.model, i, buf.data(), buf.size());
     }
     key = std::string(buf.data(), res);
