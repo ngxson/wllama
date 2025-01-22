@@ -67,10 +67,16 @@ export default function ChatScreen() {
     if (!loadedModel) {
       throw new Error('loadedModel is null');
     }
-    const formattedChat = await formatChat(getWllamaInstance(), [
-      ...currHistory,
-      userMsg,
-    ]);
+    let formattedChat: string;
+    try {
+      formattedChat = await formatChat(getWllamaInstance(), [
+        ...currHistory,
+        userMsg,
+      ]);
+    } catch (e) {
+      alert(`Error while formatting chat: ${(e as any)?.message ?? 'unknown'}`);
+      throw e;
+    }
     console.log({ formattedChat });
     await createCompletion(formattedChat, (newContent) => {
       editMessageInConversation(convId, assistantMsg.id, newContent);
