@@ -29,7 +29,7 @@ export interface InferenceParams {
 export interface Message {
   id: number;
   content: string;
-  role: 'user' | 'assistant';
+  role: 'system' | 'user' | 'assistant';
 }
 
 export interface Conversation {

@@ -140,7 +140,7 @@ json dump_metadata(app_t &app)
       continue;
     if (res > buf.size())
     {
-      buf.resize(res);
+      buf.resize(res + 1);
       res = llama_model_meta_val_str_by_index(app.model, i, buf.data(), buf.size());
     }
     val = std::string(buf.data(), res);
@@ -149,7 +149,7 @@ json dump_metadata(app_t &app)
       continue;
     if (res > buf.size())
     {
-      buf.resize(res);
+      buf.resize(res + 1);
       res = llama_model_meta_key_by_index(app.model, i, buf.data(), buf.size());
     }
     key = std::string(buf.data(), res);
@@ -250,8 +250,10 @@ json action_load(app_t &app, json &body)
   }
   int n_vocab = llama_vocab_n_tokens(app.vocab);
   llama_tokens list_tokens_eog;
-  for (int i = 0; i < n_vocab; i++) {
-    if (llama_vocab_is_eog(app.vocab, i)) {
+  for (int i = 0; i < n_vocab; i++)
+  {
+    if (llama_vocab_is_eog(app.vocab, i))
+    {
       list_tokens_eog.push_back(i);
     }
   }
@@ -595,34 +597,6 @@ json action_embeddings(app_t &app, json &body)
   };
 }
 
-// apply chat template
-json action_chat_format(app_t &app, json &body)
-{
-  std::string tmpl = body.contains("tmpl") ? body["tmpl"] : "";
-  bool add_ass = body.contains("add_ass") ? body.at("add_ass").get<bool>() : false;
-  if (!body.contains("messages"))
-  {
-    return json{{"error", "messages is required"}};
-  }
-  std::vector<common_chat_msg> chat;
-  for (auto &item : body["messages"])
-  {
-    chat.push_back({item["role"], item["content"]});
-  }
-  try
-  {
-    std::string formatted_chat = common_chat_apply_template(app.model, tmpl, chat, add_ass);
-    return json{
-        {"success", true},
-        {"formatted_chat", formatted_chat},
-    };
-  }
-  catch (const std::exception &e)
-  {
-    return json{{"error", e.what()}};
-  }
-}
-
 // remove tokens in kv, for context-shifting
 json action_kv_remove(app_t &app, json &body)
 {
@@ -708,4 +682,81 @@ json action_current_status(app_t &app, json &body)
       {"success", true},
       {"tokens", app.tokens},
   };
+}
+
+//////////////////////////////////////////
+
+// because we can't support jinja for now, we temporary use an old version of common_chat_apply_template
+// TODO: support jinja
+std::string common_chat_apply_template_old(const struct llama_model *model,
+                                       const std::string &tmpl,
+                                       const std::vector<common_chat_msg> &msgs,
+                                       bool add_ass)
+{
+  int alloc_size = 0;
+  bool fallback = false; // indicate if we must fallback to default chatml
+  std::vector<llama_chat_message> chat;
+  for (const auto &msg : msgs)
+  {
+    chat.push_back({msg.role.c_str(), msg.content.c_str()});
+    alloc_size += (msg.role.size() + msg.content.size()) * 1.25;
+  }
+
+  const char *ptr_tmpl = tmpl.empty() ? llama_model_chat_template(model, nullptr) : tmpl.c_str();
+  std::vector<char> buf(alloc_size);
+
+  // run the first time to get the total output length
+  int32_t res = llama_chat_apply_template(ptr_tmpl, chat.data(), chat.size(), add_ass, buf.data(), buf.size());
+
+  // error: chat template is not supported
+  if (res < 0)
+  {
+    if (ptr_tmpl != nullptr)
+    {
+      throw std::runtime_error("this custom template is not supported");
+    }
+    // If the built-in template is not supported, we default to chatml
+    res = llama_chat_apply_template("chatml", chat.data(), chat.size(), add_ass, buf.data(), buf.size());
+    fallback = true;
+  }
+
+  // if it turns out that our buffer is too small, we resize it
+  if ((size_t)res > buf.size())
+  {
+    buf.resize(res);
+    res = llama_chat_apply_template(
+        fallback ? "chatml" : ptr_tmpl,
+        chat.data(), chat.size(), add_ass, buf.data(), buf.size());
+  }
+
+  std::string formatted_chat(buf.data(), res);
+  return formatted_chat;
+}
+
+// apply chat template
+json action_chat_format(app_t &app, json &body)
+{
+  std::string tmpl = body.contains("tmpl") ? body["tmpl"] : "";
+  bool add_ass = body.contains("add_ass") ? body.at("add_ass").get<bool>() : false;
+  if (!body.contains("messages"))
+  {
+    return json{{"error", "messages is required"}};
+  }
+  std::vector<common_chat_msg> chat;
+  for (auto &item : body["messages"])
+  {
+    chat.push_back({item["role"], item["content"]});
+  }
+  try
+  {
+    std::string formatted_chat = common_chat_apply_template_old(app.model, tmpl, chat, add_ass);
+    return json{
+        {"success", true},
+        {"formatted_chat", formatted_chat},
+    };
+  }
+  catch (const std::exception &e)
+  {
+    return json{{"error", e.what()}};
+  }
 }

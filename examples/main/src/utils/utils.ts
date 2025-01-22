@@ -38,9 +38,26 @@ export const formatChat = async (
   modelWllama: Wllama,
   messages: Message[]
 ): Promise<string> => {
-  const template = new Template(
-    modelWllama.getChatTemplate() ?? DEFAULT_CHAT_TEMPLATE
-  );
+  const templateStr = modelWllama.getChatTemplate() ?? DEFAULT_CHAT_TEMPLATE;
+  // dirty patch for DeepSeek model (crash on @huggingface/jinja)
+  const isDeepSeekR1 =
+    templateStr.match(/<｜Assistant｜>/) &&
+    templateStr.match(/<｜User｜>/) &&
+    templateStr.match(/<\/think>/);
+  if (isDeepSeekR1) {
+    let result = '';
+    for (const message of messages) {
+      if (message.role === 'system') {
+        result += `${message.content}\n\n`;
+      } else if (message.role === 'user') {
+        result += `<｜User｜>${message.content}`;
+      } else {
+        result += `<｜Assistant｜>${message.content.split('</think>').pop()}<｜end▁of▁sentence｜>`;
+      }
+    }
+    return result + '<｜Assistant｜>';
+  }
+  const template = new Template(templateStr);
   const bos_token: string = textDecoder.decode(
     await modelWllama.detokenize([modelWllama.getBOS()])
   );
