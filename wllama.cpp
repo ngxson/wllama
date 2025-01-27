@@ -86,6 +86,8 @@ extern "C" const char *wllama_action(const char *name, const char *body)
     WLLAMA_ACTION(current_status);
     WLLAMA_ACTION(session_save);
     WLLAMA_ACTION(session_load);
+    WLLAMA_ACTION(test_benchmark);
+    WLLAMA_ACTION(test_perplexity);
     result = std::string(res.dump());
     return result.c_str();
   }

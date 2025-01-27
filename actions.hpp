@@ -684,14 +684,137 @@ json action_current_status(app_t &app, json &body)
   };
 }
 
+//
+// benchmark & perplexity
+//
+
+json action_test_benchmark(app_t &app, json &body)
+{
+  std::string type = body.at("type");   // "pp" (prompt proc) or "tg" (tok gen)
+  int n_samples = body.at("n_samples"); // n_batch in pp and n_predict in pg
+
+  llama_kv_cache_clear(app.ctx);
+  int n_vocab = llama_vocab_n_tokens(app.vocab);
+  int64_t t_start = ggml_time_ms();
+
+  if (type == "pp")
+  {
+    llama_batch batch = llama_batch_init(n_samples, 0, 1);
+    for (int i = 0; i < n_samples; i++)
+    {
+      common_batch_add(batch, i % n_vocab, i, {0}, i == n_samples - 1);
+    }
+    int ret = llama_decode(app.ctx, batch);
+    llama_batch_free(batch);
+    if (ret != 0)
+    {
+      return json{{"error", "llama_decode failed with status = " + std::to_string(ret)}};
+    }
+  }
+  else if (type == "tg")
+  {
+    llama_batch batch = llama_batch_init(1, 0, 1);
+    for (int i = 0; i < n_samples; i++)
+    {
+      common_batch_clear(batch);
+      common_batch_add(batch, i % n_vocab, i, {0}, true);
+      int ret = llama_decode(app.ctx, batch);
+      if (ret != 0)
+      {
+        return json{{"error", "llama_decode failed with status = " + std::to_string(ret)}};
+      }
+    }
+    llama_batch_free(batch);
+  }
+  else
+  {
+    return json{{"error", "unknown type: " + type}};
+  }
+
+  int64_t t_end = ggml_time_ms();
+  return json{
+      {"success", true},
+      {"t_ms", t_end - t_start},
+  };
+}
+
+json action_test_perplexity(app_t &app, json &body)
+{
+  llama_tokens input = body["input"];
+  const size_t n = input.size();
+
+  int64_t t_start = ggml_time_ms();
+
+  if (n < 2)
+  {
+    return json{{"error", "Input must contain at least two tokens"}};
+  }
+
+  // Clear existing context to start fresh
+  llama_kv_cache_clear(app.ctx);
+  app.tokens.clear();
+
+  const int32_t n_vocab = llama_vocab_n_tokens(app.vocab);
+  double nll = 0.0;
+
+  static auto log_softmax = [](int n_vocab, const float *logits, int tok) -> double
+  {
+    float max_logit = logits[0];
+    for (int i = 1; i < n_vocab; ++i)
+    {
+      max_logit = std::max(max_logit, logits[i]);
+    }
+    double sum_exp = 0.0;
+    for (int i = 0; i < n_vocab; ++i)
+    {
+      sum_exp += expf(logits[i] - max_logit);
+    }
+    return logits[tok] - max_logit - log(sum_exp);
+  };
+
+  for (size_t i = 0; i < n - 1; ++i)
+  {
+    // Prepare batch with current token (input[i])
+    common_batch_clear(app.batch);
+    common_batch_add(app.batch, input[i], i, {0}, true); // Enable logits for this token
+
+    if (llama_decode(app.ctx, app.batch) != 0)
+    {
+      return json{{"error", "Decoding failed at position " + std::to_string(i)}};
+    }
+
+    float *logits = llama_get_logits_ith(app.ctx, 0);
+
+    // Get true next token (input[i+1])
+    const int32_t true_token = input[i + 1];
+
+    nll += -log_softmax(n_vocab, logits, true_token);
+  }
+
+  // Calculate final metrics
+  const double cross_entropy = nll / (n - 1);
+  const double ppl = std::exp(cross_entropy);
+
+  int64_t t_end = ggml_time_ms();
+
+  return json{
+      {"success", true},
+      {"ppl", ppl},
+      {"nll", nll},
+      {"cross_entropy", cross_entropy},
+      {"n_tokens", n - 1},
+      {"t_ms", t_end - t_start},
+  };
+}
+
 //////////////////////////////////////////
 
 // because we can't support jinja for now, we temporary use an old version of common_chat_apply_template
 // TODO: support jinja
 std::string common_chat_apply_template_old(const struct llama_model *model,
-                                       const std::string &tmpl,
-                                       const std::vector<common_chat_msg> &msgs,
-                                       bool add_ass)
+                                           const std::string &tmpl,
+                                           const std::vector<common_chat_msg> &msgs,
+                                           bool add_ass)
 {
   int alloc_size = 0;
   bool fallback = false; // indicate if we must fallback to default chatml

@@ -210,6 +210,7 @@ export class Wllama {
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
+  private nbThreads: number = 1;
   private useEmbeddings: boolean = false;
   // available when loaded
   private loadedContextInfo: LoadedContextInfo = null as any;
@@ -342,6 +343,18 @@ export class Wllama {
   isMultithread(): boolean {
     this.checkModelLoaded();
     return this.useMultiThread;
+  }
+
+  /**
+   * Get number of threads used in the current context.
+   *
+   * NOTE: This can only being used after `loadModel` is called.
+   *
+   * @returns number of threads
+   */
+  getNumThreads(): number {
+    this.checkModelLoaded();
+    return this.useMultiThread ? this.nbThreads : 1;
   }
 
   /**
@@ -478,6 +491,7 @@ export class Wllama {
     }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
     const nbThreads = config.n_threads ?? hwConccurency;
+    this.nbThreads = nbThreads;
     this.useMultiThread =
       supportMultiThread && hasPathMultiThread && nbThreads > 1;
     const mPathConfig = this.useMultiThread
@@ -1063,6 +1077,25 @@ export class Wllama {
   async _getDebugInfo(): Promise<any> {
     this.checkModelLoaded();
     return await this.proxy.wllamaDebug();
+  }
+
+  /**
+   * benchmark function, only used internally
+   */
+  async _testBenchmark(type: 'tg' | 'pp', nSamples: number): Promise<{t_ms: number}> {
+    this.checkModelLoaded();
+    return await this.proxy.wllamaAction('test_benchmark', {
+      type,
+      n_samples: nSamples,
+    });
+  }
+
+  /**
+   * perplexity function, only used internally
+   */
+  async _testPerplexity(input: number[]): Promise<{ppl: number}> {
+    this.checkModelLoaded();
+    return await this.proxy.wllamaAction('test_perplexity', { input });
   }
 
   ///// Prompt cache utils /////
