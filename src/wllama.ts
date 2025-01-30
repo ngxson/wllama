@@ -1082,7 +1082,10 @@ export class Wllama {
   /**
    * benchmark function, only used internally
    */
-  async _testBenchmark(type: 'tg' | 'pp', nSamples: number): Promise<{t_ms: number}> {
+  async _testBenchmark(
+    type: 'tg' | 'pp',
+    nSamples: number
+  ): Promise<{ t_ms: number }> {
     this.checkModelLoaded();
     return await this.proxy.wllamaAction('test_benchmark', {
       type,
@@ -1093,7 +1096,7 @@ export class Wllama {
   /**
    * perplexity function, only used internally
    */
-  async _testPerplexity(input: number[]): Promise<{ppl: number}> {
+  async _testPerplexity(input: number[]): Promise<{ ppl: number }> {
     this.checkModelLoaded();
     return await this.proxy.wllamaAction('test_perplexity', { input });
   }
