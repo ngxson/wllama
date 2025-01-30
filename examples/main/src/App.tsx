@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar';
 import { MessagesProvider } from './utils/messages.context';
 import { Screen } from './utils/types';
 import { useWllama, WllamaProvider } from './utils/wllama.context';
+import './utils/benchmark';
 
 function App() {
   return (
