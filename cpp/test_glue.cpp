@@ -19,7 +19,8 @@ void test_load_req() {
   req.embeddings.value = false;
   req.pooling_type.value = "mean";
 
-  auto buf = req.handler.serialize();
+  glue_outbuf buf;
+  req.handler.serialize(buf);
   FILE* fp = fopen("dump.bin", "wb");
   fwrite(buf.data.data(), 1, buf.data.size(), fp);
   fclose(fp);
@@ -48,7 +49,8 @@ void test_sampling_init() {
   std::vector<int64_t> tokens = {1, 2, 3, 4, 5};
   req.tokens.arr = tokens;
 
-  auto buf = req.handler.serialize();
+  glue_outbuf buf;
+  req.handler.serialize(buf);
   FILE* fp = fopen("dump2.bin", "wb");
   fwrite(buf.data.data(), 1, buf.data.size(), fp);
   fclose(fp);

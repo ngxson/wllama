@@ -6,8 +6,11 @@
 
 #include <stdlib.h>
 #include <unistd.h>
+
+#ifdef __EMSCRIPTEN__
 #include <malloc.h>
 #include <emscripten/emscripten.h>
+#endif
 
 #include "llama.h"
 #include "json.hpp"
@@ -17,7 +20,8 @@
 #define WLLAMA_ACTION(name)              \
   if (action == #name)                   \
   {                                      \
-    res = action_##name(app, body_json); \
+    auto res = action_##name(app, req_raw); \
+    res.handler.serialize(result); \
   }
 
 static void llama_log_callback_logTee(ggml_log_level level, const char *text, void *user_data)
@@ -39,7 +43,7 @@ static void llama_log_callback_logTee(ggml_log_level level, const char *text, vo
   fprintf(stderr, "%s@@%s", lvl, text);
 }
 
-static std::string result;
+static glue_outbuf result;
 static app_t app;
 
 extern "C" const char *wllama_start()
@@ -49,23 +53,21 @@ extern "C" const char *wllama_start()
     llama_backend_init();
     // std::cerr << llama_print_system_info() << "\n";
     llama_log_set(llama_log_callback_logTee, nullptr);
-    return "{\"success\":true}";
+    return nullptr; // TODO
   }
   catch (std::exception &e)
   {
-    json ex{{"__exception", std::string(e.what())}};
-    result = std::string(ex.dump());
-    return result.c_str();
+    //json ex{{"__exception", std::string(e.what())}};
+    //result = std::string(ex.dump());
+    //return result.c_str();
+    return nullptr; // TODO
   }
 }
 
-extern "C" const char *wllama_action(const char *name, const char *body)
+extern "C" const char *wllama_action(const char *name, const char *req_raw)
 {
   try
   {
-    json res;
-    std::string body_str(body);
-    json body_json = json::parse(body_str);
     std::string action(name);
     WLLAMA_ACTION(load);
     WLLAMA_ACTION(set_options);
@@ -84,18 +86,18 @@ extern "C" const char *wllama_action(const char *name, const char *body)
     WLLAMA_ACTION(kv_remove);
     WLLAMA_ACTION(kv_clear);
     WLLAMA_ACTION(current_status);
-    WLLAMA_ACTION(session_save);
-    WLLAMA_ACTION(session_load);
+    // WLLAMA_ACTION(session_save);
+    // WLLAMA_ACTION(session_load);
     WLLAMA_ACTION(test_benchmark);
     WLLAMA_ACTION(test_perplexity);
-    result = std::string(res.dump());
-    return result.c_str();
+    return result.data.data();
   }
   catch (std::exception &e)
   {
-    json ex{{"__exception", std::string(e.what())}};
-    result = std::string(ex.dump());
-    return result.c_str();
+    // json ex{{"__exception", std::string(e.what())}};
+    // result = std::string(ex.dump());
+    // return result.c_str();
+    return nullptr;
   }
 }
 
@@ -109,9 +111,10 @@ extern "C" const char *wllama_exit()
   }
   catch (std::exception &e)
   {
-    json ex{{"__exception", std::string(e.what())}};
-    result = std::string(ex.dump());
-    return result.c_str();
+    //json ex{{"__exception", std::string(e.what())}};
+    //result = std::string(ex.dump());
+    //return result.c_str();
+    return nullptr;
   }
 }
 
@@ -119,22 +122,31 @@ extern "C" const char *wllama_debug()
 {
   auto get_mem_total = [&]()
   {
+#ifdef __EMSCRIPTEN__
     return EM_ASM_INT(return HEAP8.length);
+#else
+    return 0;
+#endif
   };
   auto get_mem_free = [&]()
   {
+#ifdef __EMSCRIPTEN__
     auto i = mallinfo();
     unsigned int total_mem = get_mem_total();
     unsigned int dynamic_top = (unsigned int)sbrk(0);
     return total_mem - dynamic_top + i.fordblks;
+#else
+    return 0;
+#endif
   };
-  json res = json{
+  /*json res = json{
       {"mem_total_MB", get_mem_total() / 1024 / 1024},
       {"mem_free_MB", get_mem_free() / 1024 / 1024},
       {"mem_used_MB", (get_mem_total() - get_mem_free()) / 1024 / 1024},
   };
   result = std::string(res.dump());
-  return result.c_str();
+  return result.c_str();*/
+  return nullptr;
 }
 
 int main()

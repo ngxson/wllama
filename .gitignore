@@ -2,6 +2,7 @@ node_modules
 .DS_Store
 .vscode
 /cache
+/build
 /docs
 /dist
 /wasm

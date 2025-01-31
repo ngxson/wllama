@@ -1,3 +1,4 @@
+#pragma once
 /**
  * Simple serializer / deserializer inspired by protobuf
  *
@@ -83,6 +84,10 @@ struct glue_outbuf
     GLUE_DEBUG(" << offset = 0x%02zx\n", data.size());
     data.insert(data.end(), (char *)&val, (char *)&val + BITS_TO_BYTES(32));
   }
+  void clear() {
+    data.clear();
+    data.reserve(1024);
+  }
 };
 
 struct glue_inbuf
@@ -137,20 +142,25 @@ struct glue_inbuf
     uint32_t size = read_u32();
     out = read_str(size);
   }
+  void read(std::vector<char> &out)
+  {
+    uint32_t size = read_u32();
+    out = read_raw(size);
+  }
 };
 
 struct glue_type_base;
-struct glue_msg_handler
+struct glue_handler
 {
   const char *name = nullptr;
   std::vector<glue_type_base *> fields;
 
-  glue_msg_handler(const char *name) : name(name) {}
+  glue_handler(const char *name) : name(name) {}
   void register_field(glue_type_base *field)
   {
     fields.push_back(field);
   };
-  glue_outbuf serialize();
+  void serialize(glue_outbuf &output);
   void deserialize(glue_inbuf &input);
 };
 
@@ -158,10 +168,10 @@ struct glue_type_base
 {
   const char *name = nullptr;
   glue_dtype dtype = GLUE_DTYPE_NULL;
-  glue_msg_handler handler;
+  glue_handler handler;
 
   glue_type_base() = delete;
-  glue_type_base(const char *name, glue_msg_handler &handler, glue_dtype dtype) : name(name), handler(handler), dtype(dtype)
+  glue_type_base(const char *name, glue_handler &handler, glue_dtype dtype) : name(name), handler(handler), dtype(dtype)
   {
     handler.register_field(this);
   }
@@ -184,7 +194,7 @@ struct glue_bool : glue_type_base
 {
   bool value = false;
 
-  glue_bool(const char *name, glue_msg_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_BOOL) {}
+  glue_bool(const char *name, glue_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_BOOL) {}
   void parse(glue_inbuf &input)
   {
     if (parse_type(input))
@@ -204,7 +214,7 @@ struct glue_int : glue_type_base
 {
   int64_t value = 0;
 
-  glue_int(const char *name, glue_msg_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_INT) {}
+  glue_int(const char *name, glue_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_INT) {}
   void parse(glue_inbuf &input)
   {
     if (parse_type(input))
@@ -224,7 +234,7 @@ struct glue_float : glue_type_base
 {
   float value = 0.0f;
 
-  glue_float(const char *name, glue_msg_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_FLOAT) {}
+  glue_float(const char *name, glue_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_FLOAT) {}
   void parse(glue_inbuf &input)
   {
     if (parse_type(input))
@@ -244,7 +254,7 @@ struct glue_str : glue_type_base
 {
   std::string value;
 
-  glue_str(const char *name, glue_msg_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_STRING) {}
+  glue_str(const char *name, glue_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_STRING) {}
   void parse(glue_inbuf &input)
   {
     if (parse_type(input))
@@ -266,18 +276,18 @@ struct glue_raw : glue_type_base
 {
   std::vector<char> buf;
 
-  glue_raw(const char *name, glue_msg_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_RAW) {}
+  glue_raw(const char *name, glue_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_RAW) {}
   void parse(glue_inbuf &input)
   {
     if (parse_type(input))
       return;
     uint32_t size = input.read_u32();
     buf = input.read_raw(size);
-    GLUE_DEBUG(" >> string %s\n", value.c_str());
+    GLUE_DEBUG(" >> raw, size = %zu\n", buf.size());
   }
   void serialize(glue_outbuf &output)
   {
-    GLUE_DEBUG(" << string %s\n", value.c_str());
+    GLUE_DEBUG(" << raw, size = %zu\n", buf.size());
     output.append_u32(dtype);
     output.append_u32(buf.size());
     output.append(buf.data(), buf.size());
@@ -290,7 +300,7 @@ struct glue_arr : glue_type_base
   std::vector<T> arr;
   std::function<void(T &, glue_outbuf &)> serialize_elem;
 
-  glue_arr(const char *name, glue_msg_handler &handler, glue_dtype dtype) : glue_type_base(name, handler, dtype) {}
+  glue_arr(const char *name, glue_handler &handler, glue_dtype dtype) : glue_type_base(name, handler, dtype) {}
   void parse(glue_inbuf &input)
   {
     if (parse_type(input))
@@ -320,7 +330,7 @@ struct glue_arr : glue_type_base
 #define DEF_GLUE_ARR(tname, dtype, enum_type, serialize_fn)                                                   \
   struct glue_arr_##tname : glue_arr<dtype>                                                                   \
   {                                                                                                           \
-    glue_arr_##tname(const char *name, glue_msg_handler &handler) : glue_arr<dtype>(name, handler, enum_type) \
+    glue_arr_##tname(const char *name, glue_handler &handler) : glue_arr<dtype>(name, handler, enum_type) \
     {                                                                                                         \
       serialize_elem = [](dtype & elem, glue_outbuf & output) serialize_fn;                                   \
     }                                                                                                         \
@@ -346,9 +356,9 @@ DEF_GLUE_ARR(raw, std::vector<char>, GLUE_DTYPE_ARRAY_RAW, {
 
 // Message base
 
-glue_outbuf glue_msg_handler::serialize()
+void glue_handler::serialize(glue_outbuf &output)
 {
-  glue_outbuf output;
+  output.clear();
   output.append_u32(GLUE_MAGIC);
   output.append_u32(GLUE_VERSION);
   output.append(name, 8);
@@ -394,10 +404,9 @@ glue_outbuf glue_msg_handler::serialize()
       break;
     }
   }
-  return output;
 }
 
-void glue_msg_handler::deserialize(glue_inbuf &input)
+void glue_handler::deserialize(glue_inbuf &input)
 {
   uint32_t magic = input.read_u32();
   if (magic != GLUE_MAGIC)
@@ -466,7 +475,7 @@ constexpr auto &PROTO_ID(char const (&s)[N])
 }
 #define GLUE_FIELD(type, name) glue_##type name = glue_##type(#name, handler);
 #define GLUE_FIELD_NULLABLE(type, name) glue_##type name = glue_##type(#name, handler);
-#define GLUE_HANDLER(name) glue_msg_handler handler = glue_msg_handler(PROTO_ID(name));
+#define GLUE_HANDLER(name) glue_handler handler = glue_handler(PROTO_ID(name));
 
 // Message for events
 
@@ -667,6 +676,7 @@ struct glue_msg_encode_res
 {
   GLUE_HANDLER("enco_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
   GLUE_FIELD(int, n_past)
 };
 
@@ -711,7 +721,8 @@ struct glue_msg_get_logits_res
 {
   GLUE_HANDLER("glog_res")
   GLUE_FIELD(bool, success)
-  GLUE_FIELD(arr_float, logits)
+  GLUE_FIELD(arr_int, tokens)
+  GLUE_FIELD(arr_float, probs)
 };
 
 /////////
@@ -726,6 +737,7 @@ struct glue_msg_get_embeddings_res
 {
   GLUE_HANDLER("gemb_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
   GLUE_FIELD(arr_float, embeddings)
 };
 
@@ -741,6 +753,7 @@ struct glue_msg_get_kv_remove_req
 struct glue_msg_get_kv_remove_res
 {
   GLUE_HANDLER("kvcr_res")
+  GLUE_FIELD(int, n_past)
   GLUE_FIELD(bool, success)
 };
 
@@ -754,6 +767,7 @@ struct glue_msg_get_kv_clear_req
 struct glue_msg_get_kv_clear_res
 {
   GLUE_HANDLER("kvcc_res")
+  GLUE_FIELD(int, n_past)
   GLUE_FIELD(bool, success)
 };
 
@@ -814,6 +828,7 @@ struct glue_msg_test_benchmark_res
 {
   GLUE_HANDLER("tben_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
   GLUE_FIELD(int, t_ms)
 };
 
@@ -822,16 +837,36 @@ struct glue_msg_test_benchmark_res
 struct glue_msg_test_perplexity_req
 {
   GLUE_HANDLER("tper_req")
-  GLUE_FIELD(arr_int, input)
+  GLUE_FIELD(arr_int, tokens)
 };
 
 struct glue_msg_test_perplexity_res
 {
   GLUE_HANDLER("tper_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
   GLUE_FIELD(float, ppl)
   GLUE_FIELD(float, nll)
   GLUE_FIELD(float, cross_entropy)
   GLUE_FIELD(int, n_tokens)
   GLUE_FIELD(int, t_ms)
+};
+
+/////////
+
+struct glue_msg_chat_format_req
+{
+  GLUE_HANDLER("cfmt_req")
+  GLUE_FIELD_NULLABLE(str, tmpl)
+  GLUE_FIELD_NULLABLE(bool, add_ass)
+  GLUE_FIELD(arr_str, roles)
+  GLUE_FIELD(arr_str, contents)
+};
+
+struct glue_msg_chat_format_res
+{
+  GLUE_HANDLER("cfmt_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
+  GLUE_FIELD(str, formatted_chat)
 };
