@@ -10,3 +10,5 @@ node_modules
 _tmp
 
 /scripts/_tmp_hf_space
+/cpp/test_glue
+/cpp/*.bin
