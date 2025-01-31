@@ -1,4 +1,5 @@
 // Start the main llama.cpp
+let wllamaMalloc;
 let wllamaStart;
 let wllamaAction;
 let wllamaExit;
@@ -266,11 +267,10 @@ onmessage = async (e) => {
         // init FS
         patchMEMFS();
         // init cwrap
+        const pointer = 'number';
+        wllamaMalloc = callWrapper('wllama_malloc', pointer, ['number']);
         wllamaStart = callWrapper('wllama_start', 'string', []);
-        wllamaAction = callWrapper('wllama_action', 'string', [
-          'string',
-          'string',
-        ]);
+        wllamaAction = callWrapper('wllama_action', pointer, ['string', pointer]);
         wllamaExit = callWrapper('wllama_exit', 'string', []);
         wllamaDebug = callWrapper('wllama_debug', 'string', []);
         msg({ callbackId, result: null });
@@ -330,10 +330,20 @@ onmessage = async (e) => {
 
   if (verb === 'wllama.action') {
     const argAction = args[0];
-    const argBody = args[1];
+    const argEncodedMsg = args[1];
     try {
-      const result = await wllamaAction(argAction, argBody);
-      msg({ callbackId, result });
+      const inputPtr = await wllamaMalloc(argEncodedMsg.byteLength);
+      // copy data to wasm heap
+      const inputHeap = new Uint8Array(Module.HEAPU8.buffer, inputPtr, argEncodedMsg.byteLength);
+      inputHeap.set(argEncodedMsg);
+      const outputPtr = await wllamaAction(argAction, inputPtr);
+      // length of output buffer is written at the first 4 bytes of inputHeap
+      const outputLen = new Uint32Array(Module.HEAPU8.buffer, inputPtr, 1)[0];
+      // copy the output buffer to JS heap
+      const outputBuffer = new Uint8Array(outputLen);
+      const outputSrcView = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputLen);
+      outputBuffer.set(outputSrcView); // copy it
+      msg({ callbackId, result: outputBuffer });
     } catch (err) {
       msg({ callbackId, err });
     }

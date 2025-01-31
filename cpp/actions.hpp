@@ -37,28 +37,6 @@ inline std::vector<char> convert_string_to_buf(std::string &input)
   return output;
 }
 
-static std::vector<int64_t> convert_vec_i32_to_i64(const std::vector<int32_t> &input)
-{
-  std::vector<int64_t> output;
-  output.reserve(input.size());
-  for (auto i : input)
-  {
-    output.push_back(i);
-  }
-  return output;
-}
-
-static std::vector<int32_t> convert_vec_i64_to_i32(const std::vector<int64_t> &input)
-{
-  std::vector<int32_t> output;
-  output.reserve(input.size());
-  for (auto i : input)
-  {
-    output.push_back(i);
-  }
-  return output;
-}
-
 inline static ggml_type kv_cache_type_from_str(const std::string &s)
 {
   if (s == "f32")
@@ -283,7 +261,7 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
   res.token_bos.value = llama_vocab_bos(app.vocab);
   res.token_eos.value = llama_vocab_eos(app.vocab);
   res.token_eot.value = llama_vocab_eot(app.vocab);
-  res.list_tokens_eog.arr = convert_vec_i32_to_i64(list_tokens_eog);
+  res.list_tokens_eog.arr = std::move(list_tokens_eog);
   res.add_bos_token.value = llama_vocab_get_add_bos(app.vocab) == 1;
   res.add_eos_token.value = llama_vocab_get_add_eos(app.vocab) == 1;
   res.has_encoder.value = llama_model_has_encoder(app.model);
@@ -361,7 +339,7 @@ glue_msg_sampling_init_res action_sampling_init(app_t &app, const char *req_raw)
   // logit bias
   if (req.logit_bias_vals.not_null() && req.logit_bias_toks.not_null())
   {
-    std::vector<llama_token> tokens = convert_vec_i64_to_i32(req.logit_bias_toks.arr);
+    std::vector<llama_token> tokens = std::move(req.logit_bias_toks.arr);
     std::vector<float> &bias = req.logit_bias_vals.arr;
     for (size_t i = 0; i < tokens.size(); i++)
     {
@@ -439,7 +417,7 @@ glue_msg_tokenize_res action_tokenize(app_t &app, const char *req_raw)
 
   glue_msg_tokenize_res res;
   res.success.value = true;
-  res.tokens.arr = convert_vec_i32_to_i64(tokens_list);
+  res.tokens.arr = std::move(tokens_list);
   return res;
 }
 
@@ -447,7 +425,7 @@ glue_msg_tokenize_res action_tokenize(app_t &app, const char *req_raw)
 glue_msg_detokenize_res action_detokenize(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_detokenize_req);
-  llama_tokens tokens = convert_vec_i64_to_i32(req.tokens.arr);
+  llama_tokens tokens = std::move(req.tokens.arr);
   std::stringstream output;
   for (auto id : tokens)
   {
@@ -465,7 +443,7 @@ glue_msg_detokenize_res action_detokenize(app_t &app, const char *req_raw)
 glue_msg_decode_res action_decode(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_decode_req);
-  llama_tokens tokens_list = convert_vec_i64_to_i32(req.tokens.arr);
+  llama_tokens tokens_list = std::move(req.tokens.arr);
   bool skip_logits = req.skip_logits.value;
   size_t i = 0;
   common_batch_clear(app.batch);
@@ -501,7 +479,7 @@ glue_msg_decode_res action_decode(app_t &app, const char *req_raw)
 glue_msg_encode_res action_encode(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_encode_req);
-  llama_tokens tokens_list = convert_vec_i64_to_i32(req.tokens.arr);
+  llama_tokens tokens_list = std::move(req.tokens.arr);
   if (!llama_model_has_encoder(app.model))
   {
     glue_msg_encode_res res;
@@ -550,7 +528,7 @@ glue_msg_sampling_sample_res action_sampling_sample(app_t &app, const char *req_
 glue_msg_sampling_accept_res action_sampling_accept(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_sampling_accept_req);
-  llama_tokens tokens_list = convert_vec_i64_to_i32(req.tokens.arr);
+  llama_tokens tokens_list = std::move(req.tokens.arr);
   for (auto id : tokens_list)
   {
     common_sampler_accept(app.ctx_sampling, id, false);
@@ -593,7 +571,7 @@ glue_msg_get_logits_res action_get_logits(app_t &app, const char *req_raw)
     candidates.erase(candidates.begin() + top_k, candidates.end());
   }
   // convert response to json
-  std::vector<int64_t> output_tokens;
+  std::vector<int32_t> output_tokens;
   std::vector<float> output_probs;
   output_tokens.reserve(candidates.size());
   output_probs.reserve(candidates.size());
@@ -743,7 +721,7 @@ glue_msg_status_res action_current_status(app_t &app, const char *req_raw)
   PARSE_REQ(glue_msg_status_req);
   glue_msg_status_res res;
   res.success.value = true;
-  res.tokens.arr = convert_vec_i32_to_i64(app.tokens);
+  res.tokens.arr = std::move(app.tokens);
   return res;
 }
 
@@ -814,7 +792,7 @@ glue_msg_test_benchmark_res action_test_benchmark(app_t &app, const char *req_ra
 glue_msg_test_perplexity_res action_test_perplexity(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_test_perplexity_req);
-  llama_tokens input = convert_vec_i64_to_i32(req.tokens.arr);
+  llama_tokens input = std::move(req.tokens.arr);
   const size_t n = input.size();
 
   int64_t t_start = ggml_time_ms();

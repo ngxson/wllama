@@ -17,11 +17,13 @@
 #include "common.h"
 #include "actions.hpp"
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 #define WLLAMA_ACTION(name)              \
   if (action == #name)                   \
   {                                      \
     auto res = action_##name(app, req_raw); \
-    res.handler.serialize(result); \
+    res.handler.serialize(output_buffer); \
   }
 
 static void llama_log_callback_logTee(ggml_log_level level, const char *text, void *user_data)
@@ -43,8 +45,23 @@ static void llama_log_callback_logTee(ggml_log_level level, const char *text, vo
   fprintf(stderr, "%s@@%s", lvl, text);
 }
 
-static glue_outbuf result;
+static void printStr(ggml_log_level level, const char *text) {
+  std::string str = std::string(text) + "\n";
+  llama_log_callback_logTee(level, str.c_str(), nullptr);
+}
+
+static glue_outbuf output_buffer;
 static app_t app;
+
+static std::vector<char> input_buffer;
+extern "C" const char *wllama_malloc(size_t size)
+{
+  if (input_buffer.size() < size)
+  {
+    input_buffer.resize(MAX(size, 1024));
+  }
+  return input_buffer.data();
+}
 
 extern "C" const char *wllama_start()
 {
@@ -53,14 +70,13 @@ extern "C" const char *wllama_start()
     llama_backend_init();
     // std::cerr << llama_print_system_info() << "\n";
     llama_log_set(llama_log_callback_logTee, nullptr);
-    return nullptr; // TODO
+    wllama_malloc(1024);
+    return "{\"success\":true}";
   }
   catch (std::exception &e)
   {
-    //json ex{{"__exception", std::string(e.what())}};
-    //result = std::string(ex.dump());
-    //return result.c_str();
-    return nullptr; // TODO
+    printStr(GGML_LOG_LEVEL_ERROR, e.what());
+    return "{\"error\":true}";
   }
 }
 
@@ -90,13 +106,18 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
     // WLLAMA_ACTION(session_load);
     WLLAMA_ACTION(test_benchmark);
     WLLAMA_ACTION(test_perplexity);
-    return result.data.data();
+
+    // length of response is written inside input_buffer
+    uint32_t *output_len = (uint32_t *)input_buffer.data();
+    *output_len = output_buffer.data.size();
+    return output_buffer.data.data();
   }
   catch (std::exception &e)
   {
     // json ex{{"__exception", std::string(e.what())}};
     // result = std::string(ex.dump());
     // return result.c_str();
+    printStr(GGML_LOG_LEVEL_ERROR, e.what());
     return nullptr;
   }
 }
@@ -111,10 +132,8 @@ extern "C" const char *wllama_exit()
   }
   catch (std::exception &e)
   {
-    //json ex{{"__exception", std::string(e.what())}};
-    //result = std::string(ex.dump());
-    //return result.c_str();
-    return nullptr;
+    printStr(GGML_LOG_LEVEL_ERROR, e.what());
+    return "{\"error\":true}";
   }
 }
 

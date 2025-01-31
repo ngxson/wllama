@@ -11,6 +11,8 @@
  * - Unidirection: { verb, args }
  */
 
+import { glueDeserialize, glueSerialize } from './glue/glue';
+import { GlueMsg } from './glue/messages';
 import { createWorker, isSafariMobile } from './utils';
 import {
   LLAMA_CPP_WORKER_CODE,
@@ -128,14 +130,15 @@ export class ProxyToWorker {
     return parsedResult;
   }
 
-  async wllamaAction(name: string, body: any): Promise<any> {
+  async wllamaAction<T extends GlueMsg>(name: string, body: GlueMsg): Promise<T> {
+    const encodedMsg = glueSerialize(body);
     const result = await this.pushTask({
       verb: 'wllama.action',
-      args: [name, JSON.stringify(body)],
+      args: [name, encodedMsg],
       callbackId: this.taskId++,
     });
-    const parsedResult = this.parseResult(result);
-    return parsedResult;
+    const parsedResult = glueDeserialize(result);
+    return parsedResult as T;
   }
 
   async wllamaExit(): Promise<void> {
@@ -200,11 +203,13 @@ export class ProxyToWorker {
   /**
    * Parse JSON result returned by cpp code.
    * Throw new Error if "__exception" is present in the response
+   * 
+   * TODO: get rid of this function once everything is migrated to Glue
    */
   private parseResult(result: any): any {
     const parsedResult = JSON.parse(result);
-    if (parsedResult && parsedResult['__exception']) {
-      throw new Error(parsedResult['__exception']);
+    if (parsedResult && parsedResult['error']) {
+      throw new Error('Unknown error, please see console.log');
     }
     return parsedResult;
   }

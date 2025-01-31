@@ -1,8 +1,8 @@
-import { GLUE_MESSAGE_PROTOTYPES, GLUE_VERSION, GlueMsg } from "./messages";
+import { GLUE_MESSAGE_PROTOTYPES, GLUE_VERSION, GlueMsg } from './messages';
 
 type GlueType = 'str' | 'int' | 'float' | 'bool' | 'raw' | 'arr_str' | 'arr_int' | 'arr_float' | 'arr_bool' | 'arr_raw' | 'null';
 
-const GLUE_MAGIC_BE = 0x474c5545;
+const GLUE_MAGIC = new Uint8Array([71, 76, 85, 69]);
 
 export interface GlueField {
   type: GlueType;
@@ -51,9 +51,9 @@ export function glueDeserialize(buf: Uint8Array): GlueMsg {
     offset += 4;
     return value;
   };
-  const readInt64 = () => {
-    const value = view.getBigInt64(offset, true);
-    offset += 8;
+  const readInt32 = () => {
+    const value = view.getInt32(offset, true);
+    offset += 4;
     return value;
   };
   const readFloat = () => {
@@ -91,7 +91,7 @@ export function glueDeserialize(buf: Uint8Array): GlueMsg {
       case 'str':
         return readString();
       case 'int':
-        return readInt64();
+        return readInt32();
       case 'float':
         return readFloat();
       case 'bool':
@@ -101,7 +101,7 @@ export function glueDeserialize(buf: Uint8Array): GlueMsg {
       case 'arr_str':
         return readArray(readString);
       case 'arr_int':
-        return readArray(readInt64);
+        return readArray(readInt32);
       case 'arr_float':
         return readArray(readFloat);
       case 'arr_bool':
@@ -113,8 +113,12 @@ export function glueDeserialize(buf: Uint8Array): GlueMsg {
     }
   };
 
-  const magic = readUint32();
-  if (magic !== GLUE_MAGIC_BE) {
+  const magicValid = buf[0] === GLUE_MAGIC[0]
+    && buf[1] === GLUE_MAGIC[1]
+    && buf[2] === GLUE_MAGIC[2]
+    && buf[3] === GLUE_MAGIC[3];
+  offset += 4;
+  if (!magicValid) {
     throw new Error('Invalid magic number');
   }
 
@@ -131,7 +135,7 @@ export function glueDeserialize(buf: Uint8Array): GlueMsg {
 
   const output: any = { _name: name };
   for (const field of msgProto.fields) {
-    const readType = TYPE_MAP[readUint32()];
+    const readType = readUint32();
     if (readType === GLUE_DTYPE_NULL) {
       if (!field.isNullable) {
         throw new Error(`${name}: Expect field ${field.name} to be non-nullable`);
@@ -161,9 +165,9 @@ export function glueSerialize(msg: GlueMsg): Uint8Array {
     (new DataView(buf)).setUint32(0, value, true);
     bufs.push(new Uint8Array(buf));
   };
-  const writeInt64 = (value: bigint) => {
-    const buf = new ArrayBuffer(8);
-    (new DataView(buf)).setBigInt64(0, value, true);
+  const writeInt32 = (value: number) => {
+    const buf = new ArrayBuffer(4);
+    (new DataView(buf)).setInt32(0, value, true);
     bufs.push(new Uint8Array(buf));
   };
   const writeFloat = (value: number) => {
@@ -191,11 +195,17 @@ export function glueSerialize(msg: GlueMsg): Uint8Array {
   };
   const writeNull = () => {};
 
-  writeUint32(GLUE_MAGIC_BE);
+  //////////////////
+
+  bufs.push(GLUE_MAGIC);
   writeUint32(GLUE_VERSION);
-  writeString(msg._name);
+  {
+    // write proto ID
+    const utf8 = new TextEncoder().encode(msg._name);
+    bufs.push(utf8);
+  }
   for (const field of msgProto.fields) {
-    const val = msg[field.name];
+    const val = (msg as any)[field.name];
     if (!field.isNullable && (val === null || val === undefined)) {
       throw new Error(`${msg._name}: Expect field ${field.name} to be non-nullable`);
     }
@@ -209,7 +219,7 @@ export function glueSerialize(msg: GlueMsg): Uint8Array {
         writeString(val);
         break;
       case 'int':
-        writeInt64(val);
+        writeInt32(val);
         break;
       case 'float':
         writeFloat(val);
@@ -224,7 +234,7 @@ export function glueSerialize(msg: GlueMsg): Uint8Array {
         writeArray(val, writeString);
         break;
       case 'arr_int':
-        writeArray(val, writeInt64);
+        writeArray(val, writeInt32);
         break;
       case 'arr_float':
         writeArray(val, writeFloat);

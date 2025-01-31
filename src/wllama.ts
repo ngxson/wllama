@@ -11,6 +11,7 @@ import {
 } from './utils';
 import CacheManager, { DownloadOptions } from './cache-manager';
 import { ModelManager, Model } from './model-manager';
+import { GlueMsgChatFormatRes, GlueMsgDecodeRes, GlueMsgDetokenizeRes, GlueMsgGetEmbeddingsRes, GlueMsgGetKvClearRes, GlueMsgGetKvRemoveRes, GlueMsgGetLogitsRes, GlueMsgGetVocabRes, GlueMsgLoadRes, GlueMsgLookupTokenRes, GlueMsgSamplingAcceptRes, GlueMsgSamplingSampleRes, GlueMsgSetOptionsRes, GlueMsgStatusRes, GlueMsgTestBenchmarkRes, GlueMsgTestPerplexityRes, GlueMsgTokenizeRes } from './glue/messages';
 
 const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
 const HF_MODEL_ID_REGEX_EXPLAIN =
@@ -528,41 +529,65 @@ export class Wllama {
       );
     }
     // load the model
-    const loadResult: LoadedContextInfo = await this.proxy.wllamaAction(
+    const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction(
       'load',
       {
-        ...config,
+        _name: 'load_req',
         use_mmap: true,
         use_mlock: true,
+        n_gpu_layers: 0, // not supported for now
         seed: config.seed || Math.floor(Math.random() * 100000),
         n_ctx: config.n_ctx || 1024,
         n_threads: this.useMultiThread ? nbThreads : 1,
+        n_ctx_auto: false, // not supported for now
         model_path: hasMultipleBuffers
           ? `/models/model-00001-of-${padDigits(blobs.length, 5)}.gguf`
           : '/models/model.gguf',
+        embeddings: config.embeddings,
+        offload_kqv: config.offload_kqv,
+        n_batch: config.n_batch,
+        pooling_type: config.pooling_type as string,
+        rope_scaling_type: config.rope_scaling_type as string,
+        rope_freq_base: config.rope_freq_base,
+        rope_freq_scale: config.rope_freq_scale,
+        yarn_ext_factor: config.yarn_ext_factor,
+        yarn_attn_factor: config.yarn_attn_factor,
+        yarn_beta_fast: config.yarn_beta_fast,
+        yarn_beta_slow: config.yarn_beta_slow,
+        yarn_orig_ctx: config.yarn_orig_ctx,
+        cache_type_k: config.cache_type_k as string,
+        cache_type_v: config.cache_type_v as string,
       }
     );
-    this.bosToken = loadResult.token_bos;
-    this.eosToken = loadResult.token_eos;
-    this.eotToken = loadResult.token_eot;
+    const loadedCtxInfo: LoadedContextInfo = {
+      ...loadResult,
+      metadata: {},
+    }
+    for (let i = 0; i < loadResult.metadata_key.length; i++) {
+      loadedCtxInfo.metadata[loadResult.metadata_key[i]] =
+        loadResult.metadata_val[i];
+    }
+    this.bosToken = loadedCtxInfo.token_bos;
+    this.eosToken = loadedCtxInfo.token_eos;
+    this.eotToken = loadedCtxInfo.token_eot;
     this.useEmbeddings = !!config.embeddings;
     this.metadata = {
       hparams: {
-        nVocab: loadResult.n_vocab,
-        nCtxTrain: loadResult.n_ctx_train,
-        nEmbd: loadResult.n_embd,
-        nLayer: loadResult.n_layer,
+        nVocab: loadedCtxInfo.n_vocab,
+        nCtxTrain: loadedCtxInfo.n_ctx_train,
+        nEmbd: loadedCtxInfo.n_embd,
+        nLayer: loadedCtxInfo.n_layer,
       },
-      meta: loadResult.metadata,
+      meta: loadedCtxInfo.metadata,
     };
-    this.hasEncoder = !!loadResult.has_encoder;
-    this.decoderStartToken = loadResult.token_decoder_start;
-    this.addBosToken = loadResult.add_bos_token;
-    this.addEosToken = loadResult.add_eos_token;
-    this.chatTemplate = loadResult.metadata['tokenizer.chat_template'];
-    this.loadedContextInfo = loadResult;
-    this.eogTokens = new Set(loadResult.list_tokens_eog);
-    this.logger().debug({ loadResult });
+    this.hasEncoder = !!loadedCtxInfo.has_encoder;
+    this.decoderStartToken = loadedCtxInfo.token_decoder_start;
+    this.addBosToken = loadedCtxInfo.add_bos_token;
+    this.addEosToken = loadedCtxInfo.add_eos_token;
+    this.chatTemplate = loadedCtxInfo.metadata['tokenizer.chat_template'];
+    this.loadedContextInfo = loadedCtxInfo;
+    this.eogTokens = new Set(loadedCtxInfo.list_tokens_eog);
+    this.logger().debug({ loadedCtxInfo });
   }
 
   getLoadedContextInfo(): LoadedContextInfo {
@@ -702,7 +727,8 @@ export class Wllama {
   ): Promise<void> {
     this.checkModelLoaded();
     this.samplingConfig = config;
-    const result = await this.proxy.wllamaAction('sampling_init', {
+    const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>('sampling_init', {
+      _name: 'sint_req',
       ...config,
       tokens: pastTokens,
     });
@@ -718,8 +744,10 @@ export class Wllama {
    */
   async getVocab(): Promise<Uint8Array[]> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('get_vocab', {});
-    return result.vocab.map((arr: number[]) => new Uint8Array(arr));
+    const result = await this.proxy.wllamaAction<GlueMsgGetVocabRes>('get_vocab', {
+      _name: 'gvoc_req',
+    });
+    return result.vocab;
   }
 
   /**
@@ -730,7 +758,10 @@ export class Wllama {
    */
   async lookupToken(piece: string): Promise<number> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('lookup_token', { piece });
+    const result = await this.proxy.wllamaAction<GlueMsgLookupTokenRes>('lookup_token', {
+      _name: 'lkup_req',
+      piece,
+    });
     if (!result.success) {
       return -1;
     } else {
@@ -746,9 +777,13 @@ export class Wllama {
    */
   async tokenize(text: string, special: boolean = true): Promise<number[]> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction(
+    const result = await this.proxy.wllamaAction<GlueMsgTokenizeRes>(
       'tokenize',
-      special ? { text, special: true } : { text }
+      {
+        _name: 'tokn_req',
+        text,
+        special: !!special,
+      }
     );
     return result.tokens;
   }
@@ -760,8 +795,11 @@ export class Wllama {
    */
   async detokenize(tokens: number[]): Promise<Uint8Array> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('detokenize', { tokens });
-    return new Uint8Array(result.buffer);
+    const result = await this.proxy.wllamaAction<GlueMsgDetokenizeRes>('detokenize', {
+      _name: 'dtkn_req',
+      tokens,
+    });
+    return result.buffer;
   }
 
   /**
@@ -802,7 +840,8 @@ export class Wllama {
     let result: any;
     for (let i = 0; i < batches.length; i++) {
       const isNotLast = batches.length > 1 && i < batches.length - 1;
-      result = await this.proxy.wllamaAction('decode', {
+      result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('decode', {
+        _name: 'deco_req',
         tokens: batches[i],
         skip_logits: options.skipLogits || isNotLast,
       });
@@ -858,7 +897,10 @@ export class Wllama {
     );
     let result: any;
     for (let i = 0; i < batches.length; i++) {
-      result = await this.proxy.wllamaAction('encode', { tokens: batches[i] });
+      result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('encode', {
+        _name: 'enco_req',
+        tokens: batches[i],
+      });
       if (result.error) {
         throw new WllamaError(result.error);
       } else if (!result.success) {
@@ -886,9 +928,11 @@ export class Wllama {
    */
   async samplingSample(): Promise<{ piece: Uint8Array; token: number }> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('sampling_sample', {});
+    const result = await this.proxy.wllamaAction<GlueMsgSamplingSampleRes>('sampling_sample', {
+      _name: 'ssam_req',
+    });
     return {
-      piece: new Uint8Array(result.piece),
+      piece: result.piece,
       token: result.token,
     };
   }
@@ -899,7 +943,10 @@ export class Wllama {
    */
   async samplingAccept(tokens: number[]): Promise<void> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('sampling_accept', { tokens });
+    const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>('sampling_accept', {
+      _name: 'sacc_req',
+      tokens,
+    });
     if (!result.success) {
       throw new WllamaError('samplingAccept unknown error');
     }
@@ -911,9 +958,18 @@ export class Wllama {
    */
   async getLogits(topK: number = 40): Promise<{ token: number; p: number }[]> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('get_logits', { top_k: topK });
-    const logits = result.logits as number[][];
-    return logits.map(([token, p]) => ({ token, p }));
+    const result = await this.proxy.wllamaAction<GlueMsgGetLogitsRes>('get_logits', {
+      _name: 'glog_req',
+      top_k: topK,
+    });
+    const logits: { token: number; p: number }[] = [];
+    for (let i = 0; i < result.tokens.length; i++) {
+      logits.push({
+        token: result.tokens[i],
+        p: result.probs[i],
+      });
+    }
+    return logits;
   }
 
   /**
@@ -952,10 +1008,11 @@ export class Wllama {
         'inference_error'
       );
     }
-    const result = await this.proxy.wllamaAction('embeddings', { tokens });
-    if (result.error) {
-      throw new WllamaError(result.error);
-    } else if (!result.success) {
+    const result = await this.proxy.wllamaAction<GlueMsgGetEmbeddingsRes>('embeddings', {
+      _name: 'gemb_req',
+      tokens,
+    });
+    if (!result.success) {
       throw new WllamaError('embeddings unknown error');
     } else {
       return result.embeddings;
@@ -970,7 +1027,8 @@ export class Wllama {
    */
   async kvRemove(nKeep: number, nDiscard: number): Promise<void> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('kv_remove', {
+    const result = await this.proxy.wllamaAction<GlueMsgGetKvRemoveRes>('kv_remove', {
+      _name: 'kvcr_req',
       n_keep: nKeep,
       n_discard: nDiscard,
     });
@@ -985,7 +1043,9 @@ export class Wllama {
    */
   async kvClear(): Promise<void> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('kv_clear', {});
+    const result = await this.proxy.wllamaAction<GlueMsgGetKvClearRes>('kv_clear', {
+      _name: 'kvcc_req',
+    });
     if (!result.success) {
       throw new WllamaError('kvClear unknown error');
     }
@@ -998,32 +1058,32 @@ export class Wllama {
    * @param filePath
    * @returns List of tokens saved to the file
    */
-  async sessionSave(filePath: string): Promise<{ tokens: number[] }> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('session_save', {
-      session_path: filePath,
-    });
-    return result;
-  }
+  // async sessionSave(filePath: string): Promise<{ tokens: number[] }> {
+  //   this.checkModelLoaded();
+  //   const result = await this.proxy.wllamaAction('session_save', {
+  //     session_path: filePath,
+  //   });
+  //   return result;
+  // }
 
   /**
    * Load session from file (virtual file system)
    * TODO: add ability to download the file
    * @param filePath
    */
-  async sessionLoad(filePath: string): Promise<void> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('session_load', {
-      session_path: filePath,
-    });
-    if (result.error) {
-      throw new WllamaError(result.error);
-    } else if (!result.success) {
-      throw new WllamaError('sessionLoad unknown error');
-    }
-    const cachedTokens = await this.getCachedTokens();
-    this.nCachedTokens = cachedTokens.length;
-  }
+  // async sessionLoad(filePath: string): Promise<void> {
+  //   this.checkModelLoaded();
+  //   const result = await this.proxy.wllamaAction('session_load', {
+  //     session_path: filePath,
+  //   });
+  //   if (result.error) {
+  //     throw new WllamaError(result.error);
+  //   } else if (!result.success) {
+  //     throw new WllamaError('sessionLoad unknown error');
+  //   }
+  //   const cachedTokens = await this.getCachedTokens();
+  //   this.nCachedTokens = cachedTokens.length;
+  // }
 
   /**
    * Apply chat template to a list of messages
@@ -1039,14 +1099,16 @@ export class Wllama {
     template?: string
   ): Promise<string> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('chat_format', {
-      messages: messages,
+    const roles = messages.map((m) => m.role);
+    const contents = messages.map((m) => m.content);
+    const result = await this.proxy.wllamaAction<GlueMsgChatFormatRes>('chat_format', {
+      _name: 'cfmt_req',
+      roles,
+      contents,
       tmpl: template,
       add_ass: addAssistant,
     });
-    if (result.error) {
-      throw new WllamaError(result.error);
-    } else if (!result.success) {
+    if (!result.success) {
       throw new WllamaError('formatChat unknown error');
     }
     return result.formatted_chat;
@@ -1057,7 +1119,10 @@ export class Wllama {
    */
   async setOptions(opt: ContextOptions): Promise<void> {
     this.checkModelLoaded();
-    await this.proxy.wllamaAction('set_options', opt);
+    await this.proxy.wllamaAction<GlueMsgSetOptionsRes>('set_options', {
+      _name: 'opti_req',
+      ...opt,
+    });
     this.useEmbeddings = opt.embeddings;
   }
 
@@ -1087,7 +1152,8 @@ export class Wllama {
     nSamples: number
   ): Promise<{ t_ms: number }> {
     this.checkModelLoaded();
-    return await this.proxy.wllamaAction('test_benchmark', {
+    return await this.proxy.wllamaAction<GlueMsgTestBenchmarkRes>('test_benchmark', {
+      _name: 'tben_req',
       type,
       n_samples: nSamples,
     });
@@ -1096,15 +1162,20 @@ export class Wllama {
   /**
    * perplexity function, only used internally
    */
-  async _testPerplexity(input: number[]): Promise<{ ppl: number }> {
+  async _testPerplexity(tokens: number[]): Promise<{ ppl: number }> {
     this.checkModelLoaded();
-    return await this.proxy.wllamaAction('test_perplexity', { input });
+    return await this.proxy.wllamaAction<GlueMsgTestPerplexityRes>('test_perplexity', {
+      _name: 'tper_req',
+      tokens,
+    });
   }
 
   ///// Prompt cache utils /////
   private async getCachedTokens(): Promise<number[]> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction('current_status', {});
+    const result = await this.proxy.wllamaAction<GlueMsgStatusRes>('current_status', {
+      _name: 'stat_req',
+    });
     return result.tokens;
   }
 

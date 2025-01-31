@@ -74,10 +74,10 @@ struct glue_outbuf
     GLUE_DEBUG(" << offset = 0x%02zx\n", data.size());
     data.insert(data.end(), (char *)&val, (char *)&val + BITS_TO_BYTES(32));
   }
-  void append_i64(int64_t val)
+  void append_i32(int32_t val)
   {
     GLUE_DEBUG(" << offset = 0x%02zx\n", data.size());
-    data.insert(data.end(), (char *)&val, (char *)&val + BITS_TO_BYTES(64));
+    data.insert(data.end(), (char *)&val, (char *)&val + BITS_TO_BYTES(32));
   }
   void append_f32(float val)
   {
@@ -102,11 +102,11 @@ struct glue_inbuf
     cur += BITS_TO_BYTES(32);
     return val;
   }
-  int64_t read_i64()
+  int32_t read_i32()
   {
     GLUE_DEBUG(" >> offset = 0x%02zx\n", cur - base);
-    int64_t val = *(int64_t *)cur;
-    cur += BITS_TO_BYTES(64);
+    int32_t val = *(int32_t *)cur;
+    cur += BITS_TO_BYTES(32);
     return val;
   }
   float read_f32()
@@ -135,7 +135,7 @@ struct glue_inbuf
 
   // for array
   void read(uint32_t &out) { out = read_u32(); }
-  void read(int64_t &out) { out = read_i64(); }
+  void read(int32_t &out) { out = read_i32(); }
   void read(float &out) { out = read_f32(); }
   void read(std::string &out)
   {
@@ -212,21 +212,21 @@ struct glue_bool : glue_type_base
 
 struct glue_int : glue_type_base
 {
-  int64_t value = 0;
+  int32_t value = 0;
 
   glue_int(const char *name, glue_handler &handler) : glue_type_base(name, handler, GLUE_DTYPE_INT) {}
   void parse(glue_inbuf &input)
   {
     if (parse_type(input))
       return;
-    value = input.read_i64();
+    value = input.read_i32();
     GLUE_DEBUG(" >> int %lld\n", value);
   }
   void serialize(glue_outbuf &output)
   {
     GLUE_DEBUG(" << int %lld\n", value);
     output.append_u32(dtype);
-    output.append_i64(value);
+    output.append_i32(value);
   }
 };
 
@@ -339,8 +339,8 @@ struct glue_arr : glue_type_base
 DEF_GLUE_ARR(bool, uint32_t, GLUE_DTYPE_ARRAY_BOOL, {
   output.append_u32(elem);
 })
-DEF_GLUE_ARR(int, int64_t, GLUE_DTYPE_ARRAY_INT, {
-  output.append_i64(elem);
+DEF_GLUE_ARR(int, int32_t, GLUE_DTYPE_ARRAY_INT, {
+  output.append_i32(elem);
 })
 DEF_GLUE_ARR(float, float, GLUE_DTYPE_ARRAY_FLOAT, {
   output.append_f32(elem);
