@@ -1,3 +1,5 @@
+#pragma once
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -6,30 +8,15 @@
 #include <cmath>
 
 #include "llama.h"
-#include "json.hpp"
 #include "common.h"
 #include "sampling.h"
 
-/**
- * CCAMA project - A low-level llama.cpp API via JSON
- * https://github.com/ngxson/ccama
- */
+#include "glue.hpp"
 
-using json = nlohmann::json;
-
-#define LOG_JSON(str, ...)                                \
-  {                                                       \
-    char output[1024];                                    \
-    sprintf(output, str.c_str(), __VA_ARGS__);            \
-    send_response(json{{"debug" : std::string(output)}}); \
-  }
-
-#define ACTION(name)          \
-  if (action == #name)        \
-  {                           \
-    action_##name(app, body); \
-    continue;                 \
-  }
+#define PARSE_REQ(msg_typename) \
+  msg_typename req; \
+  glue_inbuf inbuf(req_raw); \
+  req.handler.deserialize(inbuf);
 
 struct app_t
 {
@@ -42,21 +29,12 @@ struct app_t
   int32_t seed = LLAMA_DEFAULT_SEED;
 };
 
-inline void send_response(json data)
+inline std::vector<char> convert_string_to_buf(std::string &input)
 {
-  std::cout << data.dump() << "\n";
-}
-
-inline std::vector<unsigned int> convert_string_to_int_arr(std::string &input)
-{
-  std::vector<unsigned int> output;
-  unsigned char *input_ptr = (unsigned char *)input.data();
-  output.resize(input.length());
-  for (size_t i = 0; i < input.length(); i++)
-  {
-    output[i] = static_cast<unsigned int>(input_ptr[i]);
-  }
-  return std::move(output);
+  std::vector<char> output;
+  output.reserve(input.size());
+  output.insert(output.end(), input.begin(), input.end());
+  return output;
 }
 
 inline static ggml_type kv_cache_type_from_str(const std::string &s)
@@ -125,9 +103,15 @@ void free_all(app_t &app)
     common_sampler_free(app.ctx_sampling);
 }
 
-json dump_metadata(app_t &app)
+struct kv_dump
 {
-  json output;
+  std::vector<std::string> keys;
+  std::vector<std::string> vals;
+};
+
+kv_dump dump_metadata(app_t &app)
+{
+  kv_dump output;
   int count = llama_model_meta_count(app.model);
   std::string key;
   std::string val;
@@ -153,7 +137,8 @@ json dump_metadata(app_t &app)
       res = llama_model_meta_key_by_index(app.model, i, buf.data(), buf.size());
     }
     key = std::string(buf.data(), res);
-    output[key] = val;
+    output.keys.push_back(std::move(key));
+    output.vals.push_back(std::move(val));
   }
   return output;
 }
@@ -162,55 +147,58 @@ json dump_metadata(app_t &app)
 //////////////////////////////////////////
 //////////////////////////////////////////
 
-json action_load(app_t &app, json &body)
+glue_msg_load_res action_load(app_t &app, const char *req_raw)
 {
+  PARSE_REQ(glue_msg_load_req);
   free_all(app);
-  std::string model_path = body["model_path"];
-  bool n_ctx_auto = body.contains("n_ctx_auto") ? body.at("n_ctx_auto").get<bool>() : false;
+  std::string &model_path = req.model_path.value;
+  bool n_ctx_auto = req.n_ctx_auto.value;
+
   auto mparams = llama_model_default_params();
-  if (body.contains("use_mmap"))
-    mparams.use_mmap = body["use_mmap"];
-  if (body.contains("use_mlock"))
-    mparams.use_mlock = body["use_mlock"];
-  if (body.contains("n_gpu_layers"))
-    mparams.n_gpu_layers = body["n_gpu_layers"];
+  if (req.use_mmap.not_null())
+    mparams.use_mmap = req.use_mmap.value;
+  if (req.use_mlock.not_null())
+    mparams.use_mlock = req.use_mlock.value;
+  if (req.n_gpu_layers.not_null())
+    mparams.n_gpu_layers = req.n_gpu_layers.value;
+
   auto cparams = llama_context_default_params();
-  app.seed = body["seed"];
-  cparams.n_ctx = body["n_ctx"];
-  cparams.n_threads = body["n_threads"];
+  app.seed = req.seed.value;
+  cparams.n_ctx = req.n_ctx.value;
+  cparams.n_threads = req.n_threads.value;
   cparams.n_threads_batch = cparams.n_threads;
-  if (body.contains("embeddings"))
-    cparams.embeddings = body["embeddings"];
-  if (body.contains("offload_kqv"))
-    cparams.offload_kqv = body["offload_kqv"];
-  if (body.contains("n_batch"))
-    cparams.n_batch = body["n_batch"];
-  if (body.contains("n_seq_max"))
-    cparams.n_seq_max = body["n_seq_max"];
-  if (body.contains("pooling_type"))
-    cparams.pooling_type = pooling_type_from_str(body["pooling_type"]);
+  if (req.embeddings.not_null())
+    cparams.embeddings = req.embeddings.value;
+  if (req.offload_kqv.not_null())
+    cparams.offload_kqv = req.offload_kqv.value;
+  if (req.n_batch.not_null())
+    cparams.n_batch = req.n_batch.value;
+  if (req.n_seq_max.not_null())
+    cparams.n_seq_max = req.n_seq_max.value;
+  if (req.pooling_type.not_null())
+    cparams.pooling_type = pooling_type_from_str(req.pooling_type.value);
   // context extending: https://github.com/ggerganov/llama.cpp/pull/2054
-  if (body.contains("rope_scaling_type"))
-    cparams.rope_scaling_type = rope_scaling_type_from_str(body["rope_scaling_type"]);
-  if (body.contains("rope_freq_base"))
-    cparams.rope_freq_base = body["rope_freq_base"];
-  if (body.contains("rope_freq_scale"))
-    cparams.rope_freq_scale = body["rope_freq_scale"];
-  if (body.contains("yarn_ext_factor"))
-    cparams.yarn_ext_factor = body["yarn_ext_factor"];
-  if (body.contains("yarn_attn_factor"))
-    cparams.yarn_attn_factor = body["yarn_attn_factor"];
-  if (body.contains("yarn_beta_fast"))
-    cparams.yarn_beta_fast = body["yarn_beta_fast"];
-  if (body.contains("yarn_beta_slow"))
-    cparams.yarn_beta_slow = body["yarn_beta_slow"];
-  if (body.contains("yarn_orig_ctx"))
-    cparams.yarn_orig_ctx = body["yarn_orig_ctx"];
+  if (req.rope_scaling_type.not_null())
+    cparams.rope_scaling_type = rope_scaling_type_from_str(req.rope_scaling_type.value);
+  if (req.rope_freq_base.not_null())
+    cparams.rope_freq_base = req.rope_freq_base.value;
+  if (req.rope_freq_scale.not_null())
+    cparams.rope_freq_scale = req.rope_freq_scale.value;
+  if (req.yarn_ext_factor.not_null())
+    cparams.yarn_ext_factor = req.yarn_ext_factor.value;
+  if (req.yarn_attn_factor.not_null())
+    cparams.yarn_attn_factor = req.yarn_attn_factor.value;
+  if (req.yarn_beta_fast.not_null())
+    cparams.yarn_beta_fast = req.yarn_beta_fast.value;
+  if (req.yarn_beta_slow.not_null())
+    cparams.yarn_beta_slow = req.yarn_beta_slow.value;
+  if (req.yarn_orig_ctx.not_null())
+    cparams.yarn_orig_ctx = req.yarn_orig_ctx.value;
   // optimizations
-  if (body.contains("cache_type_k"))
-    cparams.type_k = kv_cache_type_from_str(body["cache_type_k"]);
-  if (body.contains("cache_type_v"))
-    cparams.type_k = kv_cache_type_from_str(body["cache_type_v"]);
+  if (req.cache_type_k.not_null())
+    cparams.type_k = kv_cache_type_from_str(req.cache_type_k.value);
+  if (req.cache_type_v.not_null())
+    cparams.type_v = kv_cache_type_from_str(req.cache_type_v.value);
   app.model = llama_model_load_from_file(model_path.c_str(), mparams);
   if (app.model == nullptr)
   {
@@ -257,32 +245,35 @@ json action_load(app_t &app, json &body)
       list_tokens_eog.push_back(i);
     }
   }
-  return json{
-      {"success", true},
-      {"n_ctx", cparams.n_ctx},
-      {"n_batch", llama_n_batch(app.ctx)},
-      {"n_ubatch", llama_n_ubatch(app.ctx)},
-      {"n_vocab", n_vocab},
-      {"n_ctx_train", llama_model_n_ctx_train(app.model)},
-      {"n_embd", llama_model_n_embd(app.model)},
-      {"n_layer", llama_model_n_layer(app.model)},
-      {"metadata", dump_metadata(app)},
-      {"token_bos", llama_vocab_bos(app.vocab)},
-      {"token_eos", llama_vocab_eos(app.vocab)},
-      {"token_eot", llama_vocab_eot(app.vocab)},
-      {"list_tokens_eog", list_tokens_eog},
-      {"add_bos_token", llama_vocab_get_add_bos(app.vocab) == 1},
-      {"add_eos_token", llama_vocab_get_add_eos(app.vocab) == 1},
-      {"has_encoder", llama_model_has_encoder(app.model)},
-      {"token_decoder_start", llama_model_decoder_start_token(app.model)},
-  };
+  kv_dump metadata = dump_metadata(app);
+
+  glue_msg_load_res res;
+  res.success.value = true;
+  res.n_ctx.value = cparams.n_ctx;
+  res.n_batch.value = llama_n_batch(app.ctx);
+  res.n_ubatch.value = llama_n_ubatch(app.ctx);
+  res.n_vocab.value = n_vocab;
+  res.n_ctx_train.value = llama_model_n_ctx_train(app.model);
+  res.n_embd.value = llama_model_n_embd(app.model);
+  res.n_layer.value = llama_model_n_layer(app.model);
+  res.metadata_key.arr = metadata.keys;
+  res.metadata_val.arr = metadata.vals;
+  res.token_bos.value = llama_vocab_bos(app.vocab);
+  res.token_eos.value = llama_vocab_eos(app.vocab);
+  res.token_eot.value = llama_vocab_eot(app.vocab);
+  res.list_tokens_eog.arr = std::move(list_tokens_eog);
+  res.add_bos_token.value = llama_vocab_get_add_bos(app.vocab) == 1;
+  res.add_eos_token.value = llama_vocab_get_add_eos(app.vocab) == 1;
+  res.has_encoder.value = llama_model_has_encoder(app.model);
+  res.token_decoder_start.value = llama_model_decoder_start_token(app.model);
+  return res;
 }
 
 // set various options at runtime (after loading model)
-json action_set_options(app_t &app, json &body)
+glue_msg_set_options_res action_set_options(app_t &app, const char *req_raw)
 {
-  bool embeddings = body["embeddings"];
-  if (embeddings)
+  PARSE_REQ(glue_msg_set_options_req);
+  if (req.embeddings.value)
   {
     llama_set_embeddings(app.ctx, true);
     llama_set_causal_attn(app.ctx, false);
@@ -292,64 +283,67 @@ json action_set_options(app_t &app, json &body)
     llama_set_embeddings(app.ctx, false);
     llama_set_causal_attn(app.ctx, true);
   }
-  return json{{"success", true}};
+  glue_msg_set_options_res res;
+  res.success.value = true;
+  return res;
 }
 
 // init (or re-init) sampling context
-json action_sampling_init(app_t &app, json &body)
+glue_msg_sampling_init_res action_sampling_init(app_t &app, const char *req_raw)
 {
+  PARSE_REQ(glue_msg_sampling_init_req);
   // sampling
   common_params_sampling sparams;
   sparams.seed = app.seed;
   if (sparams.seed == LLAMA_DEFAULT_SEED)
     sparams.seed = time(NULL);
-  if (body.contains("mirostat"))
-    sparams.mirostat = body["mirostat"];
-  if (body.contains("mirostat_tau"))
-    sparams.mirostat_tau = body["mirostat_tau"];
-  if (body.contains("mirostat_eta"))
-    sparams.mirostat_eta = body["mirostat_eta"];
-  if (body.contains("temp"))
-    sparams.temp = body["temp"];
-  if (body.contains("top_p"))
-    sparams.top_p = body["top_p"];
-  if (body.contains("top_k"))
-    sparams.top_k = body["top_k"];
-  if (body.contains("penalty_last_n"))
-    sparams.penalty_last_n = body["penalty_last_n"];
-  if (body.contains("penalty_repeat"))
-    sparams.penalty_repeat = body["penalty_repeat"];
-  if (body.contains("penalty_freq"))
-    sparams.penalty_freq = body["penalty_freq"];
-  if (body.contains("penalty_present"))
-    sparams.penalty_present = body["penalty_present"];
-  if (body.contains("dynatemp_range"))
-    sparams.dynatemp_range = body["dynatemp_range"];
-  if (body.contains("dynatemp_exponent"))
-    sparams.dynatemp_exponent = body["dynatemp_exponent"];
-  // if (body.contains("samplers_sequence"))
-  //   sparams.samplers_sequence = body["samplers_sequence"];
-  if (body.contains("grammar"))
-    sparams.grammar = body["grammar"];
-  if (body.contains("n_prev"))
-    sparams.n_prev = body["n_prev"];
-  if (body.contains("n_probs"))
-    sparams.n_probs = body["n_probs"];
-  if (body.contains("min_p"))
-    sparams.min_p = body["min_p"];
-  if (body.contains("typical_p")) // for compat
-    sparams.typ_p = body["typical_p"];
-  if (body.contains("typ_p"))
-    sparams.typ_p = body["typ_p"];
+
+  if (req.mirostat.not_null())
+    sparams.mirostat = req.mirostat.value;
+  if (req.mirostat_tau.not_null())
+    sparams.mirostat_tau = req.mirostat_tau.value;
+  if (req.mirostat_eta.not_null())
+    sparams.mirostat_eta = req.mirostat_eta.value;
+  if (req.temp.not_null())
+    sparams.temp = req.temp.value;
+  if (req.top_p.not_null())
+    sparams.top_p = req.top_p.value;
+  if (req.top_k.not_null())
+    sparams.top_k = req.top_k.value;
+  if (req.penalty_last_n.not_null())
+    sparams.penalty_last_n = req.penalty_last_n.value;
+  if (req.penalty_repeat.not_null())
+    sparams.penalty_repeat = req.penalty_repeat.value;
+  if (req.penalty_freq.not_null())
+    sparams.penalty_freq = req.penalty_freq.value;
+  if (req.penalty_present.not_null())
+    sparams.penalty_present = req.penalty_present.value;
+  if (req.dynatemp_range.not_null())
+    sparams.dynatemp_range = req.dynatemp_range.value;
+  if (req.dynatemp_exponent.not_null())
+    sparams.dynatemp_exponent = req.dynatemp_exponent.value;
+  // if (req.samplers_sequence.not_null())
+  //   sparams.samplers_sequence = req.samplers_sequence.value;
+  if (req.grammar.not_null())
+    sparams.grammar = req.grammar.value;
+  if (req.n_prev.not_null())
+    sparams.n_prev = req.n_prev.value;
+  if (req.n_probs.not_null())
+    sparams.n_probs = req.n_probs.value;
+  if (req.min_p.not_null())
+    sparams.min_p = req.min_p.value;
+  if (req.typical_p.not_null())
+    sparams.typ_p = req.typical_p.value; // for compat
+  if (req.typ_p.not_null())
+    sparams.typ_p = req.typ_p.value;
   // logit bias
-  if (body.contains("logit_bias"))
+  if (req.logit_bias_vals.not_null() && req.logit_bias_toks.not_null())
   {
-    std::vector<json> logit_bias = body["logit_bias"];
-    for (json &item : logit_bias)
+    std::vector<llama_token> tokens = std::move(req.logit_bias_toks.arr);
+    std::vector<float> &bias = req.logit_bias_vals.arr;
+    for (size_t i = 0; i < tokens.size(); i++)
     {
-      llama_token token = item["token"];
-      float bias = item["bias"];
-      sparams.logit_bias.push_back({token, bias});
+      sparams.logit_bias.push_back({tokens[i], bias[i]});
     }
   }
   // maybe free before creating a new one
@@ -358,89 +352,98 @@ json action_sampling_init(app_t &app, json &body)
     common_sampler_free(app.ctx_sampling);
   }
   app.ctx_sampling = common_sampler_init(app.model, sparams);
-  if (body.contains("tokens"))
+  if (req.tokens.not_null())
   {
-    llama_tokens tokens = body["tokens"];
-    for (auto id : tokens)
+    for (auto id : req.tokens.arr)
     {
       common_sampler_accept(app.ctx_sampling, id, false);
     }
   }
-  return json{{"success", true}};
+
+  glue_msg_sampling_init_res res;
+  res.success.value = true;
+  return res;
 }
 
 // get map token ID to vocab (be careful, it is slow!)
-json action_get_vocab(app_t &app, json &body)
+glue_msg_get_vocab_res action_get_vocab(app_t &app, const char *req_raw)
 {
+  PARSE_REQ(glue_msg_get_vocab_req);
   int32_t max_tokens = llama_vocab_n_tokens(app.vocab);
-  std::vector<std::vector<unsigned int>> vocab(max_tokens);
+  std::vector<std::vector<char>> vocab;
+  vocab.resize(max_tokens);
   for (int32_t id = 0; id < max_tokens; id++)
   {
     std::string token_as_str = common_token_to_piece(app.ctx, id);
-    vocab[id] = convert_string_to_int_arr(token_as_str);
+    vocab.emplace_back(convert_string_to_buf(token_as_str));
   }
-  return json{
-      {"success", true},
-      {"vocab", vocab},
-  };
+
+  glue_msg_get_vocab_res res;
+  res.success.value = true;
+  res.vocab.arr = vocab;
+  return res;
 }
 
 // lookup single token (also be able to check if it exists or not)
-json action_lookup_token(app_t &app, json &body)
+glue_msg_lookup_token_res action_lookup_token(app_t &app, const char *req_raw)
 {
-  std::string piece = body["piece"];
+  PARSE_REQ(glue_msg_lookup_token_req);
+  std::string &piece = req.piece.value;
   int32_t max_tokens = llama_vocab_n_tokens(app.vocab);
+  glue_msg_lookup_token_res res;
   for (int32_t id = 0; id < max_tokens; id++)
   {
     std::string token_as_str = common_token_to_piece(app.ctx, id);
     if (token_as_str == piece)
     {
-      return json{
-          {"success", true},
-          {"token", id},
-      };
+      res.success.value = true;
+      res.token.value = id;
+      return res;
     }
   }
   // not found
-  return json{{"success", false}};
+  res.success.value = false;
+  return res;
 }
 
 // tokenize an input string
-json action_tokenize(app_t &app, json &body)
+glue_msg_tokenize_res action_tokenize(app_t &app, const char *req_raw)
 {
-  std::string text = body["text"];
-  bool special = body.contains("special");
-  llama_tokens tokens_list;
-  tokens_list = common_tokenize(app.vocab, text, false, special);
-  return json{
-      {"success", true},
-      {"tokens", tokens_list},
-  };
+  PARSE_REQ(glue_msg_tokenize_req);
+  std::string &text = req.text.value;
+  bool special = req.special.value;
+  llama_tokens tokens_list = common_tokenize(app.vocab, text, false, special);
+
+  glue_msg_tokenize_res res;
+  res.success.value = true;
+  res.tokens.arr = std::move(tokens_list);
+  return res;
 }
 
 // detokenize a list of tokens
-json action_detokenize(app_t &app, json &body)
+glue_msg_detokenize_res action_detokenize(app_t &app, const char *req_raw)
 {
-  llama_tokens tokens = body["tokens"];
+  PARSE_REQ(glue_msg_detokenize_req);
+  llama_tokens tokens = std::move(req.tokens.arr);
   std::stringstream output;
   for (auto id : tokens)
   {
     output << common_token_to_piece(app.ctx, id);
   }
   std::string parsed_str = output.str();
-  return json{
-      {"success", true},
-      {"buffer", convert_string_to_int_arr(parsed_str)},
-  };
+
+  glue_msg_detokenize_res res;
+  res.success.value = true;
+  res.buffer.buf = convert_string_to_buf(parsed_str);
+  return res;
 }
 
 // decode an array of tokens
-json action_decode(app_t &app, json &body)
+glue_msg_decode_res action_decode(app_t &app, const char *req_raw)
 {
-  llama_tokens tokens_list = body["tokens"];
-  bool skip_logits = body.contains("skip_logits")
-                         ? body.at("skip_logits").get<bool>()
-                         : false;
+  PARSE_REQ(glue_msg_decode_req);
+  llama_tokens tokens_list = std::move(req.tokens.arr);
+  bool skip_logits = req.skip_logits.value;
   size_t i = 0;
   common_batch_clear(app.batch);
   for (auto id : tokens_list)
@@ -456,26 +459,32 @@ json action_decode(app_t &app, json &body)
   {
     app.batch.logits[app.batch.n_tokens - 1] = true;
   }
+  glue_msg_decode_res res;
   if (llama_decode(app.ctx, app.batch) != 0)
   {
-    return json{{"error", "llama_decode failed, maybe n_batch is too small?"}};
+    res.success.value = false;
+    res.message.value = "llama_decode failed, maybe n_batch is too small?";
+    res.n_past.value = app.tokens.size();
   }
   else
   {
-    return json{
-        {"success", true},
-        {"n_past", app.tokens.size()},
-    };
+    res.success.value = true;
+    res.n_past.value = app.tokens.size();
   }
+  return res;
 }
 
 // encode an array of tokens
-json action_encode(app_t &app, json &body)
+glue_msg_encode_res action_encode(app_t &app, const char *req_raw)
 {
-  llama_tokens tokens_list = body["tokens"];
+  PARSE_REQ(glue_msg_encode_req);
+  llama_tokens tokens_list = std::move(req.tokens.arr);
   if (!llama_model_has_encoder(app.model))
   {
-    return json{{"error", "this model does not have an encoder"}};
+    glue_msg_encode_res res;
+    res.success.value = false;
+    res.message.value = "this model does not have an encoder";
+    return res;
   }
   size_t n_past = 0;
   common_batch_clear(app.batch);
@@ -484,47 +493,56 @@ json action_encode(app_t &app, json &body)
     common_batch_add(app.batch, id, n_past, {0}, false);
     n_past++;
   }
+  glue_msg_encode_res res;
   if (llama_encode(app.ctx, app.batch) != 0)
   {
-    return json{{"error", "llama_encode failed, maybe n_batch is too small?"}};
+    res.success.value = false;
+    res.message.value = "llama_encode failed, maybe n_batch is too small?";
+    res.n_past.value = n_past;
   }
   else
   {
-    return json{
-        {"success", true},
-        {"n_past", n_past},
-    };
+    res.success.value = true;
+    res.n_past.value = n_past;
   }
+  return res;
 }
 
 // decode the current logits and sample the new token
-json action_sampling_sample(app_t &app, json &body)
+glue_msg_sampling_sample_res action_sampling_sample(app_t &app, const char *req_raw)
 {
+  PARSE_REQ(glue_msg_sampling_sample_req);
   int32_t idx = app.batch.n_tokens - 1;
   const llama_token new_token_id = common_sampler_sample(app.ctx_sampling, app.ctx, idx, false);
   std::string piece = common_token_to_piece(app.ctx, new_token_id);
-  return json{
-      {"success", true},
-      {"piece", convert_string_to_int_arr(piece)},
-      {"token", new_token_id},
-  };
+
+  glue_msg_sampling_sample_res res;
+  res.success.value = true;
+  res.piece.buf = convert_string_to_buf(piece);
+  res.token.value = new_token_id;
+  return res;
 }
 
 // accept this token
-json action_sampling_accept(app_t &app, json &body)
+glue_msg_sampling_accept_res action_sampling_accept(app_t &app, const char *req_raw)
 {
-  llama_tokens tokens_list = body["tokens"];
+  PARSE_REQ(glue_msg_sampling_accept_req);
+  llama_tokens tokens_list = std::move(req.tokens.arr);
   for (auto id : tokens_list)
   {
     common_sampler_accept(app.ctx_sampling, id, false);
   }
-  return json{{"success", true}};
+  
+  glue_msg_sampling_accept_res res;
+  res.success.value = true;
+  return res;
 }
 
 // get softmax-ed probability of logits, can be used for custom sampling. The output is always sorted
-json action_get_logits(app_t &app, json &body)
+glue_msg_get_logits_res action_get_logits(app_t &app, const char *req_raw)
 {
-  int top_k = body["top_k"]; // if is -1, we take all logits (will be slow!)
+  PARSE_REQ(glue_msg_get_logits_req);
+  int top_k = req.top_k.value; // if is -1, we take all logits (will be slow!)
   int32_t idx = app.batch.n_tokens - 1;
   float *logits = llama_get_logits_ith(app.ctx, idx);
   int32_t n_vocab = llama_vocab_n_tokens(app.vocab);
@@ -552,31 +570,44 @@ json action_get_logits(app_t &app, json &body)
     candidates.erase(candidates.begin() + top_k, candidates.end());
   }
   // convert response to json
-  std::vector<json> output;
-  output.reserve(candidates.size());
+  std::vector<int32_t> output_tokens;
+  std::vector<float> output_probs;
+  output_tokens.reserve(candidates.size());
+  output_probs.reserve(candidates.size());
   for (auto &c : candidates)
   {
-    output.emplace_back(json{c.id, c.p});
+    output_tokens.push_back(c.id);
+    output_probs.push_back(c.p);
   }
-  return json{
-      {"success", true},
-      {"logits", output},
-  };
+
+  glue_msg_get_logits_res res;
+  res.success.value = true;
+  res.tokens.arr = std::move(output_tokens);
+  res.probs.arr = std::move(output_probs);
+  return res;
 }
 
 // get embeddings, this will call action_decode internally
-json action_embeddings(app_t &app, json &body)
+glue_msg_get_embeddings_res action_embeddings(app_t &app, const char *req_raw)
 {
-  llama_tokens tokens_list = body["tokens"];
+  PARSE_REQ(glue_msg_get_embeddings_req);
+  auto & tokens_list = req.tokens.arr;
   // allocate output
   const int n_embd = llama_model_n_embd(app.model);
   std::vector<float> embeddings(n_embd, 0); // single seq
   float *out = embeddings.data();
   // decode
-  json req = json{{"tokens", tokens_list}};
-  json res = action_decode(app, req);
-  if (res.contains("error"))
+  glue_msg_get_embeddings_res res;
+  glue_msg_decode_req decode_req;
+  decode_req.tokens.arr = std::move(tokens_list);
+  decode_req.skip_logits.value = false;
+  glue_outbuf decode_req_buf;
+  decode_req.handler.serialize(decode_req_buf);
+  auto decode_res = action_decode(app, decode_req_buf.data.data());
+  if (decode_res.success.value == false)
   {
+    res.success.value = false;
+    res.message.value = std::move(decode_res.message.value);
     return res;
   }
   int32_t idx = app.batch.n_tokens - 1;
@@ -586,45 +617,52 @@ json action_embeddings(app_t &app, json &body)
     embd = llama_get_embeddings_ith(app.ctx, idx);
     if (embd == NULL)
     {
-      fprintf(stderr, "%s: failed to get embeddings for token %d\n", __func__, idx);
-      return json{{"error", "failed to get embeddings"}};
+      // fprintf(stderr, "%s: failed to get embeddings for token %d\n", __func__, idx);
+      res.success.value = false;
+      res.message.value = "failed to get embeddings";
+      return res;
     }
   }
   common_embd_normalize(embd, out, n_embd, 2);
-  return json{
-      {"success", true},
-      {"embeddings", embeddings},
-  };
+  
+  res.success.value = true;
+  res.embeddings.arr = std::move(embeddings);
+  return res;
 }
 
 // remove tokens in kv, for context-shifting
-json action_kv_remove(app_t &app, json &body)
+glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
 {
-  const int n_keep = body["n_keep"];
-  const int n_discard = body["n_discard"];
+  PARSE_REQ(glue_msg_get_kv_remove_req);
+  const int n_keep = req.n_keep.value;
+  const int n_discard = req.n_discard.value;
   const int n_past = app.tokens.size();
   llama_kv_cache_seq_rm(app.ctx, 0, n_keep, n_keep + n_discard);
   llama_kv_cache_seq_add(app.ctx, 0, n_keep + n_discard, n_past, -n_discard);
   app.tokens.erase(
       app.tokens.begin() + n_keep,
       app.tokens.begin() + n_keep + n_discard);
-  return json{
-      {"success", true},
-      {"n_past", app.tokens.size()},
-  };
+
+  glue_msg_get_kv_remove_res res;
+  res.success.value = true;
+  res.n_past.value = app.tokens.size();
+  return res;
 }
 
 // clear all tokens in kv
-json action_kv_clear(app_t &app, json &body)
+glue_msg_get_kv_clear_res action_kv_clear(app_t &app, const char *req_raw)
 {
+  PARSE_REQ(glue_msg_get_kv_clear_req);
   llama_kv_cache_clear(app.ctx);
   app.tokens.clear();
-  return json{
-      {"success", true},
-      {"n_past", app.tokens.size()},
-  };
+
+  glue_msg_get_kv_clear_res res;
+  res.success.value = true;
+  res.n_past.value = app.tokens.size();
+  return res;
 }
 
+/*
 // save current session
 json action_session_save(app_t &app, json &body)
 {
@@ -674,24 +712,27 @@ json action_session_load(app_t &app, json &body)
   }
   return json{{"success", true}};
 }
+*/
 
 // get the current status
-json action_current_status(app_t &app, json &body)
+glue_msg_status_res action_current_status(app_t &app, const char *req_raw)
 {
-  return json{
-      {"success", true},
-      {"tokens", app.tokens},
-  };
+  PARSE_REQ(glue_msg_status_req);
+  glue_msg_status_res res;
+  res.success.value = true;
+  res.tokens.arr = std::move(app.tokens);
+  return res;
 }
 
 //
 // benchmark & perplexity
 //
 
-json action_test_benchmark(app_t &app, json &body)
+glue_msg_test_benchmark_res action_test_benchmark(app_t &app, const char *req_raw)
 {
-  std::string type = body.at("type");   // "pp" (prompt proc) or "tg" (tok gen)
-  int n_samples = body.at("n_samples"); // n_batch in pp and n_predict in pg
+  PARSE_REQ(glue_msg_test_benchmark_req);
+  std::string type = req.type.value;   // "pp" (prompt proc) or "tg" (tok gen)
+  int n_samples = req.n_samples.value; // n_batch in pp and n_predict in pg
 
   llama_kv_cache_clear(app.ctx);
   int n_vocab = llama_vocab_n_tokens(app.vocab);
@@ -708,7 +749,10 @@ json action_test_benchmark(app_t &app, json &body)
     llama_batch_free(batch);
     if (ret != 0)
     {
-      return json{{"error", "llama_decode failed with status = " + std::to_string(ret)}};
+      glue_msg_test_benchmark_res res;
+      res.success.value = false;
+      res.message.value = "llama_decode failed with status = " + std::to_string(ret);
+      return res;
     }
   }
   else if (type == "tg")
@@ -721,33 +765,43 @@ json action_test_benchmark(app_t &app, json &body)
       int ret = llama_decode(app.ctx, batch);
       if (ret != 0)
       {
-        return json{{"error", "llama_decode failed with status = " + std::to_string(ret)}};
+        glue_msg_test_benchmark_res res;
+        res.success.value = false;
+        res.message.value = "llama_decode failed with status = " + std::to_string(ret);
+        return res;
       }
     }
     llama_batch_free(batch);
   }
   else
   {
-    return json{{"error", "unknown type: " + type}};
+    glue_msg_test_benchmark_res res;
+    res.success.value = false;
+    res.message.value = "unknown type: " + type;
+    return res;
   }
 
   int64_t t_end = ggml_time_ms();
-  return json{
-      {"success", true},
-      {"t_ms", t_end - t_start},
-  };
+  glue_msg_test_benchmark_res res;
+  res.success.value = true;
+  res.t_ms.value = t_end - t_start;
+  return res;
 }
 
-json action_test_perplexity(app_t &app, json &body)
+glue_msg_test_perplexity_res action_test_perplexity(app_t &app, const char *req_raw)
 {
-  llama_tokens input = body["input"];
+  PARSE_REQ(glue_msg_test_perplexity_req);
+  llama_tokens input = std::move(req.tokens.arr);
   const size_t n = input.size();
 
   int64_t t_start = ggml_time_ms();
 
   if (n < 2)
   {
-    return json{{"error", "Input must contain at least two tokens"}};
+    glue_msg_test_perplexity_res res;
+    res.success.value = false;
+    res.message.value = "Input must contain at least two tokens";
+    return res;
   }
 
   // Clear existing context to start fresh
@@ -780,7 +834,10 @@ json action_test_perplexity(app_t &app, json &body)
 
     if (llama_decode(app.ctx, app.batch) != 0)
     {
-      return json{{"error", "Decoding failed at position " + std::to_string(i)}};
+      glue_msg_test_perplexity_res res;
+      res.success.value = false;
+      res.message.value = "llama_decode failed at position " + std::to_string(i);
+      return res;
     }
 
     float *logits = llama_get_logits_ith(app.ctx, 0);
@@ -797,14 +854,14 @@ json action_test_perplexity(app_t &app, json &body)
 
   int64_t t_end = ggml_time_ms();
 
-  return json{
-      {"success", true},
-      {"ppl", ppl},
-      {"nll", nll},
-      {"cross_entropy", cross_entropy},
-      {"n_tokens", n - 1},
-      {"t_ms", t_end - t_start},
-  };
+  glue_msg_test_perplexity_res res;
+  res.success.value = true;
+  res.ppl.value = ppl;
+  res.nll.value = nll;
+  res.cross_entropy.value = cross_entropy;
+  res.n_tokens.value = n - 1;
+  res.t_ms.value = t_end - t_start;
+  return res;
 }
 
 //////////////////////////////////////////
@@ -857,29 +914,31 @@ std::string common_chat_apply_template_old(const struct llama_model *model,
 }
 
 // apply chat template
-json action_chat_format(app_t &app, json &body)
+glue_msg_chat_format_res action_chat_format(app_t &app, const char *req_raw)
 {
-  std::string tmpl = body.contains("tmpl") ? body["tmpl"] : "";
-  bool add_ass = body.contains("add_ass") ? body.at("add_ass").get<bool>() : false;
-  if (!body.contains("messages"))
-  {
-    return json{{"error", "messages is required"}};
-  }
+  PARSE_REQ(glue_msg_chat_format_req);
+  std::string tmpl = req.tmpl.not_null() ? req.tmpl.value : "";
+  bool add_ass = req.add_ass.not_null() ? req.add_ass.value : false;
+  std::vector<std::string> & roles = req.roles.arr;
+  std::vector<std::string> & contents = req.contents.arr;
   std::vector<common_chat_msg> chat;
-  for (auto &item : body["messages"])
+  for (size_t i = 0; i < roles.size(); i++)
   {
-    chat.push_back({item["role"], item["content"]});
+    chat.push_back({roles[i], contents[i]});
   }
   try
   {
     std::string formatted_chat = common_chat_apply_template_old(app.model, tmpl, chat, add_ass);
-    return json{
-        {"success", true},
-        {"formatted_chat", formatted_chat},
-    };
+    glue_msg_chat_format_res res;
+    res.success.value = true;
+    res.formatted_chat.value = formatted_chat;
+    return res;
   }
   catch (const std::exception &e)
   {
-    return json{{"error", e.what()}};
+    glue_msg_chat_format_res res;
+    res.success.value = true;
+    res.message.value = std::string(e.what());
+    return res;
   }
 }

@@ -1,4 +1,5 @@
 // Start the main llama.cpp
+let wllamaMalloc;
 let wllamaStart;
 let wllamaAction;
 let wllamaExit;
@@ -11,7 +12,7 @@ let Module = null;
 //////////////////////////////////////////////////////////////
 
 // send message back to main thread
-const msg = (data) => postMessage(data);
+const msg = (data, transfer) => postMessage(data, transfer);
 
 // Convert CPP log into JS log
 const cppLogToJSLog = (line) => {
@@ -266,10 +267,16 @@ onmessage = async (e) => {
         // init FS
         patchMEMFS();
         // init cwrap
+        const pointer = 'number';
+        // TODO: note sure why emscripten cannot bind if there is only 1 argument
+        wllamaMalloc = callWrapper('wllama_malloc', pointer, [
+          'number',
+          pointer,
+        ]);
         wllamaStart = callWrapper('wllama_start', 'string', []);
-        wllamaAction = callWrapper('wllama_action', 'string', [
+        wllamaAction = callWrapper('wllama_action', pointer, [
           'string',
-          'string',
+          pointer,
         ]);
         wllamaExit = callWrapper('wllama_exit', 'string', []);
         wllamaDebug = callWrapper('wllama_debug', 'string', []);
@@ -330,10 +337,28 @@ onmessage = async (e) => {
 
   if (verb === 'wllama.action') {
     const argAction = args[0];
-    const argBody = args[1];
+    const argEncodedMsg = args[1];
     try {
-      const result = await wllamaAction(argAction, argBody);
-      msg({ callbackId, result });
+      const inputPtr = await wllamaMalloc(argEncodedMsg.byteLength, 0);
+      // copy data to wasm heap
+      const inputBuffer = new Uint8Array(
+        Module.HEAPU8.buffer,
+        inputPtr,
+        argEncodedMsg.byteLength
+      );
+      inputBuffer.set(argEncodedMsg, 0);
+      const outputPtr = await wllamaAction(argAction, inputPtr);
+      // length of output buffer is written at the first 4 bytes of input buffer
+      const outputLen = new Uint32Array(Module.HEAPU8.buffer, inputPtr, 1)[0];
+      // copy the output buffer to JS heap
+      const outputBuffer = new Uint8Array(outputLen);
+      const outputSrcView = new Uint8Array(
+        Module.HEAPU8.buffer,
+        outputPtr,
+        outputLen
+      );
+      outputBuffer.set(outputSrcView, 0); // copy it
+      msg({ callbackId, result: outputBuffer }, [outputBuffer.buffer]);
     } catch (err) {
       msg({ callbackId, err });
     }

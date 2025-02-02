@@ -22,6 +22,7 @@
 /src/single-thread
 /src/workers-code/generated.ts
 /src/wasm-from-cdn.ts
+/src/glue/messages.ts
 
 *.md
 *.mdx
