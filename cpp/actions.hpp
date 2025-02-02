@@ -412,8 +412,7 @@ glue_msg_tokenize_res action_tokenize(app_t &app, const char *req_raw)
   PARSE_REQ(glue_msg_tokenize_req);
   std::string &text = req.text.value;
   bool special = req.special.value;
-  llama_tokens tokens_list;
-  tokens_list = common_tokenize(app.vocab, text, false, special);
+  llama_tokens tokens_list = common_tokenize(app.vocab, text, false, special);
 
   glue_msg_tokenize_res res;
   res.success.value = true;
@@ -601,7 +600,7 @@ glue_msg_get_embeddings_res action_embeddings(app_t &app, const char *req_raw)
   glue_msg_get_embeddings_res res;
   glue_msg_decode_req decode_req;
   decode_req.tokens.arr = std::move(tokens_list);
-  decode_req.skip_logits.value = true;
+  decode_req.skip_logits.value = false;
   glue_outbuf decode_req_buf;
   decode_req.handler.serialize(decode_req_buf);
   auto decode_res = action_decode(app, decode_req_buf.data.data());

@@ -122,6 +122,20 @@ test.sequential('tokenizes and detokenizes text', async () => {
   await wllama.exit();
 });
 
+test.sequential('tokenize a long text', async () => {
+  const wllama = new Wllama(CONFIG_PATHS);
+
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 1024,
+  });
+
+  const text = 'hello '.repeat(1e4);
+  const tokens = await wllama.tokenize(text);
+  expect(tokens.length).toBeGreaterThan(10);
+
+  await wllama.exit();
+});
+
 test.sequential('generates completion', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 

@@ -10,6 +10,8 @@ bool cmp_float(float a, float b) {
   return std::abs(a - b) < 1e-6;
 }
 
+static glue_outbuf outbuf;
+
 void test_load_req() {
   glue_msg_load_req req;
   req.use_mmap.value = true;
@@ -19,16 +21,15 @@ void test_load_req() {
   req.embeddings.value = false;
   req.pooling_type.value = "mean";
 
-  glue_outbuf buf;
-  req.handler.serialize(buf);
+  req.handler.serialize(outbuf);
   FILE* fp = fopen("dump.bin", "wb");
-  fwrite(buf.data.data(), 1, buf.data.size(), fp);
+  fwrite(outbuf.data.data(), 1, outbuf.data.size(), fp);
   fclose(fp);
 
   printf("\n----------\n\n");
   
   glue_msg_load_req req2;
-  glue_inbuf inbuf(buf.data.data());
+  glue_inbuf inbuf(outbuf.data.data());
   req2.handler.deserialize(inbuf);
 
   assert(req2.use_mmap.value == true);
@@ -46,19 +47,18 @@ void test_sampling_init() {
   req.top_p.value = 0.95;
   req.penalty_repeat.value = 1.1;
   req.grammar.value = "test grammar";
-  std::vector<int64_t> tokens = {1, 2, 3, 4, 5};
+  std::vector<int32_t> tokens = {1, 2, 3, 4, 5};
   req.tokens.arr = tokens;
 
-  glue_outbuf buf;
-  req.handler.serialize(buf);
+  req.handler.serialize(outbuf);
   FILE* fp = fopen("dump2.bin", "wb");
-  fwrite(buf.data.data(), 1, buf.data.size(), fp);
+  fwrite(outbuf.data.data(), 1, outbuf.data.size(), fp);
   fclose(fp);
 
   printf("\n----------\n\n");
 
   glue_msg_sampling_init_req req2;
-  glue_inbuf inbuf(buf.data.data());
+  glue_inbuf inbuf(outbuf.data.data());
   req2.handler.deserialize(inbuf);
 
   assert(req2.mirostat.value == 2);

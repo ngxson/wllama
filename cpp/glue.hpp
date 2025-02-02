@@ -220,11 +220,11 @@ struct glue_int : glue_type_base
     if (parse_type(input))
       return;
     value = input.read_i32();
-    GLUE_DEBUG(" >> int %lld\n", value);
+    GLUE_DEBUG(" >> int %d\n", value);
   }
   void serialize(glue_outbuf &output)
   {
-    GLUE_DEBUG(" << int %lld\n", value);
+    GLUE_DEBUG(" << int %d\n", value);
     output.append_u32(dtype);
     output.append_i32(value);
   }

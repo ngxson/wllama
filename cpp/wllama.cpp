@@ -12,6 +12,8 @@
 #include <emscripten/emscripten.h>
 #endif
 
+// #define GLUE_DEBUG(...) fprintf(stderr, "@@ERROR@@" __VA_ARGS__)
+
 #include "llama.h"
 #include "json.hpp"
 #include "common.h"
@@ -19,11 +21,11 @@
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-#define WLLAMA_ACTION(name)              \
-  if (action == #name)                   \
-  {                                      \
+#define WLLAMA_ACTION(name)                 \
+  else if (action == #name)                 \
+  {                                         \
     auto res = action_##name(app, req_raw); \
-    res.handler.serialize(output_buffer); \
+    res.handler.serialize(output_buffer);   \
   }
 
 static void llama_log_callback_logTee(ggml_log_level level, const char *text, void *user_data)
@@ -31,21 +33,28 @@ static void llama_log_callback_logTee(ggml_log_level level, const char *text, vo
   (void)user_data;
   const char *lvl = "@@DEBUG";
   size_t len = strlen(text);
-  if (len == 0 || text[len - 1] != '\n') {
+  if (len == 0 || text[len - 1] != '\n')
+  {
     // do not print if the line does not terminate with \n
     return;
   }
-  if (level == GGML_LOG_LEVEL_ERROR) {
+  if (level == GGML_LOG_LEVEL_ERROR)
+  {
     lvl = "@@ERROR";
-  } else if (level == GGML_LOG_LEVEL_WARN) {
+  }
+  else if (level == GGML_LOG_LEVEL_WARN)
+  {
     lvl = "@@WARN";
-  } else if (level == GGML_LOG_LEVEL_INFO) {
+  }
+  else if (level == GGML_LOG_LEVEL_INFO)
+  {
     lvl = "@@INFO";
   }
   fprintf(stderr, "%s@@%s", lvl, text);
 }
 
-static void printStr(ggml_log_level level, const char *text) {
+static void printStr(ggml_log_level level, const char *text)
+{
   std::string str = std::string(text) + "\n";
   llama_log_callback_logTee(level, str.c_str(), nullptr);
 }
@@ -54,11 +63,12 @@ static glue_outbuf output_buffer;
 static app_t app;
 
 static std::vector<char> input_buffer;
-extern "C" const char *wllama_malloc(size_t size)
+// second argument is dummy
+extern "C" const char *wllama_malloc(size_t size, uint32_t)
 {
   if (input_buffer.size() < size)
   {
-    input_buffer.resize(MAX(size, 1024));
+    input_buffer.resize(size);
   }
   return input_buffer.data();
 }
@@ -70,7 +80,7 @@ extern "C" const char *wllama_start()
     llama_backend_init();
     // std::cerr << llama_print_system_info() << "\n";
     llama_log_set(llama_log_callback_logTee, nullptr);
-    wllama_malloc(1024);
+    wllama_malloc(1024, 0);
     return "{\"success\":true}";
   }
   catch (std::exception &e)
@@ -85,38 +95,48 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
   try
   {
     std::string action(name);
-    WLLAMA_ACTION(load);
-    WLLAMA_ACTION(set_options);
-    WLLAMA_ACTION(sampling_init);
-    WLLAMA_ACTION(sampling_sample);
-    WLLAMA_ACTION(sampling_accept);
-    WLLAMA_ACTION(get_vocab);
-    WLLAMA_ACTION(lookup_token);
-    WLLAMA_ACTION(tokenize);
-    WLLAMA_ACTION(detokenize);
-    WLLAMA_ACTION(decode);
-    WLLAMA_ACTION(encode);
-    WLLAMA_ACTION(get_logits);
-    WLLAMA_ACTION(embeddings);
-    WLLAMA_ACTION(chat_format);
-    WLLAMA_ACTION(kv_remove);
-    WLLAMA_ACTION(kv_clear);
-    WLLAMA_ACTION(current_status);
-    // WLLAMA_ACTION(session_save);
-    // WLLAMA_ACTION(session_load);
-    WLLAMA_ACTION(test_benchmark);
-    WLLAMA_ACTION(test_perplexity);
+
+    if (action.empty())
+    {
+      printStr(GGML_LOG_LEVEL_ERROR, "Empty action");
+      abort();
+    }
+
+    WLLAMA_ACTION(load)
+    WLLAMA_ACTION(set_options)
+    WLLAMA_ACTION(sampling_init)
+    WLLAMA_ACTION(sampling_sample)
+    WLLAMA_ACTION(sampling_accept)
+    WLLAMA_ACTION(get_vocab)
+    WLLAMA_ACTION(lookup_token)
+    WLLAMA_ACTION(tokenize)
+    WLLAMA_ACTION(detokenize)
+    WLLAMA_ACTION(decode)
+    WLLAMA_ACTION(encode)
+    WLLAMA_ACTION(get_logits)
+    WLLAMA_ACTION(embeddings)
+    WLLAMA_ACTION(chat_format)
+    WLLAMA_ACTION(kv_remove)
+    WLLAMA_ACTION(kv_clear)
+    WLLAMA_ACTION(current_status)
+    // WLLAMA_ACTION(session_save)
+    // WLLAMA_ACTION(session_load)
+    WLLAMA_ACTION(test_benchmark)
+    WLLAMA_ACTION(test_perplexity)
+
+    else
+    {
+      printStr(GGML_LOG_LEVEL_ERROR, (std::string("Unknown action: ") + name).c_str());
+      abort();
+    }
 
     // length of response is written inside input_buffer
-    uint32_t *output_len = (uint32_t *)input_buffer.data();
-    *output_len = output_buffer.data.size();
+    uint32_t *output_len = (uint32_t *)req_raw;
+    output_len[0] = output_buffer.data.size();
     return output_buffer.data.data();
   }
   catch (std::exception &e)
   {
-    // json ex{{"__exception", std::string(e.what())}};
-    // result = std::string(ex.dump());
-    // return result.c_str();
     printStr(GGML_LOG_LEVEL_ERROR, e.what());
     return nullptr;
   }
