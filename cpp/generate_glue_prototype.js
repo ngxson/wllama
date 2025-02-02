@@ -4,12 +4,13 @@ import path from 'path';
 const inputPath = './cpp/glue.hpp';
 const outputPath = './src/glue/messages.ts';
 
-const snakeToCamel = (str) => str.replace( /([-_]\w)/g, g => g[1].toUpperCase());
+const snakeToCamel = (str) =>
+  str.replace(/([-_]\w)/g, (g) => g[1].toUpperCase());
 const snakeToPascal = (str) => {
   let camelCase = snakeToCamel(str);
   let pascalCase = camelCase[0].toUpperCase() + camelCase.substr(1);
   return pascalCase;
-}
+};
 
 const cppContent = fs.readFileSync(inputPath, 'utf8');
 const lines = cppContent.split('\n');
@@ -29,7 +30,7 @@ for (const line of lines) {
       name: '',
       structName,
       className: snakeToPascal(structName),
-      fields: []
+      fields: [],
     };
   }
   const lineTrimed = line.trim();
@@ -38,12 +39,15 @@ for (const line of lines) {
       const name = lineTrimed.split('(')[1].split(')')[0];
       currentProto.name = JSON.parse(name);
       if (currentProto.name.length !== 8) {
-        console.error('Invalid name (must be 8 characters):', currentProto.name);
+        console.error(
+          'Invalid name (must be 8 characters):',
+          currentProto.name
+        );
         process.exit(1);
       }
     }
     if (lineTrimed.startsWith('GLUE_FIELD')) {
-      const isNullable = lineTrimed.startsWith("GLUE_FIELD_NULLABLE");
+      const isNullable = lineTrimed.startsWith('GLUE_FIELD_NULLABLE');
       const fieldParts = lineTrimed.split('(')[1].split(')')[0].split(',');
       currentProto.fields.push({
         type: fieldParts[0].trim(),
@@ -61,16 +65,16 @@ for (const line of lines) {
 //console.log(JSON.stringify(protos, null, 2));
 
 const typeMapping = {
-  'bool': 'boolean',
-  'int': 'number',
-  'float': 'number',
-  'str': 'string',
-  'raw': 'Uint8Array',
-  'arr_bool': 'bool[]',
-  'arr_int': 'number[]',
-  'arr_float': 'number[]',
-  'arr_str': 'string[]',
-  'arr_raw': 'Uint8Array[]',
+  bool: 'boolean',
+  int: 'number',
+  float: 'number',
+  str: 'string',
+  raw: 'Uint8Array',
+  arr_bool: 'bool[]',
+  arr_int: 'number[]',
+  arr_float: 'number[]',
+  arr_str: 'string[]',
+  arr_raw: 'Uint8Array[]',
 };
 
 const protoMap = {};
@@ -87,23 +91,25 @@ export const GLUE_VERSION = ${version};
 
 export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = ${JSON.stringify(protoMap, null, 2)};
 
-${protos.map(proto => {
-  let interfaceCode = `// struct ${proto.structName}\n`;
-  interfaceCode += `export interface ${proto.className} {\n`;
-  interfaceCode += `  _name: "${proto.name}";\n`;
-  for (const field of proto.fields) {
-    const mappedType = typeMapping[field.type];
-    if (!mappedType) {
-      console.error('Unknown type:', field.type);
-      process.exit(1);
+${protos
+  .map((proto) => {
+    let interfaceCode = `// struct ${proto.structName}\n`;
+    interfaceCode += `export interface ${proto.className} {\n`;
+    interfaceCode += `  _name: "${proto.name}";\n`;
+    for (const field of proto.fields) {
+      const mappedType = typeMapping[field.type];
+      if (!mappedType) {
+        console.error('Unknown type:', field.type);
+        process.exit(1);
+      }
+      interfaceCode += `  ${field.name}${field.isNullable ? '?' : ''}: ${mappedType};\n`;
     }
-    interfaceCode += `  ${field.name}${field.isNullable ? '?' : ''}: ${mappedType};\n`;
-  }
-  interfaceCode += '}\n'
-  return interfaceCode;
-}).join('\n')}
+    interfaceCode += '}\n';
+    return interfaceCode;
+  })
+  .join('\n')}
 
-export type GlueMsg = ${protos.map(proto => proto.className).join(' | ')};
+export type GlueMsg = ${protos.map((proto) => proto.className).join(' | ')};
 `;
 
 fs.writeFileSync(outputPath, outputContent);

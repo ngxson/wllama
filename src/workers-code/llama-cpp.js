@@ -269,9 +269,15 @@ onmessage = async (e) => {
         // init cwrap
         const pointer = 'number';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument
-        wllamaMalloc = callWrapper('wllama_malloc', pointer, ['number', pointer]);
+        wllamaMalloc = callWrapper('wllama_malloc', pointer, [
+          'number',
+          pointer,
+        ]);
         wllamaStart = callWrapper('wllama_start', 'string', []);
-        wllamaAction = callWrapper('wllama_action', pointer, ['string', pointer]);
+        wllamaAction = callWrapper('wllama_action', pointer, [
+          'string',
+          pointer,
+        ]);
         wllamaExit = callWrapper('wllama_exit', 'string', []);
         wllamaDebug = callWrapper('wllama_debug', 'string', []);
         msg({ callbackId, result: null });
@@ -335,14 +341,22 @@ onmessage = async (e) => {
     try {
       const inputPtr = await wllamaMalloc(argEncodedMsg.byteLength, 0);
       // copy data to wasm heap
-      const inputBuffer = new Uint8Array(Module.HEAPU8.buffer, inputPtr, argEncodedMsg.byteLength);
+      const inputBuffer = new Uint8Array(
+        Module.HEAPU8.buffer,
+        inputPtr,
+        argEncodedMsg.byteLength
+      );
       inputBuffer.set(argEncodedMsg, 0);
       const outputPtr = await wllamaAction(argAction, inputPtr);
       // length of output buffer is written at the first 4 bytes of input buffer
       const outputLen = new Uint32Array(Module.HEAPU8.buffer, inputPtr, 1)[0];
       // copy the output buffer to JS heap
       const outputBuffer = new Uint8Array(outputLen);
-      const outputSrcView = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputLen);
+      const outputSrcView = new Uint8Array(
+        Module.HEAPU8.buffer,
+        outputPtr,
+        outputLen
+      );
       outputBuffer.set(outputSrcView, 0); // copy it
       msg({ callbackId, result: outputBuffer }, [outputBuffer.buffer]);
     } catch (err) {

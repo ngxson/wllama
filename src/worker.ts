@@ -130,7 +130,10 @@ export class ProxyToWorker {
     return parsedResult;
   }
 
-  async wllamaAction<T extends GlueMsg>(name: string, body: GlueMsg): Promise<T> {
+  async wllamaAction<T extends GlueMsg>(
+    name: string,
+    body: GlueMsg
+  ): Promise<T> {
     const encodedMsg = glueSerialize(body);
     const result = await this.pushTask({
       verb: 'wllama.action',
@@ -203,7 +206,7 @@ export class ProxyToWorker {
   /**
    * Parse JSON result returned by cpp code.
    * Throw new Error if "__exception" is present in the response
-   * 
+   *
    * TODO: get rid of this function once everything is migrated to Glue
    */
   private parseResult(result: any): any {

@@ -3,11 +3,22 @@ import { GLUE_MESSAGE_PROTOTYPES, GLUE_VERSION, GlueMsg } from './messages';
 /**
  * Glue is a simple binary protocol for serializing and deserializing messages.
  * It is inspired by protobuf, but much simpler.
- * 
+ *
  * Interested in extending Glue? Open an issue on GitHub!
  */
 
-type GlueType = 'str' | 'int' | 'float' | 'bool' | 'raw' | 'arr_str' | 'arr_int' | 'arr_float' | 'arr_bool' | 'arr_raw' | 'null';
+type GlueType =
+  | 'str'
+  | 'int'
+  | 'float'
+  | 'bool'
+  | 'raw'
+  | 'arr_str'
+  | 'arr_int'
+  | 'arr_float'
+  | 'arr_bool'
+  | 'arr_raw'
+  | 'null';
 
 const GLUE_MAGIC = new Uint8Array([71, 76, 85, 69]);
 
@@ -37,17 +48,17 @@ const GLUE_DTYPE_ARRAY_STRING = 9;
 const GLUE_DTYPE_ARRAY_RAW = 10;
 
 const TYPE_MAP: Record<GlueType, number> = {
-  'str': GLUE_DTYPE_STRING,
-  'int': GLUE_DTYPE_INT,
-  'float': GLUE_DTYPE_FLOAT,
-  'bool': GLUE_DTYPE_BOOL,
-  'raw': GLUE_DTYPE_RAW,
-  'arr_str': GLUE_DTYPE_ARRAY_STRING,
-  'arr_int': GLUE_DTYPE_ARRAY_INT,
-  'arr_float': GLUE_DTYPE_ARRAY_FLOAT,
-  'arr_bool': GLUE_DTYPE_ARRAY_BOOL,
-  'arr_raw': GLUE_DTYPE_ARRAY_RAW,
-  'null': GLUE_DTYPE_NULL,
+  str: GLUE_DTYPE_STRING,
+  int: GLUE_DTYPE_INT,
+  float: GLUE_DTYPE_FLOAT,
+  bool: GLUE_DTYPE_BOOL,
+  raw: GLUE_DTYPE_RAW,
+  arr_str: GLUE_DTYPE_ARRAY_STRING,
+  arr_int: GLUE_DTYPE_ARRAY_INT,
+  arr_float: GLUE_DTYPE_ARRAY_FLOAT,
+  arr_bool: GLUE_DTYPE_ARRAY_BOOL,
+  arr_raw: GLUE_DTYPE_ARRAY_RAW,
+  null: GLUE_DTYPE_NULL,
 };
 
 export function glueDeserialize(buf: Uint8Array): GlueMsg {
@@ -120,10 +131,11 @@ export function glueDeserialize(buf: Uint8Array): GlueMsg {
     }
   };
 
-  const magicValid = buf[0] === GLUE_MAGIC[0]
-    && buf[1] === GLUE_MAGIC[1]
-    && buf[2] === GLUE_MAGIC[2]
-    && buf[3] === GLUE_MAGIC[3];
+  const magicValid =
+    buf[0] === GLUE_MAGIC[0] &&
+    buf[1] === GLUE_MAGIC[1] &&
+    buf[2] === GLUE_MAGIC[2] &&
+    buf[3] === GLUE_MAGIC[3];
   offset += 4;
   if (!magicValid) {
     throw new Error('Invalid magic number');
@@ -145,13 +157,17 @@ export function glueDeserialize(buf: Uint8Array): GlueMsg {
     const readType = readUint32();
     if (readType === GLUE_DTYPE_NULL) {
       if (!field.isNullable) {
-        throw new Error(`${name}: Expect field ${field.name} to be non-nullable`);
+        throw new Error(
+          `${name}: Expect field ${field.name} to be non-nullable`
+        );
       }
       output[field.name] = null;
       continue;
     }
     if (readType !== TYPE_MAP[field.type]) {
-      throw new Error(`${name}: Expect field ${field.name} to have type ${field.type}`);
+      throw new Error(
+        `${name}: Expect field ${field.name} to have type ${field.type}`
+      );
     }
     output[field.name] = readField(field);
   }
@@ -169,17 +185,17 @@ export function glueSerialize(msg: GlueMsg): Uint8Array {
 
   const writeUint32 = (value: number) => {
     const buf = new ArrayBuffer(4);
-    (new DataView(buf)).setUint32(0, value, true);
+    new DataView(buf).setUint32(0, value, true);
     bufs.push(new Uint8Array(buf));
   };
   const writeInt32 = (value: number) => {
     const buf = new ArrayBuffer(4);
-    (new DataView(buf)).setInt32(0, value, true);
+    new DataView(buf).setInt32(0, value, true);
     bufs.push(new Uint8Array(buf));
   };
   const writeFloat = (value: number) => {
     const buf = new ArrayBuffer(4);
-    (new DataView(buf)).setFloat32(0, value, true);
+    new DataView(buf).setFloat32(0, value, true);
     bufs.push(new Uint8Array(buf));
   };
   const writeBool = (value: boolean) => {
@@ -214,7 +230,9 @@ export function glueSerialize(msg: GlueMsg): Uint8Array {
   for (const field of msgProto.fields) {
     const val = (msg as any)[field.name];
     if (!field.isNullable && (val === null || val === undefined)) {
-      throw new Error(`${msg._name}: Expect field ${field.name} to be non-nullable`);
+      throw new Error(
+        `${msg._name}: Expect field ${field.name} to be non-nullable`
+      );
     }
     if (val === null || val === undefined) {
       writeUint32(GLUE_DTYPE_NULL);

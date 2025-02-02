@@ -11,7 +11,25 @@ import {
 } from './utils';
 import CacheManager, { DownloadOptions } from './cache-manager';
 import { ModelManager, Model } from './model-manager';
-import { GlueMsgChatFormatRes, GlueMsgDecodeRes, GlueMsgDetokenizeRes, GlueMsgGetEmbeddingsRes, GlueMsgGetKvClearRes, GlueMsgGetKvRemoveRes, GlueMsgGetLogitsRes, GlueMsgGetVocabRes, GlueMsgLoadRes, GlueMsgLookupTokenRes, GlueMsgSamplingAcceptRes, GlueMsgSamplingSampleRes, GlueMsgSetOptionsRes, GlueMsgStatusRes, GlueMsgTestBenchmarkRes, GlueMsgTestPerplexityRes, GlueMsgTokenizeRes } from './glue/messages';
+import {
+  GlueMsgChatFormatRes,
+  GlueMsgDecodeRes,
+  GlueMsgDetokenizeRes,
+  GlueMsgGetEmbeddingsRes,
+  GlueMsgGetKvClearRes,
+  GlueMsgGetKvRemoveRes,
+  GlueMsgGetLogitsRes,
+  GlueMsgGetVocabRes,
+  GlueMsgLoadRes,
+  GlueMsgLookupTokenRes,
+  GlueMsgSamplingAcceptRes,
+  GlueMsgSamplingSampleRes,
+  GlueMsgSetOptionsRes,
+  GlueMsgStatusRes,
+  GlueMsgTestBenchmarkRes,
+  GlueMsgTestPerplexityRes,
+  GlueMsgTokenizeRes,
+} from './glue/messages';
 
 const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
 const HF_MODEL_ID_REGEX_EXPLAIN =
@@ -529,40 +547,37 @@ export class Wllama {
       );
     }
     // load the model
-    const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction(
-      'load',
-      {
-        _name: 'load_req',
-        use_mmap: true,
-        use_mlock: true,
-        n_gpu_layers: 0, // not supported for now
-        seed: config.seed || Math.floor(Math.random() * 100000),
-        n_ctx: config.n_ctx || 1024,
-        n_threads: this.useMultiThread ? nbThreads : 1,
-        n_ctx_auto: false, // not supported for now
-        model_path: hasMultipleBuffers
-          ? `/models/model-00001-of-${padDigits(blobs.length, 5)}.gguf`
-          : '/models/model.gguf',
-        embeddings: config.embeddings,
-        offload_kqv: config.offload_kqv,
-        n_batch: config.n_batch,
-        pooling_type: config.pooling_type as string,
-        rope_scaling_type: config.rope_scaling_type as string,
-        rope_freq_base: config.rope_freq_base,
-        rope_freq_scale: config.rope_freq_scale,
-        yarn_ext_factor: config.yarn_ext_factor,
-        yarn_attn_factor: config.yarn_attn_factor,
-        yarn_beta_fast: config.yarn_beta_fast,
-        yarn_beta_slow: config.yarn_beta_slow,
-        yarn_orig_ctx: config.yarn_orig_ctx,
-        cache_type_k: config.cache_type_k as string,
-        cache_type_v: config.cache_type_v as string,
-      }
-    );
+    const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
+      _name: 'load_req',
+      use_mmap: true,
+      use_mlock: true,
+      n_gpu_layers: 0, // not supported for now
+      seed: config.seed || Math.floor(Math.random() * 100000),
+      n_ctx: config.n_ctx || 1024,
+      n_threads: this.useMultiThread ? nbThreads : 1,
+      n_ctx_auto: false, // not supported for now
+      model_path: hasMultipleBuffers
+        ? `/models/model-00001-of-${padDigits(blobs.length, 5)}.gguf`
+        : '/models/model.gguf',
+      embeddings: config.embeddings,
+      offload_kqv: config.offload_kqv,
+      n_batch: config.n_batch,
+      pooling_type: config.pooling_type as string,
+      rope_scaling_type: config.rope_scaling_type as string,
+      rope_freq_base: config.rope_freq_base,
+      rope_freq_scale: config.rope_freq_scale,
+      yarn_ext_factor: config.yarn_ext_factor,
+      yarn_attn_factor: config.yarn_attn_factor,
+      yarn_beta_fast: config.yarn_beta_fast,
+      yarn_beta_slow: config.yarn_beta_slow,
+      yarn_orig_ctx: config.yarn_orig_ctx,
+      cache_type_k: config.cache_type_k as string,
+      cache_type_v: config.cache_type_v as string,
+    });
     const loadedCtxInfo: LoadedContextInfo = {
       ...loadResult,
       metadata: {},
-    }
+    };
     for (let i = 0; i < loadResult.metadata_key.length; i++) {
       loadedCtxInfo.metadata[loadResult.metadata_key[i]] =
         loadResult.metadata_val[i];
@@ -727,11 +742,14 @@ export class Wllama {
   ): Promise<void> {
     this.checkModelLoaded();
     this.samplingConfig = config;
-    const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>('sampling_init', {
-      _name: 'sint_req',
-      ...config,
-      tokens: pastTokens,
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>(
+      'sampling_init',
+      {
+        _name: 'sint_req',
+        ...config,
+        tokens: pastTokens,
+      }
+    );
     if (!result.success) {
       throw new WllamaError('Failed to initialize sampling');
     }
@@ -744,9 +762,12 @@ export class Wllama {
    */
   async getVocab(): Promise<Uint8Array[]> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgGetVocabRes>('get_vocab', {
-      _name: 'gvoc_req',
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgGetVocabRes>(
+      'get_vocab',
+      {
+        _name: 'gvoc_req',
+      }
+    );
     return result.vocab;
   }
 
@@ -758,10 +779,13 @@ export class Wllama {
    */
   async lookupToken(piece: string): Promise<number> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgLookupTokenRes>('lookup_token', {
-      _name: 'lkup_req',
-      piece,
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgLookupTokenRes>(
+      'lookup_token',
+      {
+        _name: 'lkup_req',
+        piece,
+      }
+    );
     if (!result.success) {
       return -1;
     } else {
@@ -795,10 +819,13 @@ export class Wllama {
    */
   async detokenize(tokens: number[]): Promise<Uint8Array> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgDetokenizeRes>('detokenize', {
-      _name: 'dtkn_req',
-      tokens,
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgDetokenizeRes>(
+      'detokenize',
+      {
+        _name: 'dtkn_req',
+        tokens,
+      }
+    );
     return result.buffer;
   }
 
@@ -928,9 +955,12 @@ export class Wllama {
    */
   async samplingSample(): Promise<{ piece: Uint8Array; token: number }> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgSamplingSampleRes>('sampling_sample', {
-      _name: 'ssam_req',
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgSamplingSampleRes>(
+      'sampling_sample',
+      {
+        _name: 'ssam_req',
+      }
+    );
     return {
       piece: result.piece,
       token: result.token,
@@ -943,10 +973,13 @@ export class Wllama {
    */
   async samplingAccept(tokens: number[]): Promise<void> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>('sampling_accept', {
-      _name: 'sacc_req',
-      tokens,
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>(
+      'sampling_accept',
+      {
+        _name: 'sacc_req',
+        tokens,
+      }
+    );
     if (!result.success) {
       throw new WllamaError('samplingAccept unknown error');
     }
@@ -958,10 +991,13 @@ export class Wllama {
    */
   async getLogits(topK: number = 40): Promise<{ token: number; p: number }[]> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgGetLogitsRes>('get_logits', {
-      _name: 'glog_req',
-      top_k: topK,
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgGetLogitsRes>(
+      'get_logits',
+      {
+        _name: 'glog_req',
+        top_k: topK,
+      }
+    );
     const logits: { token: number; p: number }[] = [];
     for (let i = 0; i < result.tokens.length; i++) {
       logits.push({
@@ -1008,10 +1044,13 @@ export class Wllama {
         'inference_error'
       );
     }
-    const result = await this.proxy.wllamaAction<GlueMsgGetEmbeddingsRes>('embeddings', {
-      _name: 'gemb_req',
-      tokens,
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgGetEmbeddingsRes>(
+      'embeddings',
+      {
+        _name: 'gemb_req',
+        tokens,
+      }
+    );
     if (!result.success) {
       throw new WllamaError('embeddings unknown error');
     } else {
@@ -1027,11 +1066,14 @@ export class Wllama {
    */
   async kvRemove(nKeep: number, nDiscard: number): Promise<void> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgGetKvRemoveRes>('kv_remove', {
-      _name: 'kvcr_req',
-      n_keep: nKeep,
-      n_discard: nDiscard,
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgGetKvRemoveRes>(
+      'kv_remove',
+      {
+        _name: 'kvcr_req',
+        n_keep: nKeep,
+        n_discard: nDiscard,
+      }
+    );
     if (!result.success) {
       throw new WllamaError('kvRemove unknown error');
     }
@@ -1043,9 +1085,12 @@ export class Wllama {
    */
   async kvClear(): Promise<void> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgGetKvClearRes>('kv_clear', {
-      _name: 'kvcc_req',
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgGetKvClearRes>(
+      'kv_clear',
+      {
+        _name: 'kvcc_req',
+      }
+    );
     if (!result.success) {
       throw new WllamaError('kvClear unknown error');
     }
@@ -1101,13 +1146,16 @@ export class Wllama {
     this.checkModelLoaded();
     const roles = messages.map((m) => m.role);
     const contents = messages.map((m) => m.content);
-    const result = await this.proxy.wllamaAction<GlueMsgChatFormatRes>('chat_format', {
-      _name: 'cfmt_req',
-      roles,
-      contents,
-      tmpl: template,
-      add_ass: addAssistant,
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgChatFormatRes>(
+      'chat_format',
+      {
+        _name: 'cfmt_req',
+        roles,
+        contents,
+        tmpl: template,
+        add_ass: addAssistant,
+      }
+    );
     if (!result.success) {
       throw new WllamaError('formatChat unknown error');
     }
@@ -1152,11 +1200,14 @@ export class Wllama {
     nSamples: number
   ): Promise<{ t_ms: number }> {
     this.checkModelLoaded();
-    return await this.proxy.wllamaAction<GlueMsgTestBenchmarkRes>('test_benchmark', {
-      _name: 'tben_req',
-      type,
-      n_samples: nSamples,
-    });
+    return await this.proxy.wllamaAction<GlueMsgTestBenchmarkRes>(
+      'test_benchmark',
+      {
+        _name: 'tben_req',
+        type,
+        n_samples: nSamples,
+      }
+    );
   }
 
   /**
@@ -1164,18 +1215,24 @@ export class Wllama {
    */
   async _testPerplexity(tokens: number[]): Promise<{ ppl: number }> {
     this.checkModelLoaded();
-    return await this.proxy.wllamaAction<GlueMsgTestPerplexityRes>('test_perplexity', {
-      _name: 'tper_req',
-      tokens,
-    });
+    return await this.proxy.wllamaAction<GlueMsgTestPerplexityRes>(
+      'test_perplexity',
+      {
+        _name: 'tper_req',
+        tokens,
+      }
+    );
   }
 
   ///// Prompt cache utils /////
   private async getCachedTokens(): Promise<number[]> {
     this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgStatusRes>('current_status', {
-      _name: 'stat_req',
-    });
+    const result = await this.proxy.wllamaAction<GlueMsgStatusRes>(
+      'current_status',
+      {
+        _name: 'stat_req',
+      }
+    );
     return result.tokens;
   }
 
