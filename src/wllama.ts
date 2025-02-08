@@ -1058,6 +1058,7 @@ export class Wllama {
    */
   async kvRemove(nKeep: number, nDiscard: number): Promise<void> {
     this.checkModelLoaded();
+    if (nDiscard === 0) return;
     const result = await this.proxy.wllamaAction<GlueMsgGetKvRemoveRes>(
       'kv_remove',
       {
@@ -1240,11 +1241,8 @@ export class Wllama {
         break;
       }
     }
-    const nDiscard = cachedTokens.length - nKeep;
-    this.logger().debug(`Cache nKeep=${nKeep} nDiscard=${nDiscard}`);
-    if (nDiscard > 0) {
-      await this.kvRemove(nKeep, nDiscard);
-    }
+    this.logger().debug(`Cache nKeep=${nKeep}`);
+    await this.kvRemove(nKeep, -1);
     return seq.slice(nKeep, seq.length);
   }
 
