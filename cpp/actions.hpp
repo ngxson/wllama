@@ -649,12 +649,31 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
   PARSE_REQ(glue_msg_get_kv_remove_req);
   const int n_keep = req.n_keep.value;
   const int n_discard = req.n_discard.value;
-  const int n_past = app.tokens.size();
-  llama_kv_cache_seq_rm(app.ctx, 0, n_keep, n_keep + n_discard);
-  llama_kv_cache_seq_add(app.ctx, 0, n_keep + n_discard, n_past, -n_discard);
-  app.tokens.erase(
-      app.tokens.begin() + n_keep,
-      app.tokens.begin() + n_keep + n_discard);
+
+  if (n_discard > 0)
+  {
+    // TODO: this code branch is kinda broken, to be fixed later
+    const int n_past = app.tokens.size();
+    llama_kv_cache_seq_rm(app.ctx, 0, n_keep, n_keep + n_discard);
+    llama_kv_cache_seq_add(app.ctx, 0, n_keep + n_discard, n_past, -n_discard);
+    app.tokens.erase(
+        app.tokens.begin() + n_keep,
+        app.tokens.begin() + n_keep + n_discard);
+  }
+  else if (n_discard < 0)
+  {
+    if (n_keep == 0)
+    {
+      llama_kv_cache_clear(app.ctx);
+    }
+    else
+    {
+      llama_kv_cache_seq_rm(app.ctx, 0, n_keep, -1);
+      app.tokens.erase(
+          app.tokens.begin() + n_keep,
+          app.tokens.end());
+    }
+  }
 
   glue_msg_get_kv_remove_res res;
   res.success.value = true;
