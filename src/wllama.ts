@@ -7,7 +7,6 @@ import {
   isSupportMultiThread,
   joinBuffers,
   sortFileByShard,
-  padDigits,
 } from './utils';
 import CacheManager, { DownloadOptions } from './cache-manager';
 import { ModelManager, Model } from './model-manager';
