@@ -24,8 +24,8 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
     "className": "GlueMsgLoadReq",
     "fields": [
       {
-        "type": "str",
-        "name": "model_path",
+        "type": "arr_str",
+        "name": "model_paths",
         "isNullable": false
       },
       {
@@ -989,7 +989,7 @@ export interface GlueMsgError {
 // struct glue_msg_load_req
 export interface GlueMsgLoadReq {
   _name: "load_req";
-  model_path: string;
+  model_paths: string[];
   n_ctx_auto: boolean;
   use_mmap: boolean;
   use_mlock: boolean;

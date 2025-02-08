@@ -15,8 +15,7 @@
 // #define GLUE_DEBUG(...) fprintf(stderr, "@@ERROR@@" __VA_ARGS__)
 
 #include "llama.h"
-#include "json.hpp"
-#include "common.h"
+#include "helpers/wcommon.h"
 #include "actions.hpp"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))

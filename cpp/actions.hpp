@@ -8,14 +8,14 @@
 #include <cmath>
 
 #include "llama.h"
-#include "common.h"
-#include "sampling.h"
+#include "helpers/wcommon.h"
+#include "helpers/wsampling.h"
 
 #include "glue.hpp"
 
 #define PARSE_REQ(msg_typename) \
-  msg_typename req; \
-  glue_inbuf inbuf(req_raw); \
+  msg_typename req;             \
+  glue_inbuf inbuf(req_raw);    \
   req.handler.deserialize(inbuf);
 
 struct app_t
@@ -23,7 +23,7 @@ struct app_t
   llama_model *model;
   llama_context *ctx;
   const llama_vocab *vocab;
-  common_sampler *ctx_sampling = nullptr;
+  wcommon_sampler *ctx_sampling = nullptr;
   llama_batch batch = llama_batch_init(512, 0, 1);
   llama_tokens tokens;
   int32_t seed = LLAMA_DEFAULT_SEED;
@@ -100,7 +100,7 @@ void free_all(app_t &app)
   if (app.model != nullptr)
     llama_model_free(app.model);
   if (app.ctx_sampling != nullptr)
-    common_sampler_free(app.ctx_sampling);
+    wcommon_sampler_free(app.ctx_sampling);
 }
 
 struct kv_dump
@@ -151,7 +151,7 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_load_req);
   free_all(app);
-  std::string &model_path = req.model_path.value;
+  std::vector<std::string> &model_paths = req.model_paths.arr;
   bool n_ctx_auto = req.n_ctx_auto.value;
 
   auto mparams = llama_model_default_params();
@@ -199,7 +199,20 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
     cparams.type_k = kv_cache_type_from_str(req.cache_type_k.value);
   if (req.cache_type_v.not_null())
     cparams.type_v = kv_cache_type_from_str(req.cache_type_v.value);
-  app.model = llama_model_load_from_file(model_path.c_str(), mparams);
+
+  // init threadpool
+  ggml_threadpool_params_default(cparams.n_threads);
+
+  // prepare model paths
+  std::vector<const char *> model_paths_ptrs;
+  for (auto &path : model_paths)
+  {
+    model_paths_ptrs.push_back(path.c_str());
+  }
+
+  // load model
+  app.model = llama_model_load_from_splits(
+      model_paths_ptrs.data(), model_paths_ptrs.size(), mparams);
   if (app.model == nullptr)
   {
     free_all(app);
@@ -293,7 +306,7 @@ glue_msg_sampling_init_res action_sampling_init(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_sampling_init_req);
   // sampling
-  common_params_sampling sparams;
+  wcommon_params_sampling sparams;
   sparams.seed = app.seed;
   if (sparams.seed == LLAMA_DEFAULT_SEED)
     sparams.seed = time(NULL);
@@ -349,14 +362,14 @@ glue_msg_sampling_init_res action_sampling_init(app_t &app, const char *req_raw)
   // maybe free before creating a new one
   if (app.ctx_sampling != nullptr)
   {
-    common_sampler_free(app.ctx_sampling);
+    wcommon_sampler_free(app.ctx_sampling);
   }
-  app.ctx_sampling = common_sampler_init(app.model, sparams);
+  app.ctx_sampling = wcommon_sampler_init(app.model, sparams);
   if (req.tokens.not_null())
   {
     for (auto id : req.tokens.arr)
     {
-      common_sampler_accept(app.ctx_sampling, id, false);
+      wcommon_sampler_accept(app.ctx_sampling, id, false);
     }
   }
 
@@ -374,7 +387,7 @@ glue_msg_get_vocab_res action_get_vocab(app_t &app, const char *req_raw)
   vocab.resize(max_tokens);
   for (int32_t id = 0; id < max_tokens; id++)
   {
-    std::string token_as_str = common_token_to_piece(app.ctx, id);
+    std::string token_as_str = wcommon_token_to_piece(app.ctx, id);
     vocab.emplace_back(convert_string_to_buf(token_as_str));
   }
 
@@ -393,7 +406,7 @@ glue_msg_lookup_token_res action_lookup_token(app_t &app, const char *req_raw)
   glue_msg_lookup_token_res res;
   for (int32_t id = 0; id < max_tokens; id++)
   {
-    std::string token_as_str = common_token_to_piece(app.ctx, id);
+    std::string token_as_str = wcommon_token_to_piece(app.ctx, id);
     if (token_as_str == piece)
     {
       res.success.value = true;
@@ -412,7 +425,7 @@ glue_msg_tokenize_res action_tokenize(app_t &app, const char *req_raw)
   PARSE_REQ(glue_msg_tokenize_req);
   std::string &text = req.text.value;
   bool special = req.special.value;
-  llama_tokens tokens_list = common_tokenize(app.vocab, text, false, special);
+  llama_tokens tokens_list = wcommon_tokenize(app.vocab, text, false, special);
 
   glue_msg_tokenize_res res;
   res.success.value = true;
@@ -428,7 +441,7 @@ glue_msg_detokenize_res action_detokenize(app_t &app, const char *req_raw)
   std::stringstream output;
   for (auto id : tokens)
   {
-    output << common_token_to_piece(app.ctx, id);
+    output << wcommon_token_to_piece(app.ctx, id);
   }
   std::string parsed_str = output.str();
 
@@ -445,12 +458,12 @@ glue_msg_decode_res action_decode(app_t &app, const char *req_raw)
   llama_tokens tokens_list = std::move(req.tokens.arr);
   bool skip_logits = req.skip_logits.value;
   size_t i = 0;
-  common_batch_clear(app.batch);
+  wcommon_batch_clear(app.batch);
   for (auto id : tokens_list)
   {
     bool grp_attn_enabled = false; // TODO: maybe remove grp_attn
     int32_t n_past = app.tokens.size();
-    common_batch_add(app.batch, id, n_past, {0}, false);
+    wcommon_batch_add(app.batch, id, n_past, {0}, false);
     app.tokens.push_back(id);
     i++;
   }
@@ -487,10 +500,10 @@ glue_msg_encode_res action_encode(app_t &app, const char *req_raw)
     return res;
   }
   size_t n_past = 0;
-  common_batch_clear(app.batch);
+  wcommon_batch_clear(app.batch);
   for (auto id : tokens_list)
   {
-    common_batch_add(app.batch, id, n_past, {0}, false);
+    wcommon_batch_add(app.batch, id, n_past, {0}, false);
     n_past++;
   }
   glue_msg_encode_res res;
@@ -513,8 +526,8 @@ glue_msg_sampling_sample_res action_sampling_sample(app_t &app, const char *req_
 {
   PARSE_REQ(glue_msg_sampling_sample_req);
   int32_t idx = app.batch.n_tokens - 1;
-  const llama_token new_token_id = common_sampler_sample(app.ctx_sampling, app.ctx, idx, false);
-  std::string piece = common_token_to_piece(app.ctx, new_token_id);
+  const llama_token new_token_id = wcommon_sampler_sample(app.ctx_sampling, app.ctx, idx, false);
+  std::string piece = wcommon_token_to_piece(app.ctx, new_token_id);
 
   glue_msg_sampling_sample_res res;
   res.success.value = true;
@@ -530,9 +543,9 @@ glue_msg_sampling_accept_res action_sampling_accept(app_t &app, const char *req_
   llama_tokens tokens_list = std::move(req.tokens.arr);
   for (auto id : tokens_list)
   {
-    common_sampler_accept(app.ctx_sampling, id, false);
+    wcommon_sampler_accept(app.ctx_sampling, id, false);
   }
-  
+
   glue_msg_sampling_accept_res res;
   res.success.value = true;
   return res;
@@ -591,7 +604,7 @@ glue_msg_get_logits_res action_get_logits(app_t &app, const char *req_raw)
 glue_msg_get_embeddings_res action_embeddings(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_get_embeddings_req);
-  auto & tokens_list = req.tokens.arr;
+  auto &tokens_list = req.tokens.arr;
   // allocate output
   const int n_embd = llama_model_n_embd(app.model);
   std::vector<float> embeddings(n_embd, 0); // single seq
@@ -623,8 +636,8 @@ glue_msg_get_embeddings_res action_embeddings(app_t &app, const char *req_raw)
       return res;
     }
   }
-  common_embd_normalize(embd, out, n_embd, 2);
-  
+  wcommon_embd_normalize(embd, out, n_embd, 2);
+
   res.success.value = true;
   res.embeddings.arr = std::move(embeddings);
   return res;
@@ -743,7 +756,7 @@ glue_msg_test_benchmark_res action_test_benchmark(app_t &app, const char *req_ra
     llama_batch batch = llama_batch_init(n_samples, 0, 1);
     for (int i = 0; i < n_samples; i++)
     {
-      common_batch_add(batch, i % n_vocab, i, {0}, i == n_samples - 1);
+      wcommon_batch_add(batch, i % n_vocab, i, {0}, i == n_samples - 1);
     }
     int ret = llama_decode(app.ctx, batch);
     llama_batch_free(batch);
@@ -760,8 +773,8 @@ glue_msg_test_benchmark_res action_test_benchmark(app_t &app, const char *req_ra
     llama_batch batch = llama_batch_init(1, 0, 1);
     for (int i = 0; i < n_samples; i++)
     {
-      common_batch_clear(batch);
-      common_batch_add(batch, i % n_vocab, i, {0}, true);
+      wcommon_batch_clear(batch);
+      wcommon_batch_add(batch, i % n_vocab, i, {0}, true);
       int ret = llama_decode(app.ctx, batch);
       if (ret != 0)
       {
@@ -829,8 +842,8 @@ glue_msg_test_perplexity_res action_test_perplexity(app_t &app, const char *req_
   for (size_t i = 0; i < n - 1; ++i)
   {
     // Prepare batch with current token (input[i])
-    common_batch_clear(app.batch);
-    common_batch_add(app.batch, input[i], i, {0}, true); // Enable logits for this token
+    wcommon_batch_clear(app.batch);
+    wcommon_batch_add(app.batch, input[i], i, {0}, true); // Enable logits for this token
 
     if (llama_decode(app.ctx, app.batch) != 0)
     {
@@ -864,71 +877,21 @@ glue_msg_test_perplexity_res action_test_perplexity(app_t &app, const char *req_
   return res;
 }
 
-//////////////////////////////////////////
-
-// because we can't support jinja for now, we temporary use an old version of common_chat_apply_template
-// TODO: support jinja
-std::string common_chat_apply_template_old(const struct llama_model *model,
-                                           const std::string &tmpl,
-                                           const std::vector<common_chat_msg> &msgs,
-                                           bool add_ass)
-{
-  int alloc_size = 0;
-  bool fallback = false; // indicate if we must fallback to default chatml
-  std::vector<llama_chat_message> chat;
-  for (const auto &msg : msgs)
-  {
-    chat.push_back({msg.role.c_str(), msg.content.c_str()});
-    alloc_size += (msg.role.size() + msg.content.size()) * 1.25;
-  }
-
-  const char *ptr_tmpl = tmpl.empty() ? llama_model_chat_template(model, nullptr) : tmpl.c_str();
-  std::vector<char> buf(alloc_size);
-
-  // run the first time to get the total output length
-  int32_t res = llama_chat_apply_template(ptr_tmpl, chat.data(), chat.size(), add_ass, buf.data(), buf.size());
-
-  // error: chat template is not supported
-  if (res < 0)
-  {
-    if (ptr_tmpl != nullptr)
-    {
-      throw std::runtime_error("this custom template is not supported");
-    }
-    // If the built-in template is not supported, we default to chatml
-    res = llama_chat_apply_template("chatml", chat.data(), chat.size(), add_ass, buf.data(), buf.size());
-    fallback = true;
-  }
-
-  // if it turns out that our buffer is too small, we resize it
-  if ((size_t)res > buf.size())
-  {
-    buf.resize(res);
-    res = llama_chat_apply_template(
-        fallback ? "chatml" : ptr_tmpl,
-        chat.data(), chat.size(), add_ass, buf.data(), buf.size());
-  }
-
-  std::string formatted_chat(buf.data(), res);
-  return formatted_chat;
-}
-
-// apply chat template
 glue_msg_chat_format_res action_chat_format(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_chat_format_req);
   std::string tmpl = req.tmpl.not_null() ? req.tmpl.value : "";
   bool add_ass = req.add_ass.not_null() ? req.add_ass.value : false;
-  std::vector<std::string> & roles = req.roles.arr;
-  std::vector<std::string> & contents = req.contents.arr;
-  std::vector<common_chat_msg> chat;
+  std::vector<std::string> &roles = req.roles.arr;
+  std::vector<std::string> &contents = req.contents.arr;
+  std::vector<wcommon_chat_msg> chat;
   for (size_t i = 0; i < roles.size(); i++)
   {
     chat.push_back({roles[i], contents[i]});
   }
   try
   {
-    std::string formatted_chat = common_chat_apply_template_old(app.model, tmpl, chat, add_ass);
+    std::string formatted_chat = wcommon_chat_apply_template(app.model, tmpl, chat, add_ass);
     glue_msg_chat_format_res res;
     res.success.value = true;
     res.formatted_chat.value = formatted_chat;

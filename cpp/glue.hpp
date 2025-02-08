@@ -490,7 +490,7 @@ struct glue_msg_error
 struct glue_msg_load_req
 {
   GLUE_HANDLER("load_req")
-  GLUE_FIELD(str, model_path)
+  GLUE_FIELD(arr_str, model_paths)
   GLUE_FIELD(bool, n_ctx_auto)
   GLUE_FIELD(bool, use_mmap)
   GLUE_FIELD(bool, use_mlock)
