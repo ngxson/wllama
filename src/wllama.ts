@@ -491,7 +491,6 @@ export class Wllama {
       );
     }
     sortFileByShard(blobs);
-    const hasMultipleBuffers = blobs.length > 1;
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
@@ -530,15 +529,11 @@ export class Wllama {
       this.config.suppressNativeLog ?? false,
       this.logger()
     );
-    // TODO: files maybe out-of-order
-    await this.proxy.moduleInit(
-      blobs.map((blob, i) => ({
-        name: hasMultipleBuffers
-          ? `model-${padDigits(i + 1, 5)}-of-${padDigits(blobs.length, 5)}.gguf`
-          : 'model.gguf',
-        blob,
-      }))
-    );
+    const modelFiles = blobs.map((blob, i) => ({
+      name: `model-${i}.gguf`,
+      blob,
+    }));
+    await this.proxy.moduleInit(modelFiles);
     // run it
     const startResult: any = await this.proxy.wllamaStart();
     if (!startResult.success) {
@@ -556,9 +551,7 @@ export class Wllama {
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       n_ctx_auto: false, // not supported for now
-      model_path: hasMultipleBuffers
-        ? `/models/model-00001-of-${padDigits(blobs.length, 5)}.gguf`
-        : '/models/model.gguf',
+      model_paths: modelFiles.map((f) => `models/${f.name}`),
       embeddings: config.embeddings,
       offload_kqv: config.offload_kqv,
       n_batch: config.n_batch,

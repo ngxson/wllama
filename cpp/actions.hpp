@@ -14,8 +14,8 @@
 #include "glue.hpp"
 
 #define PARSE_REQ(msg_typename) \
-  msg_typename req; \
-  glue_inbuf inbuf(req_raw); \
+  msg_typename req;             \
+  glue_inbuf inbuf(req_raw);    \
   req.handler.deserialize(inbuf);
 
 struct app_t
@@ -151,7 +151,7 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_load_req);
   free_all(app);
-  std::string &model_path = req.model_path.value;
+  std::vector<std::string> &model_paths = req.model_paths.arr;
   bool n_ctx_auto = req.n_ctx_auto.value;
 
   auto mparams = llama_model_default_params();
@@ -199,7 +199,20 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
     cparams.type_k = kv_cache_type_from_str(req.cache_type_k.value);
   if (req.cache_type_v.not_null())
     cparams.type_v = kv_cache_type_from_str(req.cache_type_v.value);
-  app.model = llama_model_load_from_file(model_path.c_str(), mparams);
+
+  // init threadpool
+  ggml_threadpool_params_default(cparams.n_threads);
+
+  // prepare model paths
+  std::vector<const char *> model_paths_ptrs;
+  for (auto &path : model_paths)
+  {
+    model_paths_ptrs.push_back(path.c_str());
+  }
+
+  // load model
+  app.model = llama_model_load_from_splits(
+      model_paths_ptrs.data(), model_paths_ptrs.size(), mparams);
   if (app.model == nullptr)
   {
     free_all(app);
@@ -532,7 +545,7 @@ glue_msg_sampling_accept_res action_sampling_accept(app_t &app, const char *req_
   {
     wcommon_sampler_accept(app.ctx_sampling, id, false);
   }
-  
+
   glue_msg_sampling_accept_res res;
   res.success.value = true;
   return res;
@@ -591,7 +604,7 @@ glue_msg_get_logits_res action_get_logits(app_t &app, const char *req_raw)
 glue_msg_get_embeddings_res action_embeddings(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_get_embeddings_req);
-  auto & tokens_list = req.tokens.arr;
+  auto &tokens_list = req.tokens.arr;
   // allocate output
   const int n_embd = llama_model_n_embd(app.model);
   std::vector<float> embeddings(n_embd, 0); // single seq
@@ -624,7 +637,7 @@ glue_msg_get_embeddings_res action_embeddings(app_t &app, const char *req_raw)
     }
   }
   wcommon_embd_normalize(embd, out, n_embd, 2);
-  
+
   res.success.value = true;
   res.embeddings.arr = std::move(embeddings);
   return res;
@@ -869,8 +882,8 @@ glue_msg_chat_format_res action_chat_format(app_t &app, const char *req_raw)
   PARSE_REQ(glue_msg_chat_format_req);
   std::string tmpl = req.tmpl.not_null() ? req.tmpl.value : "";
   bool add_ass = req.add_ass.not_null() ? req.add_ass.value : false;
-  std::vector<std::string> & roles = req.roles.arr;
-  std::vector<std::string> & contents = req.contents.arr;
+  std::vector<std::string> &roles = req.roles.arr;
+  std::vector<std::string> &contents = req.contents.arr;
   std::vector<wcommon_chat_msg> chat;
   for (size_t i = 0; i < roles.size(); i++)
   {
