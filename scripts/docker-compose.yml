@@ -4,8 +4,11 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM emscripten/emsdk:3.1.55
+        ARG EMSDK_IMAGE_TAG=none  # modify it in build_wasm.sh
+        FROM emscripten/emsdk:$${EMSDK_IMAGE_TAG}
         RUN apt update && apt install -y git
+      args:
+        EMSDK_IMAGE_TAG: ${EMSDK_IMAGE_TAG}
     user: "${D_UID}:${D_GID}"
     volumes:
       - ..:/source:Z
