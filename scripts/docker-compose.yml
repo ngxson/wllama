@@ -38,11 +38,16 @@ services:
         export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS -pthread -sUSE_PTHREADS=1 -sPTHREAD_POOL_SIZE=Module[\\\"pthreadPoolSize\\\"]"
         emmake make wllama -j
 
-        # copy output files
+        # go back to root
         cd ../..
+
+        # list files
+        echo "wasm/single-thread"; ls -lh wasm/single-thread
+        echo "wasm/multi-thread";  ls -lh wasm/multi-thread
+
+        # copy output files
         mkdir -p src/multi-thread
         cp wasm/multi-thread/wllama.js         src/multi-thread
         cp wasm/multi-thread/wllama.wasm       src/multi-thread
-        cp wasm/multi-thread/wllama.worker.js  src/multi-thread
         cp wasm/single-thread/wllama.js        src/single-thread
         cp wasm/single-thread/wllama.wasm      src/single-thread

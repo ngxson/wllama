@@ -17,7 +17,6 @@ import { createWorker, isSafariMobile } from './utils';
 import {
   LLAMA_CPP_WORKER_CODE,
   WLLAMA_MULTI_THREAD_CODE,
-  WLLAMA_MULTI_THREAD_WORKER_CODE,
   WLLAMA_SINGLE_THREAD_CODE,
 } from './workers-code/generated';
 
@@ -86,9 +85,6 @@ export class ProxyToWorker {
       nbThread: this.nbThread,
     };
     const completeCode: string = [
-      this.multiThread
-        ? `const WLLAMA_MULTI_THREAD_WORKER_CODE = ${JSON.stringify(WLLAMA_MULTI_THREAD_WORKER_CODE)};`
-        : '// single-thread build',
       `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,
       `function wModuleInit() { ${mainModuleCode}; return Module; }`,
       LLAMA_CPP_WORKER_CODE,
