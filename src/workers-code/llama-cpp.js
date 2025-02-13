@@ -53,15 +53,11 @@ const getWModuleConfig = (_argMainScriptBlob) => {
         str.length > 128 ? `${str.substr(0, 128)}...` : str;
       if (filename.match(/wllama\.worker\.js/)) {
         msg({
-          verb: 'console.debug',
-          args: [`Loading "${filename}" from WLLAMA_MULTI_THREAD_WORKER_CODE`],
+          verb: 'console.error',
+          args: [
+            '"wllama.worker.js" is removed from v2.2.1. Hint: make sure to clear browser\'s cache.',
+          ],
         });
-        const workerURL = URL.createObjectURL(
-          new Blob([WLLAMA_MULTI_THREAD_WORKER_CODE], {
-            type: 'text/javascript',
-          })
-        );
-        return workerURL.toString();
       } else {
         msg({
           verb: 'console.debug',
