@@ -217,3 +217,38 @@ export const createWorker = (workerCode: string | Blob): Worker => {
   );
   return new Worker(workerURL, { type: 'module' });
 };
+
+/**
+ * Convert callback to async iterator
+ */
+export const cbToAsyncIter =
+  <A extends any[], T>(
+    fn: (
+      ...args: [...args: A, callback: (val?: T, done?: boolean) => void]
+    ) => void
+  ) =>
+  (...args: A): AsyncIterable<T> => {
+    let values: Promise<[T, boolean]>[] = [];
+    let resolve: (x: [T, boolean]) => void;
+    values.push(
+      new Promise((r) => {
+        resolve = r;
+      })
+    );
+    fn(...args, (val?: T, done?: boolean) => {
+      resolve([val!, done!]);
+      values.push(
+        new Promise((r) => {
+          resolve = r;
+        })
+      );
+    });
+    return (async function* () {
+      let val: T;
+      for (let i = 0, done = false; !done; i++) {
+        [val, done] = await values[i];
+        delete values[i];
+        if (val !== undefined) yield val;
+      }
+    })();
+  };

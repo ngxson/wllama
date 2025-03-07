@@ -2,6 +2,7 @@ import { ProxyToWorker } from './worker';
 import {
   absoluteUrl,
   bufToText,
+  cbToAsyncIter,
   checkEnvironmentCompatible,
   isString,
   isSupportMultiThread,
@@ -136,6 +137,25 @@ export interface SamplingConfig {
   logit_bias?: { token: number; bias: number }[];
 }
 
+export interface CompletionChunk {
+  token: number;
+  piece: Uint8Array;
+  currentText: string;
+}
+
+export interface CompletionOptions {
+  /**
+   * When processing input prompt, we don't need to get output tokens. Only used by llama_decode()
+   * Default: false
+   */
+  skipLogits?: boolean;
+  /**
+   * Optional abort signal to stop the generation.
+   * This can also be used to stop during prompt processing. In this case, it will throw WllamaAbortError.
+   */
+  abortSignal?: AbortSignal;
+}
+
 export interface ChatCompletionOptions {
   nPredict?: number;
   onNewToken?(
@@ -143,6 +163,9 @@ export interface ChatCompletionOptions {
     piece: Uint8Array,
     currentText: string,
     optionals: {
+      /**
+       * DEPRECATED, use ChatCompletionOptions["abortSignal"] instead
+       */
       abortSignal: () => any;
     }
   ): any;
@@ -157,6 +180,11 @@ export interface ChatCompletionOptions {
    * Useful for chat, because it skip evaluating the history part of the conversation.
    */
   useCache?: boolean;
+  /**
+   * Optional abort signal to stop the generation.
+   * This can also be used to stop during prompt processing (with a bit of delay.)
+   */
+  abortSignal?: AbortSignal;
 }
 
 export interface ModelMetadata {
@@ -216,6 +244,17 @@ export class WllamaError extends Error {
   constructor(message: string, type: WllamaErrorType = 'unknown_error') {
     super(message);
     this.type = type;
+  }
+}
+
+/**
+ * AbortError is thrown when the user wants to abort the current operation.
+ * This is equivalent to AbortError in Fetch API.
+ */
+export class WllamaAbortError extends Error {
+  name: string = 'AbortError';
+  constructor() {
+    super('Operation aborted');
   }
 }
 
@@ -659,6 +698,17 @@ export class Wllama {
   }
 
   /**
+   * Same with `createChatCompletion`, but returns an async iterator instead.
+   */
+  async createChatCompletionGenerator(
+    messages: WllamaChatMessage[],
+    options: Exclude<ChatCompletionOptions, 'onNewToken'>
+  ): Promise<AsyncIterable<CompletionChunk>> {
+    const prompt = await this.formatChat(messages, true);
+    return await this.createCompletionGenerator(prompt, options);
+  }
+
+  /**
    * Make completion for a given text.
    * @param prompt Input text
    * @param options
@@ -694,7 +744,8 @@ export class Wllama {
     let outBuf = new Uint8Array();
     // abort signal
     let abort = false;
-    const abortSignal = () => {
+    // abortSignalFn is a legacy function, use options.abortSignal instead
+    const abortSignalFn = () => {
       abort = true;
     };
     // predict next tokens
@@ -707,10 +758,10 @@ export class Wllama {
       outBuf = joinBuffers([outBuf, sampled.piece]);
       if (options.onNewToken) {
         options.onNewToken(sampled.token, sampled.piece, bufToText(outBuf), {
-          abortSignal,
+          abortSignal: abortSignalFn, // legacy
         });
       }
-      if (abort) {
+      if (abort || options.abortSignal?.aborted) {
         break; // abort signal is set
       }
       // decode next token
@@ -718,6 +769,32 @@ export class Wllama {
       await this.decode([sampled.token], {});
     }
     return bufToText(outBuf);
+  }
+
+  /**
+   * Same with `createCompletion`, but returns an async iterator instead.
+   */
+  createCompletionGenerator(
+    prompt: string,
+    options: Exclude<ChatCompletionOptions, 'onNewToken'>
+  ): Promise<AsyncIterable<CompletionChunk>> {
+    return new Promise((resolve, reject) => {
+      const createGenerator = cbToAsyncIter(
+        (callback: (val?: CompletionChunk, done?: boolean) => void) => {
+          this.createCompletion(prompt, {
+            ...options,
+            onNewToken: (token, piece, currentText) => {
+              callback({ token, piece, currentText }, false);
+            },
+          })
+            .catch(reject)
+            .then(() => {
+              callback(undefined, true);
+            });
+        }
+      );
+      resolve(createGenerator());
+    });
   }
 
   //////////////////////////////////////////////
@@ -807,9 +884,15 @@ export class Wllama {
   /**
    * Convert a list of tokens to text
    * @param tokens
+   * @param returnString Return a string instead of Uint8Array
    * @returns Uint8Array, which maybe an unfinished unicode
    */
-  async detokenize(tokens: number[]): Promise<Uint8Array> {
+  async detokenize(tokens: number[], returnString: true): Promise<String>;
+  async detokenize(tokens: number[], returnString: false): Promise<Uint8Array>;
+  async detokenize(
+    tokens: number[],
+    returnString: boolean
+  ): Promise<Uint8Array | String> {
     this.checkModelLoaded();
     const result = await this.proxy.wllamaAction<GlueMsgDetokenizeRes>(
       'detokenize',
@@ -818,21 +901,18 @@ export class Wllama {
         tokens,
       }
     );
-    return result.buffer;
+    return returnString ? bufToText(result.buffer) : result.buffer;
   }
 
   /**
    * Run llama_decode()
    * @param tokens A list of tokens to be decoded
-   * @param options
+   * @param options Additional options
    * @returns n_past (number of tokens so far in the sequence)
    */
   async decode(
     tokens: number[],
-    options: {
-      // when processing input prompt, we don't need to get output tokens
-      skipLogits?: boolean;
-    }
+    options: CompletionOptions
   ): Promise<{ nPast: number }> {
     this.checkModelLoaded();
     if (this.useEmbeddings) {
@@ -858,6 +938,9 @@ export class Wllama {
     );
     let result: any;
     for (let i = 0; i < batches.length; i++) {
+      if (options?.abortSignal?.aborted) {
+        throw new WllamaAbortError();
+      }
       const isNotLast = batches.length > 1 && i < batches.length - 1;
       result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('decode', {
         _name: 'deco_req',
@@ -877,13 +960,12 @@ export class Wllama {
   /**
    * Run llama_encode()
    * @param tokens A list of tokens to be encoded
-   * @param options Unused for now
+   * @param options Additional options
    * @returns n_past (number of tokens so far in the sequence)
    */
   async encode(
     tokens: number[],
-    // @ts-ignore unused variable
-    options?: Record<never, never>
+    options?: CompletionOptions
   ): Promise<{ nPast: number }> {
     this.checkModelLoaded();
     if (!this.hasEncoder) {
@@ -916,6 +998,9 @@ export class Wllama {
     );
     let result: any;
     for (let i = 0; i < batches.length; i++) {
+      if (options?.abortSignal?.aborted) {
+        throw new WllamaAbortError();
+      }
       result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('encode', {
         _name: 'enco_req',
         tokens: batches[i],
