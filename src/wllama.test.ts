@@ -309,6 +309,48 @@ test.sequential('generates chat completion', async () => {
   await wllama.exit();
 });
 
+test.sequential('generates chat completion using async iterator', async () => {
+  const wllama = new Wllama(CONFIG_PATHS);
+
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 1024,
+    seed: 42,
+  });
+
+  const messages: WllamaChatMessage[] = [
+    { role: 'system', content: 'You are helpful.' },
+    { role: 'user', content: 'Hi!' },
+    { role: 'assistant', content: 'Hello!' },
+    { role: 'user', content: 'How are you?' },
+  ];
+  const stream = await wllama.createChatCompletionGenerator(messages, {
+    nPredict: 10,
+    sampling: {
+      temp: 0.0,
+    },
+  });
+
+  let finalTokens: number[] = [];
+  let finalText = '';
+  for await (const chunk of stream) {
+    expect(chunk).toBeDefined();
+    expect(chunk.token).toBeGreaterThan(0);
+    expect(chunk.piece).toBeDefined();
+    expect(chunk.piece.length).toBeGreaterThan(0);
+    expect(chunk.currentText).toBeDefined();
+    expect(chunk.currentText.length).toBeGreaterThan(0);
+    finalTokens.push(chunk.token);
+    finalText = chunk.currentText;
+  }
+
+  const detokenized = await wllama.detokenize(finalTokens, true);
+  expect(finalText.length).toBeGreaterThan(10);
+  expect(finalText).toMatch(/(Sudden|big|scary)+/);
+  expect(detokenized).toBe(finalText);
+
+  await wllama.exit();
+});
+
 test.sequential('cleans up resources', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
   await wllama.loadModelFromUrl(TINY_MODEL);
