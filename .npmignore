@@ -3,3 +3,7 @@
 /examples
 /llama.cpp
 /models
+/build
+/cache
+/.github
+/.vscode
