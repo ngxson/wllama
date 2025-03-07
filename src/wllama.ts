@@ -887,12 +887,12 @@ export class Wllama {
    * @param returnString Return a string instead of Uint8Array
    * @returns Uint8Array, which maybe an unfinished unicode
    */
-  async detokenize(tokens: number[], returnString: true): Promise<String>;
-  async detokenize(tokens: number[], returnString: false): Promise<Uint8Array>;
+  async detokenize(tokens: number[], returnString?: false): Promise<Uint8Array>;
+  async detokenize(tokens: number[], returnString: true): Promise<string>;
   async detokenize(
     tokens: number[],
-    returnString: boolean
-  ): Promise<Uint8Array | String> {
+    returnString: true | false = false
+  ): Promise<Uint8Array | string> {
     this.checkModelLoaded();
     const result = await this.proxy.wllamaAction<GlueMsgDetokenizeRes>(
       'detokenize',
