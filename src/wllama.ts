@@ -154,6 +154,10 @@ export interface CompletionOptions {
    * This can also be used to stop during prompt processing. In this case, it will throw WllamaAbortError.
    */
   abortSignal?: AbortSignal;
+  /**
+   * If true, return an AsyncIterable instead of a string
+   */
+  stream?: boolean;
 }
 
 export interface ChatCompletionOptions {
@@ -185,6 +189,10 @@ export interface ChatCompletionOptions {
    * This can also be used to stop during prompt processing (with a bit of delay.)
    */
   abortSignal?: AbortSignal;
+  /**
+   * If true, return an AsyncIterable instead of a string
+   */
+  stream?: boolean;
 }
 
 export interface ModelMetadata {
@@ -691,21 +699,20 @@ export class Wllama {
    */
   async createChatCompletion(
     messages: WllamaChatMessage[],
-    options: ChatCompletionOptions
-  ): Promise<string> {
-    const prompt = await this.formatChat(messages, true);
-    return await this.createCompletion(prompt, options);
-  }
-
-  /**
-   * Same with `createChatCompletion`, but returns an async iterator instead.
-   */
-  async createChatCompletionGenerator(
+    options: ChatCompletionOptions & { stream?: false }
+  ): Promise<string>;
+  async createChatCompletion(
     messages: WllamaChatMessage[],
-    options: Exclude<ChatCompletionOptions, 'onNewToken'>
-  ): Promise<AsyncIterable<CompletionChunk>> {
+    options: ChatCompletionOptions & { stream: true }
+  ): Promise<AsyncIterable<CompletionChunk>>;
+  async createChatCompletion(
+    messages: WllamaChatMessage[],
+    options: ChatCompletionOptions
+  ): Promise<string | AsyncIterable<CompletionChunk>> {
     const prompt = await this.formatChat(messages, true);
-    return await this.createCompletionGenerator(prompt, options);
+    return options.stream
+      ? await this.createCompletionGenerator(prompt, options)
+      : await this.createCompletion(prompt, { ...options, stream: false });
   }
 
   /**
@@ -715,6 +722,26 @@ export class Wllama {
    * @returns Output completion text (only the completion part)
    */
   async createCompletion(
+    prompt: string,
+    options: ChatCompletionOptions & { stream?: false }
+  ): Promise<string>;
+  async createCompletion(
+    prompt: string,
+    options: ChatCompletionOptions & { stream: true }
+  ): Promise<AsyncIterable<CompletionChunk>>;
+  async createCompletion(
+    prompt: string,
+    options: ChatCompletionOptions
+  ): Promise<string | AsyncIterable<CompletionChunk>> {
+    return options.stream
+      ? await this.createCompletionGenerator(prompt, options)
+      : await this.createCompletionImpl(prompt, { ...options, stream: false });
+  }
+
+  /**
+   * Private implementation of createCompletion
+   */
+  private async createCompletionImpl(
     prompt: string,
     options: ChatCompletionOptions
   ): Promise<string> {
@@ -774,14 +801,14 @@ export class Wllama {
   /**
    * Same with `createCompletion`, but returns an async iterator instead.
    */
-  createCompletionGenerator(
+  private createCompletionGenerator(
     prompt: string,
     options: Exclude<ChatCompletionOptions, 'onNewToken'>
   ): Promise<AsyncIterable<CompletionChunk>> {
     return new Promise((resolve, reject) => {
       const createGenerator = cbToAsyncIter(
         (callback: (val?: CompletionChunk, done?: boolean) => void) => {
-          this.createCompletion(prompt, {
+          this.createCompletionImpl(prompt, {
             ...options,
             onNewToken: (token, piece, currentText) => {
               callback({ token, piece, currentText }, false);

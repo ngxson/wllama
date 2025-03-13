@@ -323,11 +323,12 @@ test.sequential('generates chat completion using async iterator', async () => {
     { role: 'assistant', content: 'Hello!' },
     { role: 'user', content: 'How are you?' },
   ];
-  const stream = await wllama.createChatCompletionGenerator(messages, {
+  const stream = await wllama.createChatCompletion(messages, {
     nPredict: 10,
     sampling: {
       temp: 0.0,
     },
+    stream: true,
   });
 
   let finalTokens: number[] = [];
