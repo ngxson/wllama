@@ -654,8 +654,8 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
   {
     // TODO: this code branch is kinda broken, to be fixed later
     const int n_past = app.tokens.size();
-    llama_kv_cache_seq_rm(app.ctx, 0, n_keep, n_keep + n_discard);
-    llama_kv_cache_seq_add(app.ctx, 0, n_keep + n_discard, n_past, -n_discard);
+    llama_kv_self_seq_rm(app.ctx, 0, n_keep, n_keep + n_discard);
+    llama_kv_self_seq_add(app.ctx, 0, n_keep + n_discard, n_past, -n_discard);
     app.tokens.erase(
         app.tokens.begin() + n_keep,
         app.tokens.begin() + n_keep + n_discard);
@@ -664,11 +664,11 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
   {
     if (n_keep == 0)
     {
-      llama_kv_cache_clear(app.ctx);
+      llama_kv_self_clear(app.ctx);
     }
     else
     {
-      llama_kv_cache_seq_rm(app.ctx, 0, n_keep, -1);
+      llama_kv_self_seq_rm(app.ctx, 0, n_keep, -1);
       app.tokens.erase(
           app.tokens.begin() + n_keep,
           app.tokens.end());
@@ -685,7 +685,7 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
 glue_msg_get_kv_clear_res action_kv_clear(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_get_kv_clear_req);
-  llama_kv_cache_clear(app.ctx);
+  llama_kv_self_clear(app.ctx);
   app.tokens.clear();
 
   glue_msg_get_kv_clear_res res;
@@ -766,7 +766,7 @@ glue_msg_test_benchmark_res action_test_benchmark(app_t &app, const char *req_ra
   std::string type = req.type.value;   // "pp" (prompt proc) or "tg" (tok gen)
   int n_samples = req.n_samples.value; // n_batch in pp and n_predict in pg
 
-  llama_kv_cache_clear(app.ctx);
+  llama_kv_self_clear(app.ctx);
   int n_vocab = llama_vocab_n_tokens(app.vocab);
   int64_t t_start = ggml_time_ms();
 
@@ -837,7 +837,7 @@ glue_msg_test_perplexity_res action_test_perplexity(app_t &app, const char *req_
   }
 
   // Clear existing context to start fresh
-  llama_kv_cache_clear(app.ctx);
+  llama_kv_self_clear(app.ctx);
   app.tokens.clear();
 
   const int32_t n_vocab = llama_vocab_n_tokens(app.vocab);

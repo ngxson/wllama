@@ -166,7 +166,7 @@ struct wcommon_sampler * wcommon_sampler_init(const struct llama_model * model, 
 #endif // LLAMA_USE_LLGUIDANCE
     } else {
         grmr = params.grammar_lazy
-             ? llama_sampler_init_grammar_lazy(vocab, params.grammar.c_str(), "root",
+             ? llama_sampler_init_grammar_lazy_patterns(vocab, params.grammar.c_str(), "root",
                                                trigger_words.data(), trigger_words.size(),
                                                params.grammar_trigger_tokens.data(), params.grammar_trigger_tokens.size())
              :      llama_sampler_init_grammar(vocab, params.grammar.c_str(), "root");
