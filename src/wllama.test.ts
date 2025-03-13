@@ -165,6 +165,44 @@ test.sequential('generates completion', async () => {
   await wllama.exit();
 });
 
+test.sequential('abort signal', async () => {
+  const wllama = new Wllama(CONFIG_PATHS);
+
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 1024,
+  });
+
+  const config = {
+    seed: 42,
+    temp: 0.0,
+    top_p: 0.95,
+    top_k: 40,
+  };
+
+  await wllama.samplingInit(config);
+
+  const prompt = 'Once upon a time';
+  const abortController = new AbortController();
+  const stream = await wllama.createCompletion(prompt, {
+    nPredict: 10,
+    sampling: config,
+    stream: true,
+    abortSignal: abortController.signal,
+  });
+
+  let i = 0;
+  for await (const _ of stream) {
+    if (i === 2) {
+      abortController.abort();
+    }
+    i++;
+  }
+
+  expect(i).toBe(4);
+
+  await wllama.exit();
+});
+
 test.sequential('gets logits', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
