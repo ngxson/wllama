@@ -491,6 +491,7 @@ struct glue_msg_load_req
 {
   GLUE_HANDLER("load_req")
   GLUE_FIELD(arr_str, model_paths)
+  GLUE_FIELD(str, mmproj_path)
   GLUE_FIELD(bool, n_ctx_auto)
   GLUE_FIELD(bool, use_mmap)
   GLUE_FIELD(bool, use_mlock)
@@ -519,6 +520,7 @@ struct glue_msg_load_res
 {
   GLUE_HANDLER("load_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(int, has_mtmd)
   GLUE_FIELD(int, n_ctx)
   GLUE_FIELD(int, n_batch)
   GLUE_FIELD(int, n_ubatch)
@@ -623,12 +625,16 @@ struct glue_msg_tokenize_req
   GLUE_HANDLER("tokn_req")
   GLUE_FIELD(str, text)
   GLUE_FIELD(bool, special)
+  GLUE_FIELD(arr_raw, bitmaps)
+  GLUE_FIELD(arr_int, bitmaps_x)
+  GLUE_FIELD(arr_int, bitmaps_y)
 };
 
 struct glue_msg_tokenize_res
 {
   GLUE_HANDLER("tokn_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
   GLUE_FIELD(arr_int, tokens)
 };
 
@@ -675,6 +681,22 @@ struct glue_msg_encode_req
 struct glue_msg_encode_res
 {
   GLUE_HANDLER("enco_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
+  GLUE_FIELD(int, n_past)
+};
+
+/////////
+
+struct glue_msg_eval_image_req
+{
+  GLUE_HANDLER("eimg_req")
+  GLUE_FIELD(int, cached_image_id)
+};
+
+struct glue_msg_eval_image_res
+{
+  GLUE_HANDLER("eimg_res")
   GLUE_FIELD(bool, success)
   GLUE_FIELD(str, message)
   GLUE_FIELD(int, n_past)
@@ -755,6 +777,7 @@ struct glue_msg_get_kv_remove_res
   GLUE_HANDLER("kvcr_res")
   GLUE_FIELD(int, n_past)
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
 };
 
 /////////
