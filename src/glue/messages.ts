@@ -824,6 +824,24 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       }
     ]
   },
+  "icud_req": {
+    "name": "icud_req",
+    "structName": "glue_msg_img_cache_update_req",
+    "className": "GlueMsgImgCacheUpdateReq",
+    "fields": []
+  },
+  "icud_res": {
+    "name": "icud_res",
+    "structName": "glue_msg_img_cache_update_res",
+    "className": "GlueMsgImgCacheUpdateRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
+  },
   "sesa_req": {
     "name": "sesa_req",
     "structName": "glue_msg_session_save_req",
@@ -1332,6 +1350,17 @@ export interface GlueMsgGetKvClearRes {
   success: boolean;
 }
 
+// struct glue_msg_img_cache_update_req
+export interface GlueMsgImgCacheUpdateReq {
+  _name: "icud_req";
+}
+
+// struct glue_msg_img_cache_update_res
+export interface GlueMsgImgCacheUpdateRes {
+  _name: "icud_res";
+  success: boolean;
+}
+
 // struct glue_msg_session_save_req
 export interface GlueMsgSessionSaveReq {
   _name: "sesa_req";
@@ -1421,4 +1450,4 @@ export interface GlueMsgChatFormatRes {
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgSetOptionsReq | GlueMsgSetOptionsRes | GlueMsgSamplingInitReq | GlueMsgSamplingInitRes | GlueMsgGetVocabReq | GlueMsgGetVocabRes | GlueMsgLookupTokenReq | GlueMsgLookupTokenRes | GlueMsgTokenizeReq | GlueMsgTokenizeRes | GlueMsgDetokenizeReq | GlueMsgDetokenizeRes | GlueMsgDecodeReq | GlueMsgDecodeRes | GlueMsgEncodeReq | GlueMsgEncodeRes | GlueMsgEvalImageReq | GlueMsgEvalImageRes | GlueMsgSamplingSampleReq | GlueMsgSamplingSampleRes | GlueMsgSamplingAcceptReq | GlueMsgSamplingAcceptRes | GlueMsgGetLogitsReq | GlueMsgGetLogitsRes | GlueMsgGetEmbeddingsReq | GlueMsgGetEmbeddingsRes | GlueMsgGetKvRemoveReq | GlueMsgGetKvRemoveRes | GlueMsgGetKvClearReq | GlueMsgGetKvClearRes | GlueMsgSessionSaveReq | GlueMsgSessionSaveRes | GlueMsgSessionLoadReq | GlueMsgSessionLoadRes | GlueMsgStatusReq | GlueMsgStatusRes | GlueMsgTestBenchmarkReq | GlueMsgTestBenchmarkRes | GlueMsgTestPerplexityReq | GlueMsgTestPerplexityRes | GlueMsgChatFormatReq | GlueMsgChatFormatRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgSetOptionsReq | GlueMsgSetOptionsRes | GlueMsgSamplingInitReq | GlueMsgSamplingInitRes | GlueMsgGetVocabReq | GlueMsgGetVocabRes | GlueMsgLookupTokenReq | GlueMsgLookupTokenRes | GlueMsgTokenizeReq | GlueMsgTokenizeRes | GlueMsgDetokenizeReq | GlueMsgDetokenizeRes | GlueMsgDecodeReq | GlueMsgDecodeRes | GlueMsgEncodeReq | GlueMsgEncodeRes | GlueMsgEvalImageReq | GlueMsgEvalImageRes | GlueMsgSamplingSampleReq | GlueMsgSamplingSampleRes | GlueMsgSamplingAcceptReq | GlueMsgSamplingAcceptRes | GlueMsgGetLogitsReq | GlueMsgGetLogitsRes | GlueMsgGetEmbeddingsReq | GlueMsgGetEmbeddingsRes | GlueMsgGetKvRemoveReq | GlueMsgGetKvRemoveRes | GlueMsgGetKvClearReq | GlueMsgGetKvClearRes | GlueMsgImgCacheUpdateReq | GlueMsgImgCacheUpdateRes | GlueMsgSessionSaveReq | GlueMsgSessionSaveRes | GlueMsgSessionLoadReq | GlueMsgSessionLoadRes | GlueMsgStatusReq | GlueMsgStatusRes | GlueMsgTestBenchmarkReq | GlueMsgTestBenchmarkRes | GlueMsgTestPerplexityReq | GlueMsgTestPerplexityRes | GlueMsgChatFormatReq | GlueMsgChatFormatRes;

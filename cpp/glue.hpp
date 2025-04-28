@@ -796,6 +796,19 @@ struct glue_msg_get_kv_clear_res
 
 /////////
 
+struct glue_msg_img_cache_update_req
+{
+  GLUE_HANDLER("icud_req")
+};
+
+struct glue_msg_img_cache_update_res
+{
+  GLUE_HANDLER("icud_res")
+  GLUE_FIELD(bool, success)
+};
+
+/////////
+
 struct glue_msg_session_save_req
 {
   GLUE_HANDLER("sesa_req")

@@ -640,7 +640,8 @@ glue_msg_eval_image_res action_eval_image(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_eval_image_req);
   glue_msg_eval_image_res res;
-  res.n_past.value = app.tokens.size();
+  llama_pos n_past = app.tokens.size();
+  res.n_past.value = n_past;
   if (app.mctx == nullptr)
   {
     res.success.value = false;
@@ -652,14 +653,23 @@ glue_msg_eval_image_res action_eval_image(app_t &app, const char *req_raw)
   if (it != app.img_cache.end())
   {
     size_t n_tokens = mtmd_image_tokens_get_n_tokens(it->second.get());
+    // TODO: we should get rid of this ugly code, by having mtmd_helper_eval to accept single chunk
     mtmd_input_chunks chunks;
-    mtmd_input_chunk chunk{
-        /* type          */ MTMD_INPUT_CHUNK_TYPE_IMAGE,
-        /* tokens_text   */ {},
-        /* tokens_image  */ std::move(it->second),
-    };
-    chunks.emplace_back(std::move(chunk));
-    int32_t result = mtmd_helper_eval(app.mctx, app.ctx, chunks, app.tokens.size(), 0, app.n_batch);
+    {
+      mtmd_input_chunk chunk0{
+          /* type          */ MTMD_INPUT_CHUNK_TYPE_IMAGE,
+          /* tokens_text   */ {},
+          /* tokens_image  */ std::move(it->second),
+      };
+      mtmd_input_chunk chunk1{
+          /* type          */ MTMD_INPUT_CHUNK_TYPE_TEXT,
+          /* tokens_text   */ {},
+          /* tokens_image  */ nullptr,
+      };
+      chunks.emplace_back(std::move(chunk0));
+      chunks.emplace_back(std::move(chunk1));
+    }
+    int32_t result = mtmd_helper_eval(app.mctx, app.ctx, chunks, n_past, 0, app.n_batch);
     // remember to move it back to cache
     // TODO: maybe we just need to keep the image id in the cache, not the whole image?
     app.img_cache[img_id] = std::move(chunks[0].tokens_image);
@@ -847,9 +857,6 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
     }
   }
 
-  // make sure we don't have any dangling images
-  app.update_img_cache();
-
   res.success.value = true;
   res.n_past.value = app.tokens.size();
   return res;
@@ -861,11 +868,21 @@ glue_msg_get_kv_clear_res action_kv_clear(app_t &app, const char *req_raw)
   PARSE_REQ(glue_msg_get_kv_clear_req);
   llama_kv_self_clear(app.ctx);
   app.tokens.clear();
-  app.img_cache.clear();
 
   glue_msg_get_kv_clear_res res;
   res.success.value = true;
   res.n_past.value = app.tokens.size();
+  return res;
+}
+
+// remove dangling images in the cache
+glue_msg_img_cache_update_res action_img_cache_update(app_t &app, const char *req_raw)
+{
+  PARSE_REQ(glue_msg_img_cache_update_req);
+  app.update_img_cache();
+
+  glue_msg_img_cache_update_res res;
+  res.success.value = true;
   return res;
 }
 

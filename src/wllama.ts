@@ -4,6 +4,7 @@ import {
   bufToText,
   cbToAsyncIter,
   checkEnvironmentCompatible,
+  getBitmapFromUrl,
   isString,
   isSupportMultiThread,
   joinBuffers,
@@ -15,11 +16,13 @@ import {
   GlueMsgChatFormatRes,
   GlueMsgDecodeRes,
   GlueMsgDetokenizeRes,
+  GlueMsgEvalImageRes,
   GlueMsgGetEmbeddingsRes,
   GlueMsgGetKvClearRes,
   GlueMsgGetKvRemoveRes,
   GlueMsgGetLogitsRes,
   GlueMsgGetVocabRes,
+  GlueMsgImgCacheUpdateRes,
   GlueMsgLoadRes,
   GlueMsgLookupTokenRes,
   GlueMsgSamplingAcceptRes,
@@ -114,6 +117,8 @@ export interface LoadModelConfig {
   // optimizations
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
+  // multimodal
+  mmproj?: Blob[] | Model;
 }
 
 export interface SamplingConfig {
@@ -173,6 +178,7 @@ export interface ChatCompletionOptions {
       abortSignal: () => any;
     }
   ): any;
+  images?: WllamaInputImage[];
   sampling?: SamplingConfig;
   /**
    * List of custom token IDs for stopping the generation.
@@ -231,6 +237,18 @@ export interface LoadedContextInfo {
   add_eos_token: boolean;
 }
 
+export interface WllamaBitmap {
+  data: Uint8Array;
+  width: number;
+  height: number;
+}
+
+export type WllamaInputImage = string | WllamaBitmap;
+
+export interface WllamaInputExtra {
+  images?: WllamaInputImage[];
+}
+
 /**
  * Logger preset with debug messages suppressed
  */
@@ -265,6 +283,11 @@ export class WllamaAbortError extends Error {
     super('Operation aborted');
   }
 }
+
+interface InternalBatch {
+  type: 'text' | 'image';
+  tokens: number[];
+};
 
 export class Wllama {
   // The CacheManager and ModelManager are singleton, can be accessed by user
@@ -579,6 +602,14 @@ export class Wllama {
       name: `model-${i}.gguf`,
       blob,
     }));
+    // multimodal
+    if (config.mmproj) {
+      const mmprojBlobs = config.mmproj instanceof Model ? await config.mmproj.open() : config.mmproj;
+      modelFiles.push({
+        name: 'mmproj.gguf',
+        blob: mmprojBlobs[0],
+      });
+    }
     await this.proxy.moduleInit(modelFiles);
     // run it
     const startResult: any = await this.proxy.wllamaStart();
@@ -590,6 +621,8 @@ export class Wllama {
     // load the model
     const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
       _name: 'load_req',
+      model_paths: modelFiles.map((f) => `models/${f.name}`),
+      mmproj_path: config.mmproj ? 'models/mmproj.gguf' : '',
       use_mmap: true,
       use_mlock: true,
       n_gpu_layers: 0, // not supported for now
@@ -597,7 +630,6 @@ export class Wllama {
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       n_ctx_auto: false, // not supported for now
-      model_paths: modelFiles.map((f) => `models/${f.name}`),
       embeddings: config.embeddings,
       offload_kqv: config.offload_kqv,
       n_batch: config.n_batch,
@@ -750,7 +782,9 @@ export class Wllama {
     await this.samplingInit(this.samplingConfig);
     const stopTokens = new Set(options.stopTokens ?? []);
     // process prompt
-    let tokens = await this.tokenize(prompt, true);
+    let tokens = await this.tokenize(prompt, true, {
+      images: options.images,
+    });
     if (this.addBosToken && tokens[0] !== this.bosToken) {
       tokens.unshift(this.bosToken);
     }
@@ -890,19 +924,43 @@ export class Wllama {
   }
 
   /**
-   * Convert a given text to list of tokens
+   * Convert a given text to list of tokens.
+   * 
+   * If the input contains images, the preprocessed image will be store temporarily in an image cache, they will be available for the next call to `imageCacheUpdate()`
+   * 
    * @param text
    * @param special Should split special tokens?
    * @returns List of token ID
    */
-  async tokenize(text: string, special: boolean = true): Promise<number[]> {
+  async tokenize(text: string, special: boolean = true, extra: WllamaInputExtra = {}): Promise<number[]> {
     this.checkModelLoaded();
+    const bitmaps: Uint8Array[] = [];
+    const bitmaps_x: number[] = [];
+    const bitmaps_y: number[] = [];
+
+    for (const image of extra.images || []) {
+      let bmp: WllamaBitmap;
+      if (isString(image)) {
+        bmp = await getBitmapFromUrl(image as string);
+      } else if ((image as WllamaBitmap).data) {
+        bmp = image as WllamaBitmap;
+      } else {
+        throw new WllamaError('Invalid bitmap');
+      }
+      bitmaps.push(bmp.data);
+      bitmaps_x.push(bmp.width);
+      bitmaps_y.push(bmp.height);
+    }
+
     const result = await this.proxy.wllamaAction<GlueMsgTokenizeRes>(
       'tokenize',
       {
         _name: 'tokn_req',
         text,
         special: !!special,
+        bitmaps,
+        bitmaps_x,
+        bitmaps_y,
       }
     );
     return result.tokens;
@@ -959,29 +1017,37 @@ export class Wllama {
         'kv_cache_full'
       );
     }
+    let nPast = this.nCachedTokens;
     const batches = this.breakTokensIntoBatches(
       tokens,
       this.loadedContextInfo.n_batch
     );
-    let result: any;
     for (let i = 0; i < batches.length; i++) {
       if (options?.abortSignal?.aborted) {
         throw new WllamaAbortError();
       }
-      const isNotLast = batches.length > 1 && i < batches.length - 1;
-      result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('decode', {
-        _name: 'deco_req',
-        tokens: batches[i],
-        skip_logits: options.skipLogits || isNotLast,
-      });
-      if (result.error) {
-        throw new WllamaError(result.error);
-      } else if (!result.success) {
-        throw new WllamaError('Cannot encode, unknown error');
+      const batch = batches[i];
+      const isLast = i === batches.length - 1;
+      if (batch.type === 'text') {
+        const result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('decode', {
+          _name: 'deco_req',
+          tokens: batch.tokens,
+          skip_logits: options.skipLogits || !isLast,
+        });
+        if (!result.success) {
+          throw new WllamaError('Cannot decode, unknown error');
+        }
+        nPast = result.n_past;
+      } else if (batch.type === 'image') {
+        const result = await this.evalImage(batch.tokens[0]);
+        nPast = result.nPast;
+      } else {
+        throw new Error('Invalid batch type');
       }
     }
-    this.nCachedTokens = result.n_past;
-    return { nPast: result.n_past };
+    await this.imageCacheUpdate(); // make sure to clean non-decoded images
+    this.nCachedTokens = nPast;
+    return { nPast };
   }
 
   /**
@@ -1023,34 +1089,64 @@ export class Wllama {
       tokens,
       this.loadedContextInfo.n_batch
     );
-    let result: any;
+    let nPast = 0;
     for (let i = 0; i < batches.length; i++) {
       if (options?.abortSignal?.aborted) {
         throw new WllamaAbortError();
       }
-      result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('encode', {
+      const result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('encode', {
         _name: 'enco_req',
-        tokens: batches[i],
+        tokens: batches[i].tokens,
       });
-      if (result.error) {
-        throw new WllamaError(result.error);
-      } else if (!result.success) {
+      if (!result.success) {
         throw new WllamaError('Cannot encode, unknown error');
       }
+      nPast = result.n_past;
     }
-    this.nCachedTokens = result.n_past;
-    return { nPast: result.n_past };
+    return { nPast };
   }
 
   private breakTokensIntoBatches(
     tokens: number[],
     maxBatchSize: number
-  ): number[][] {
-    const batches: number[][] = [];
-    for (let i = 0; i < tokens.length; i += maxBatchSize) {
-      batches.push(tokens.slice(i, i + maxBatchSize));
+  ): InternalBatch[] {
+    const batches: InternalBatch[] = [];
+    if (tokens.length === 0) return batches;
+    for (let i = 0; i < tokens.length;) {
+      const firstTok = tokens[i];
+      const isImage = firstTok < 0;
+      const cur: InternalBatch = {
+        type: isImage ? 'image' : 'text',
+        tokens: [],
+      };
+      const until = Math.min(i + maxBatchSize, tokens.length);
+      for (; i < until; i++) {
+        if (isImage && tokens[i] !== firstTok) break;
+        if (!isImage && tokens[i] < 0) break;
+        cur.tokens.push(tokens[i]);
+      }
+      if (cur.tokens.length) batches.push(cur);
     }
     return batches;
+  }
+
+  /**
+   * Evaluate (encode-decode) an image by its ID
+   */
+  private async evalImage(cachedImageId: number): Promise<{ nPast: number }> {
+    this.checkModelLoaded();
+    const result = await this.proxy.wllamaAction<GlueMsgEvalImageRes>(
+      'eval_image',
+      {
+        _name: 'eimg_req',
+        cached_image_id: cachedImageId,
+      }
+    );
+    if (!result.success) {
+      throw new WllamaError(result.message);
+    }
+    this.nCachedTokens = result.n_past;
+    return { nPast: result.n_past };
   }
 
   /**
@@ -1200,6 +1296,24 @@ export class Wllama {
       throw new WllamaError('kvClear unknown error');
     }
     this.nCachedTokens = 0;
+  }
+
+  /**
+   * Remove dangling tokens in image cache.
+   * 
+   * If the image is not being stored in the context (i.e. not being processed by `llama_decode()`), it will be removed from the cache.
+   */
+  async imageCacheUpdate(): Promise<void> {
+    this.checkModelLoaded();
+    const result = await this.proxy.wllamaAction<GlueMsgImgCacheUpdateRes>(
+      'img_cache_update',
+      {
+        _name: 'icud_req',
+      }
+    );
+    if (!result.success) {
+      throw new WllamaError('imageCacheUpdate unknown error');
+    }
   }
 
   /**
