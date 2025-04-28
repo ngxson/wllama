@@ -1,3 +1,5 @@
+import { WllamaBitmap } from "./wllama";
+
 export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
   const output = new Uint8Array(totalSize);
@@ -252,3 +254,44 @@ export const cbToAsyncIter =
       }
     })();
   };
+
+export const getBitmapFromUrl = async (url: string): Promise<WllamaBitmap> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.statusText}`);
+  }
+  const blob = await response.blob();
+  const imageBitmap = await createImageBitmap(blob);
+  const { width, height } = imageBitmap;
+
+  // Use OffscreenCanvas for better performance and worker compatibility
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) {
+    throw new Error('Could not get 2D context from canvas');
+  }
+
+  // Draw the image onto the canvas
+  ctx.drawImage(imageBitmap, 0, 0);
+
+  // Get the pixel data (RGBA)
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const rgbaData = imageData.data;
+
+  // Convert RGBA to RGB
+  const rgbData = new Uint8Array(width * height * 3);
+  for (let i = 0, j = 0; i < rgbaData.length; i += 4, j += 3) {
+    rgbData[j] = rgbaData[i];     // R
+    rgbData[j + 1] = rgbaData[i + 1]; // G
+    rgbData[j + 2] = rgbaData[i + 2]; // B
+    // Skip alpha channel (rgbaData[i + 3])
+  }
+  imageBitmap.close();
+
+  return {
+    width,
+    height,
+    data: rgbData,
+  };
+}

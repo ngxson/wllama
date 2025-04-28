@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wllama.cpp multimodal demo</title>
+
+  <style>
+    body {
+      background-color: rgb(55, 55, 55);
+      color: rgb(222, 222, 222);
+      font-family: 'Courier New', Courier, monospace;
+      padding: 1em;
+    }
+
+    #output_cmpl {
+      border: 1px solid #aaa;
+      border-radius: 5px;
+      padding: 0.7em;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Completions</h2>
+  <button id="btn_start_cmpl">Load test model</button>
+  <br/>
+  <br/>
+  Completion: <br/>
+  <div id="output_cmpl"></div>
+
+  <script type="module">
+    import { Wllama, ModelManager } from '../../esm/index.js';
+
+    const CONFIG_PATHS = {
+      'single-thread/wllama.wasm': '../../esm/single-thread/wllama.wasm',
+      'multi-thread/wllama.wasm' : '../../esm/multi-thread/wllama.wasm',
+    };
+    const MODEL = 'https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/resolve/main/SmolVLM2-500M-Video-Instruct-Q8_0.gguf';
+    const MODEL_SIZE = '437MB';
+    const MMPROJ = 'https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/resolve/main/mmproj-SmolVLM2-500M-Video-Instruct-f16.gguf';
+    const MMPROJ_SIZE = '199MB';
+
+    async function main() {
+      elemBtnStartCmpl.onclick = async () => {
+        try {
+          await startCompletions();
+        } catch (error) {
+          console.error(error);
+        }
+      };
+    }
+
+    /////////////////////////////////////////////////////////////////////
+    // completions
+
+    async function startCompletions() {
+      const modelManager = new ModelManager();
+
+      // download
+      const progressDisplay = {};
+      const progress = (name) => ({ loaded, total }) => {
+        const percent = Math.round((loaded / total) * 100);
+        progressDisplay[name] = `Downloading ${name}... ${percent}%`;
+        elemOutputCmpl.innerHTML = Object.values(progressDisplay).join('<br/>');
+      };
+      const [model, mmproj] = await Promise.all([
+        modelManager.getModelOrDownload(MODEL, { progressCallback: progress('model') }),
+        modelManager.getModelOrDownload(MMPROJ, { progressCallback: progress('mmproj') }),
+      ]);
+
+      // load model
+      elemOutputCmpl.textContent = 'Loading model...';
+      const wllama = new Wllama(CONFIG_PATHS);
+      await wllama.loadModel(model, { mmproj });
+
+      // tokenize
+      const prompt = await wllama.formatChat([
+        {
+          role: 'user',
+          content: 'What do you see?\n<__image__>',
+        }
+      ], true);
+      console.log({ prompt });
+
+      // run inference
+      await wllama.createCompletion(prompt, {
+        images: ['./bliss.png'],
+        nPredict: 50,
+        sampling: { temp: 0.1 },
+        onNewToken: (token, piece, currentText) => {
+          elemOutputCmpl.textContent = currentText;
+        },
+      });
+    }
+
+    /////////////////////////////////////////////////////////////////////
+
+    // DOM elements: completions
+    const elemOutputCmpl = document.getElementById('output_cmpl');
+    const elemBtnStartCmpl = document.getElementById('btn_start_cmpl');
+
+    main();
+  </script>
+</body>
+</html>

@@ -29,6 +29,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "str",
+        "name": "mmproj_path",
+        "isNullable": false
+      },
+      {
         "type": "bool",
         "name": "n_ctx_auto",
         "isNullable": false
@@ -148,6 +153,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "bool",
         "name": "success",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "has_mtmd",
         "isNullable": false
       },
       {
@@ -456,6 +466,21 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "bool",
         "name": "special",
         "isNullable": false
+      },
+      {
+        "type": "arr_raw",
+        "name": "bitmaps",
+        "isNullable": false
+      },
+      {
+        "type": "arr_int",
+        "name": "bitmaps_x",
+        "isNullable": false
+      },
+      {
+        "type": "arr_int",
+        "name": "bitmaps_y",
+        "isNullable": false
       }
     ]
   },
@@ -467,6 +492,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "bool",
         "name": "success",
+        "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "message",
         "isNullable": false
       },
       {
@@ -560,6 +590,40 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
     "name": "enco_res",
     "structName": "glue_msg_encode_res",
     "className": "GlueMsgEncodeRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "message",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "n_past",
+        "isNullable": false
+      }
+    ]
+  },
+  "eimg_req": {
+    "name": "eimg_req",
+    "structName": "glue_msg_eval_image_req",
+    "className": "GlueMsgEvalImageReq",
+    "fields": [
+      {
+        "type": "int",
+        "name": "cached_image_id",
+        "isNullable": false
+      }
+    ]
+  },
+  "eimg_res": {
+    "name": "eimg_res",
+    "structName": "glue_msg_eval_image_res",
+    "className": "GlueMsgEvalImageRes",
     "fields": [
       {
         "type": "bool",
@@ -729,6 +793,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "bool",
         "name": "success",
         "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "message",
+        "isNullable": false
       }
     ]
   },
@@ -748,6 +817,24 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "name": "n_past",
         "isNullable": false
       },
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
+  },
+  "icud_req": {
+    "name": "icud_req",
+    "structName": "glue_msg_img_cache_update_req",
+    "className": "GlueMsgImgCacheUpdateReq",
+    "fields": []
+  },
+  "icud_res": {
+    "name": "icud_res",
+    "structName": "glue_msg_img_cache_update_res",
+    "className": "GlueMsgImgCacheUpdateRes",
+    "fields": [
       {
         "type": "bool",
         "name": "success",
@@ -990,6 +1077,7 @@ export interface GlueMsgError {
 export interface GlueMsgLoadReq {
   _name: "load_req";
   model_paths: string[];
+  mmproj_path: string;
   n_ctx_auto: boolean;
   use_mmap: boolean;
   use_mlock: boolean;
@@ -1018,6 +1106,7 @@ export interface GlueMsgLoadReq {
 export interface GlueMsgLoadRes {
   _name: "load_res";
   success: boolean;
+  has_mtmd: number;
   n_ctx: number;
   n_batch: number;
   n_ubatch: number;
@@ -1112,12 +1201,16 @@ export interface GlueMsgTokenizeReq {
   _name: "tokn_req";
   text: string;
   special: boolean;
+  bitmaps: Uint8Array[];
+  bitmaps_x: number[];
+  bitmaps_y: number[];
 }
 
 // struct glue_msg_tokenize_res
 export interface GlueMsgTokenizeRes {
   _name: "tokn_res";
   success: boolean;
+  message: string;
   tokens: number[];
 }
 
@@ -1158,6 +1251,20 @@ export interface GlueMsgEncodeReq {
 // struct glue_msg_encode_res
 export interface GlueMsgEncodeRes {
   _name: "enco_res";
+  success: boolean;
+  message: string;
+  n_past: number;
+}
+
+// struct glue_msg_eval_image_req
+export interface GlueMsgEvalImageReq {
+  _name: "eimg_req";
+  cached_image_id: number;
+}
+
+// struct glue_msg_eval_image_res
+export interface GlueMsgEvalImageRes {
+  _name: "eimg_res";
   success: boolean;
   message: string;
   n_past: number;
@@ -1228,6 +1335,7 @@ export interface GlueMsgGetKvRemoveRes {
   _name: "kvcr_res";
   n_past: number;
   success: boolean;
+  message: string;
 }
 
 // struct glue_msg_get_kv_clear_req
@@ -1239,6 +1347,17 @@ export interface GlueMsgGetKvClearReq {
 export interface GlueMsgGetKvClearRes {
   _name: "kvcc_res";
   n_past: number;
+  success: boolean;
+}
+
+// struct glue_msg_img_cache_update_req
+export interface GlueMsgImgCacheUpdateReq {
+  _name: "icud_req";
+}
+
+// struct glue_msg_img_cache_update_res
+export interface GlueMsgImgCacheUpdateRes {
+  _name: "icud_res";
   success: boolean;
 }
 
@@ -1331,4 +1450,4 @@ export interface GlueMsgChatFormatRes {
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgSetOptionsReq | GlueMsgSetOptionsRes | GlueMsgSamplingInitReq | GlueMsgSamplingInitRes | GlueMsgGetVocabReq | GlueMsgGetVocabRes | GlueMsgLookupTokenReq | GlueMsgLookupTokenRes | GlueMsgTokenizeReq | GlueMsgTokenizeRes | GlueMsgDetokenizeReq | GlueMsgDetokenizeRes | GlueMsgDecodeReq | GlueMsgDecodeRes | GlueMsgEncodeReq | GlueMsgEncodeRes | GlueMsgSamplingSampleReq | GlueMsgSamplingSampleRes | GlueMsgSamplingAcceptReq | GlueMsgSamplingAcceptRes | GlueMsgGetLogitsReq | GlueMsgGetLogitsRes | GlueMsgGetEmbeddingsReq | GlueMsgGetEmbeddingsRes | GlueMsgGetKvRemoveReq | GlueMsgGetKvRemoveRes | GlueMsgGetKvClearReq | GlueMsgGetKvClearRes | GlueMsgSessionSaveReq | GlueMsgSessionSaveRes | GlueMsgSessionLoadReq | GlueMsgSessionLoadRes | GlueMsgStatusReq | GlueMsgStatusRes | GlueMsgTestBenchmarkReq | GlueMsgTestBenchmarkRes | GlueMsgTestPerplexityReq | GlueMsgTestPerplexityRes | GlueMsgChatFormatReq | GlueMsgChatFormatRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgSetOptionsReq | GlueMsgSetOptionsRes | GlueMsgSamplingInitReq | GlueMsgSamplingInitRes | GlueMsgGetVocabReq | GlueMsgGetVocabRes | GlueMsgLookupTokenReq | GlueMsgLookupTokenRes | GlueMsgTokenizeReq | GlueMsgTokenizeRes | GlueMsgDetokenizeReq | GlueMsgDetokenizeRes | GlueMsgDecodeReq | GlueMsgDecodeRes | GlueMsgEncodeReq | GlueMsgEncodeRes | GlueMsgEvalImageReq | GlueMsgEvalImageRes | GlueMsgSamplingSampleReq | GlueMsgSamplingSampleRes | GlueMsgSamplingAcceptReq | GlueMsgSamplingAcceptRes | GlueMsgGetLogitsReq | GlueMsgGetLogitsRes | GlueMsgGetEmbeddingsReq | GlueMsgGetEmbeddingsRes | GlueMsgGetKvRemoveReq | GlueMsgGetKvRemoveRes | GlueMsgGetKvClearReq | GlueMsgGetKvClearRes | GlueMsgImgCacheUpdateReq | GlueMsgImgCacheUpdateRes | GlueMsgSessionSaveReq | GlueMsgSessionSaveRes | GlueMsgSessionLoadReq | GlueMsgSessionLoadRes | GlueMsgStatusReq | GlueMsgStatusRes | GlueMsgTestBenchmarkReq | GlueMsgTestBenchmarkRes | GlueMsgTestPerplexityReq | GlueMsgTestPerplexityRes | GlueMsgChatFormatReq | GlueMsgChatFormatRes;
