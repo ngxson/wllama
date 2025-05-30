@@ -1,5 +1,5 @@
 import CacheManager, { CacheEntry, DownloadOptions } from './cache-manager';
-import { sumArr } from './utils';
+import { isValidGgufFile, sumArr } from './utils';
 import { WllamaError, WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
@@ -280,7 +280,7 @@ export class ModelManager {
     url: string,
     options: DownloadOptions = {}
   ): Promise<Model> {
-    if (!url.endsWith('.gguf')) {
+    if (!isValidGgufFile(url)) {
       throw new WllamaError(
         `Invalid model URL: ${url}; URL must ends with ".gguf"`,
         'download_error'

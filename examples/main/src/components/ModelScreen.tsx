@@ -1,5 +1,6 @@
 import { ModelState, Screen } from '../utils/types';
 import { useWllama } from '../utils/wllama.context';
+import { isValidGgufFile } from '../../../../src/utils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTrashAlt,
@@ -174,7 +175,7 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
           setHfFiles(
             data.siblings
               .map((s) => s.rfilename)
-              .filter((f) => f.endsWith('.gguf'))
+              .filter((f) => isValidGgufFile(f))
           );
           setErr('');
         } else {

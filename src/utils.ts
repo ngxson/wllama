@@ -199,6 +199,21 @@ export const isSafari = (): boolean => {
 };
 
 /**
+ * Regular expression to validate GGUF file paths/URLs
+ * Matches paths ending with .gguf and optional query parameters
+ */
+export const GGUF_FILE_REGEX = /^.*\.gguf(?:\?.*)?$/;
+
+/**
+ * Validates if a given string is a valid GGUF file path/URL
+ * @param path The file path or URL to validate
+ * @returns true if the path is a valid GGUF file path/URL
+ */
+export const isValidGgufFile = (path: string): boolean => {
+  return GGUF_FILE_REGEX.test(path);
+};
+
+/**
  * Check if browser is Safari iOS / iPad / iPhone
  * Source: https://github.com/DamonOehlman/detect-browser/blob/master/src/index.ts
  */

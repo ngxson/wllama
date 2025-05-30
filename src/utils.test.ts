@@ -10,6 +10,7 @@ import {
   parseShardNumber,
   parseModelUrl,
   sortFileByShard,
+  isValidGgufFile,
 } from './utils';
 
 describe('joinBuffers', () => {
@@ -150,5 +151,41 @@ describe('shard processing', () => {
     const blobs = [new Blob(), new Blob()];
     sortFileByShard(blobs);
     expect(blobs.length).toBe(2);
+  });
+});
+
+describe('GGUF file validation', () => {
+  test('isValidGgufFile should correctly validate GGUF files', () => {
+    // Basic valid cases
+    expect(isValidGgufFile('model.gguf')).toBe(true);
+    expect(isValidGgufFile('path/to/model.gguf')).toBe(true);
+
+    // With Vite query parameters
+    expect(isValidGgufFile('model.gguf?no-inline')).toBe(true);
+    expect(isValidGgufFile('foo.gguf?no-inline')).toBe(true);
+
+    // With query parameters
+    expect(isValidGgufFile('model.gguf?param=value')).toBe(true);
+    expect(isValidGgufFile('model.gguf?param1&param2')).toBe(true);
+    expect(isValidGgufFile('model.gguf?no-inline&v=123')).toBe(true);
+    expect(isValidGgufFile('model.gguf?param1=value1&param2=value2')).toBe(
+      true
+    );
+    expect(isValidGgufFile('model.gguf?param=value&special=!@#$%^&*()')).toBe(
+      true
+    );
+    expect(isValidGgufFile('model.gguf?')).toBe(true);
+
+    // With fragments
+    expect(isValidGgufFile('model.gguf?param=value#fragment')).toBe(true);
+
+    // Invalid cases
+    expect(isValidGgufFile('model.bin')).toBe(false);
+    expect(isValidGgufFile('model.gguf.bin')).toBe(false);
+    expect(isValidGgufFile('modelgguf')).toBe(false);
+    expect(isValidGgufFile('path/to/model.txt?ext=gguf')).toBe(false);
+
+    // Case sensitivity
+    expect(isValidGgufFile('model.GGUF?param=value')).toBe(false);
   });
 });
