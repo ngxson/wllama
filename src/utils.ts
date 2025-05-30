@@ -52,7 +52,7 @@ export interface ShardInfo {
   total: number;
 }
 
-const URL_PARTS_REGEX = /-(\d{5})-of-(\d{5})\.gguf$/;
+const URL_PARTS_REGEX = /-(\d{5})-of-(\d{5})\.gguf(?:\?.*)?$/;
 
 /**
  * Parse shard number and total from a file name or URL
@@ -86,12 +86,14 @@ export const parseModelUrl = (modelUrl: string): string[] => {
   if (current == total && total == 1) {
     return [modelUrl];
   } else {
+    const queryMatch = modelUrl.match(/\.gguf(\?.*)?$/);
+    const queryParams = queryMatch?.[1] ?? '';
     const paddedShardIds = Array.from({ length: total }, (_, index) =>
       (index + 1).toString().padStart(5, '0')
     );
     return paddedShardIds.map(
       (current) =>
-        `${baseURL}-${current}-of-${total.toString().padStart(5, '0')}.gguf`
+        `${baseURL}-${current}-of-${total.toString().padStart(5, '0')}.gguf${queryParams}`
     );
   }
 };

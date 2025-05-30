@@ -92,6 +92,32 @@ describe('shard processing', () => {
       current: 1,
       total: 1,
     });
+
+    expect(
+      parseShardNumber('abcdef-123456-00001-of-00005.gguf?param=value')
+    ).toEqual({
+      baseURL: 'abcdef-123456',
+      current: 1,
+      total: 5,
+    });
+
+    expect(
+      parseShardNumber('abcdef-123456-00001-of-00005.gguf?no-inline')
+    ).toEqual({
+      baseURL: 'abcdef-123456',
+      current: 1,
+      total: 5,
+    });
+
+    expect(
+      parseShardNumber(
+        'abcdef-123456-00001-of-00005.gguf?param1=value1&param2=value2'
+      )
+    ).toEqual({
+      baseURL: 'abcdef-123456',
+      current: 1,
+      total: 5,
+    });
   });
 
   test('parseModelUrl generates correct shard URLs', () => {
@@ -109,6 +135,20 @@ describe('shard processing', () => {
     expect(parseModelUrl(complexPath)).toEqual([
       'https://example.com/models/llama-00001-of-00002.gguf',
       'https://example.com/models/llama-00002-of-00002.gguf',
+    ]);
+
+    const shardedFileWithQuery = 'model-00001-of-00003.gguf?param=value';
+    expect(parseModelUrl(shardedFileWithQuery)).toEqual([
+      'model-00001-of-00003.gguf?param=value',
+      'model-00002-of-00003.gguf?param=value',
+      'model-00003-of-00003.gguf?param=value',
+    ]);
+
+    const complexPathWithQuery =
+      'https://example.com/models/llama-00001-of-00002.gguf?no-inline';
+    expect(parseModelUrl(complexPathWithQuery)).toEqual([
+      'https://example.com/models/llama-00001-of-00002.gguf?no-inline',
+      'https://example.com/models/llama-00002-of-00002.gguf?no-inline',
     ]);
   });
 

@@ -234,7 +234,9 @@ export class ModelManager {
     if (Array.isArray(modelUrl)) {
       return modelUrl;
     }
-    const urlPartsRegex = /-(\d{5})-of-(\d{5})\.gguf$/;
+    const urlPartsRegex = /-(\d{5})-of-(\d{5})\.gguf(?:\?.*)?$/;
+    const queryMatch = modelUrl.match(/\.gguf(\?.*)?$/);
+    const queryParams = queryMatch?.[1] ?? '';
     const matches = modelUrl.match(urlPartsRegex);
     if (!matches) {
       return [modelUrl];
@@ -245,7 +247,7 @@ export class ModelManager {
       (index + 1).toString().padStart(5, '0')
     );
     return paddedShardIds.map(
-      (current) => `${baseURL}-${current}-of-${total}.gguf`
+      (current) => `${baseURL}-${current}-of-${total}.gguf${queryParams}`
     );
   }
 

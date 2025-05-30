@@ -20,6 +20,47 @@ test.sequential('parseModelUrl handles array of URLs', () => {
   expect(urls[2]).toMatch(/-00003-of-00003\.gguf$/);
 });
 
+test.sequential('parseModelUrl handles URLs with query parameters', () => {
+  // Test with a simple query parameter
+  const urlWithQuery =
+    'https://example.com/models/model-00001-of-00003.gguf?param=value';
+  const urls = ModelManager.parseModelUrl(urlWithQuery);
+  expect(urls.length).toBe(3);
+  expect(urls[0]).toBe(
+    'https://example.com/models/model-00001-of-00003.gguf?param=value'
+  );
+  expect(urls[1]).toBe(
+    'https://example.com/models/model-00002-of-00003.gguf?param=value'
+  );
+  expect(urls[2]).toBe(
+    'https://example.com/models/model-00003-of-00003.gguf?param=value'
+  );
+
+  // Test with multiple query parameters
+  const urlWithMultipleParams =
+    'https://example.com/models/model-00001-of-00002.gguf?param1=value1&param2=value2';
+  const urlsMultiParams = ModelManager.parseModelUrl(urlWithMultipleParams);
+  expect(urlsMultiParams.length).toBe(2);
+  expect(urlsMultiParams[0]).toBe(
+    'https://example.com/models/model-00001-of-00002.gguf?param1=value1&param2=value2'
+  );
+  expect(urlsMultiParams[1]).toBe(
+    'https://example.com/models/model-00002-of-00002.gguf?param1=value1&param2=value2'
+  );
+
+  // Test with no-inline parameter (common in Vite)
+  const urlWithNoInline =
+    'https://example.com/models/model-00001-of-00002.gguf?no-inline';
+  const urlsNoInline = ModelManager.parseModelUrl(urlWithNoInline);
+  expect(urlsNoInline.length).toBe(2);
+  expect(urlsNoInline[0]).toBe(
+    'https://example.com/models/model-00001-of-00002.gguf?no-inline'
+  );
+  expect(urlsNoInline[1]).toBe(
+    'https://example.com/models/model-00002-of-00002.gguf?no-inline'
+  );
+});
+
 test.sequential('download split model', async () => {
   const manager = new ModelManager();
   const model = await manager.downloadModel(SPLIT_MODEL);
