@@ -41,13 +41,13 @@ export interface ModelManagerParams {
    *
    * Default: 3
    */
-  parallelDownloads?: number;
+  parallelDownloads?: number | undefined;
   /**
    * Allow offline mode
    *
    * Default: false
    */
-  allowOffline?: boolean;
+  allowOffline?: boolean | undefined;
 }
 
 /**

@@ -18,7 +18,7 @@
     "downlevelIteration": true,
     "resolveJsonModule": true,
     "experimentalDecorators": true,
-    "exactOptionalPropertyTypes": false,
+    "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
 

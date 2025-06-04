@@ -44,7 +44,7 @@ interface Task {
   resolve: any;
   reject: any;
   param: TaskParam;
-  buffers?: ArrayBuffer[];
+  buffers?: ArrayBuffer[] | undefined;
 }
 
 export class ProxyToWorker {
