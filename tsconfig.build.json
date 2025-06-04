@@ -19,7 +19,7 @@
     "resolveJsonModule": true,
     "experimentalDecorators": true,
     "exactOptionalPropertyTypes": false,
-    "noImplicitOverride": false,
+    "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
 
     "noEmit": false,

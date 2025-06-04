@@ -260,7 +260,7 @@ export class WllamaError extends Error {
  * This is equivalent to AbortError in Fetch API.
  */
 export class WllamaAbortError extends Error {
-  name: string = 'AbortError';
+  override name: string = 'AbortError';
   constructor() {
     super('Operation aborted');
   }
