@@ -12,7 +12,7 @@
  */
 
 import { glueDeserialize, glueSerialize } from './glue/glue';
-import { GlueMsg } from './glue/messages';
+import type { GlueMsg } from './glue/messages';
 import { createWorker, isSafariMobile } from './utils';
 import {
   LLAMA_CPP_WORKER_CODE,

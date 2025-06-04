@@ -18,6 +18,9 @@
     "downlevelIteration": true,
     "resolveJsonModule": true,
     "experimentalDecorators": true,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": false,
+    "verbatimModuleSyntax": true,
 
     "noEmit": false,
     "module": "es2015",

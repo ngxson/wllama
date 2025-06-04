@@ -1,4 +1,4 @@
-import { DownloadProgressCallback } from './model-manager';
+import type { DownloadProgressCallback } from './model-manager';
 import { createWorker, isSafariMobile } from './utils';
 import { OPFS_UTILS_WORKER_CODE } from './workers-code/generated';
 

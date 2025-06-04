@@ -1,6 +1,9 @@
-import CacheManager, { CacheEntry, DownloadOptions } from './cache-manager';
+import CacheManager, {
+  type CacheEntry,
+  type DownloadOptions,
+} from './cache-manager';
 import { sumArr } from './utils';
-import { WllamaError, WllamaLogger } from './wllama';
+import { WllamaError, type WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
 

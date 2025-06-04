@@ -9,9 +9,9 @@ import {
   joinBuffers,
   sortFileByShard,
 } from './utils';
-import CacheManager, { DownloadOptions } from './cache-manager';
+import CacheManager, { type DownloadOptions } from './cache-manager';
 import { ModelManager, Model } from './model-manager';
-import {
+import type {
   GlueMsgChatFormatRes,
   GlueMsgDecodeRes,
   GlueMsgDetokenizeRes,
