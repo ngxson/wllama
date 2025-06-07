@@ -1,4 +1,8 @@
-import { GLUE_MESSAGE_PROTOTYPES, GLUE_VERSION, GlueMsg } from './messages';
+import {
+  GLUE_MESSAGE_PROTOTYPES,
+  GLUE_VERSION,
+  type GlueMsg,
+} from './messages';
 
 /**
  * Glue is a simple binary protocol for serializing and deserializing messages.

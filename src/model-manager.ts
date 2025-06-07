@@ -1,6 +1,9 @@
-import CacheManager, { CacheEntry, DownloadOptions } from './cache-manager';
+import CacheManager, {
+  type CacheEntry,
+  type DownloadOptions,
+} from './cache-manager';
 import { isValidGgufFile, sumArr } from './utils';
-import { WllamaError, WllamaLogger } from './wllama';
+import { WllamaError, type WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
 
@@ -38,13 +41,13 @@ export interface ModelManagerParams {
    *
    * Default: 3
    */
-  parallelDownloads?: number;
+  parallelDownloads?: number | undefined;
   /**
    * Allow offline mode
    *
    * Default: false
    */
-  allowOffline?: boolean;
+  allowOffline?: boolean | undefined;
 }
 
 /**
