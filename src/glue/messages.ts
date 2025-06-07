@@ -997,21 +997,21 @@ export interface GlueMsgLoadReq {
   seed: number;
   n_ctx: number;
   n_threads: number;
-  embeddings?: boolean;
-  offload_kqv?: boolean;
-  n_batch?: number;
+  embeddings?: boolean | undefined;
+  offload_kqv?: boolean | undefined;
+  n_batch?: number | undefined;
   n_seq_max?: number;
   pooling_type?: string;
   rope_scaling_type?: string;
-  rope_freq_base?: number;
-  rope_freq_scale?: number;
-  yarn_ext_factor?: number;
-  yarn_attn_factor?: number;
-  yarn_beta_fast?: number;
-  yarn_beta_slow?: number;
-  yarn_orig_ctx?: number;
+  rope_freq_base?: number | undefined;
+  rope_freq_scale?: number | undefined;
+  yarn_ext_factor?: number | undefined;
+  yarn_attn_factor?: number | undefined;
+  yarn_beta_fast?: number | undefined;
+  yarn_beta_slow?: number | undefined;
+  yarn_orig_ctx?: number | undefined;
   cache_type_k?: string;
-  cache_type_v?: string;
+  cache_type_v?: string | undefined;
 }
 
 // struct glue_msg_load_res
@@ -1316,7 +1316,7 @@ export interface GlueMsgTestPerplexityRes {
 // struct glue_msg_chat_format_req
 export interface GlueMsgChatFormatReq {
   _name: "cfmt_req";
-  tmpl?: string;
+  tmpl?: string | undefined;
   add_ass?: boolean;
   roles: string[];
   contents: string[];
