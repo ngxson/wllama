@@ -10,6 +10,7 @@ import {
   parseShardNumber,
   parseModelUrl,
   sortFileByShard,
+  isValidGgufFile,
 } from './utils';
 
 describe('joinBuffers', () => {
@@ -91,6 +92,32 @@ describe('shard processing', () => {
       current: 1,
       total: 1,
     });
+
+    expect(
+      parseShardNumber('abcdef-123456-00001-of-00005.gguf?param=value')
+    ).toEqual({
+      baseURL: 'abcdef-123456',
+      current: 1,
+      total: 5,
+    });
+
+    expect(
+      parseShardNumber('abcdef-123456-00001-of-00005.gguf?no-inline')
+    ).toEqual({
+      baseURL: 'abcdef-123456',
+      current: 1,
+      total: 5,
+    });
+
+    expect(
+      parseShardNumber(
+        'abcdef-123456-00001-of-00005.gguf?param1=value1&param2=value2'
+      )
+    ).toEqual({
+      baseURL: 'abcdef-123456',
+      current: 1,
+      total: 5,
+    });
   });
 
   test('parseModelUrl generates correct shard URLs', () => {
@@ -108,6 +135,20 @@ describe('shard processing', () => {
     expect(parseModelUrl(complexPath)).toEqual([
       'https://example.com/models/llama-00001-of-00002.gguf',
       'https://example.com/models/llama-00002-of-00002.gguf',
+    ]);
+
+    const shardedFileWithQuery = 'model-00001-of-00003.gguf?param=value';
+    expect(parseModelUrl(shardedFileWithQuery)).toEqual([
+      'model-00001-of-00003.gguf?param=value',
+      'model-00002-of-00003.gguf?param=value',
+      'model-00003-of-00003.gguf?param=value',
+    ]);
+
+    const complexPathWithQuery =
+      'https://example.com/models/llama-00001-of-00002.gguf?no-inline';
+    expect(parseModelUrl(complexPathWithQuery)).toEqual([
+      'https://example.com/models/llama-00001-of-00002.gguf?no-inline',
+      'https://example.com/models/llama-00002-of-00002.gguf?no-inline',
     ]);
   });
 
@@ -150,5 +191,41 @@ describe('shard processing', () => {
     const blobs = [new Blob(), new Blob()];
     sortFileByShard(blobs);
     expect(blobs.length).toBe(2);
+  });
+});
+
+describe('GGUF file validation', () => {
+  test('isValidGgufFile should correctly validate GGUF files', () => {
+    // Basic valid cases
+    expect(isValidGgufFile('model.gguf')).toBe(true);
+    expect(isValidGgufFile('path/to/model.gguf')).toBe(true);
+
+    // With Vite query parameters
+    expect(isValidGgufFile('model.gguf?no-inline')).toBe(true);
+    expect(isValidGgufFile('foo.gguf?no-inline')).toBe(true);
+
+    // With query parameters
+    expect(isValidGgufFile('model.gguf?param=value')).toBe(true);
+    expect(isValidGgufFile('model.gguf?param1&param2')).toBe(true);
+    expect(isValidGgufFile('model.gguf?no-inline&v=123')).toBe(true);
+    expect(isValidGgufFile('model.gguf?param1=value1&param2=value2')).toBe(
+      true
+    );
+    expect(isValidGgufFile('model.gguf?param=value&special=!@#$%^&*()')).toBe(
+      true
+    );
+    expect(isValidGgufFile('model.gguf?')).toBe(true);
+
+    // With fragments
+    expect(isValidGgufFile('model.gguf?param=value#fragment')).toBe(true);
+
+    // Invalid cases
+    expect(isValidGgufFile('model.bin')).toBe(false);
+    expect(isValidGgufFile('model.gguf.bin')).toBe(false);
+    expect(isValidGgufFile('modelgguf')).toBe(false);
+    expect(isValidGgufFile('path/to/model.txt?ext=gguf')).toBe(false);
+
+    // Case sensitivity
+    expect(isValidGgufFile('model.GGUF?param=value')).toBe(false);
   });
 });

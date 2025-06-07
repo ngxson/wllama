@@ -12,6 +12,7 @@ import { toHumanReadableSize, useDebounce } from '../utils/utils';
 import { useEffect, useState } from 'react';
 import ScreenWrapper from './ScreenWrapper';
 import { DisplayedModel } from '../utils/displayed-model';
+import { isValidGgufFile } from '@wllama/wllama';
 
 export default function ModelScreen() {
   const [showAddCustom, setShowAddCustom] = useState(false);
@@ -174,7 +175,7 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
           setHfFiles(
             data.siblings
               .map((s) => s.rfilename)
-              .filter((f) => f.endsWith('.gguf'))
+              .filter((f) => isValidGgufFile(f))
           );
           setErr('');
         } else {

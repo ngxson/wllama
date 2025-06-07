@@ -8,6 +8,7 @@ import {
   isSupportMultiThread,
   joinBuffers,
   sortFileByShard,
+  isValidGgufFile,
 } from './utils';
 import CacheManager, { type DownloadOptions } from './cache-manager';
 import { ModelManager, Model } from './model-manager';
@@ -505,7 +506,7 @@ export class Wllama {
     if (!modelId.match(HF_MODEL_ID_REGEX)) {
       throw new WllamaError(HF_MODEL_ID_REGEX_EXPLAIN, 'download_error');
     }
-    if (!filePath.endsWith('.gguf')) {
+    if (!isValidGgufFile(filePath)) {
       throw new WllamaError('Only GGUF file is supported', 'download_error');
     }
     return await this.loadModelFromUrl(

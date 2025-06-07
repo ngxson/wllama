@@ -2,7 +2,7 @@ import CacheManager, {
   type CacheEntry,
   type DownloadOptions,
 } from './cache-manager';
-import { sumArr } from './utils';
+import { isValidGgufFile, sumArr } from './utils';
 import { WllamaError, type WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
@@ -237,7 +237,9 @@ export class ModelManager {
     if (Array.isArray(modelUrl)) {
       return modelUrl;
     }
-    const urlPartsRegex = /-(\d{5})-of-(\d{5})\.gguf$/;
+    const urlPartsRegex = /-(\d{5})-of-(\d{5})\.gguf(?:\?.*)?$/;
+    const queryMatch = modelUrl.match(/\.gguf(\?.*)?$/);
+    const queryParams = queryMatch?.[1] ?? '';
     const matches = modelUrl.match(urlPartsRegex);
     if (!matches) {
       return [modelUrl];
@@ -248,7 +250,7 @@ export class ModelManager {
       (index + 1).toString().padStart(5, '0')
     );
     return paddedShardIds.map(
-      (current) => `${baseURL}-${current}-of-${total}.gguf`
+      (current) => `${baseURL}-${current}-of-${total}.gguf${queryParams}`
     );
   }
 
@@ -283,7 +285,7 @@ export class ModelManager {
     url: string,
     options: DownloadOptions = {}
   ): Promise<Model> {
-    if (!url.endsWith('.gguf')) {
+    if (!isValidGgufFile(url)) {
       throw new WllamaError(
         `Invalid model URL: ${url}; URL must ends with ".gguf"`,
         'download_error'

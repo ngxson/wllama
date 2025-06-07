@@ -52,7 +52,7 @@ export interface ShardInfo {
   total: number;
 }
 
-const URL_PARTS_REGEX = /-(\d{5})-of-(\d{5})\.gguf$/;
+const URL_PARTS_REGEX = /-(\d{5})-of-(\d{5})\.gguf(?:\?.*)?$/;
 
 /**
  * Parse shard number and total from a file name or URL
@@ -86,12 +86,14 @@ export const parseModelUrl = (modelUrl: string): string[] => {
   if (current == total && total == 1) {
     return [modelUrl];
   } else {
+    const queryMatch = modelUrl.match(/\.gguf(\?.*)?$/);
+    const queryParams = queryMatch?.[1] ?? '';
     const paddedShardIds = Array.from({ length: total }, (_, index) =>
       (index + 1).toString().padStart(5, '0')
     );
     return paddedShardIds.map(
       (current) =>
-        `${baseURL}-${current}-of-${total.toString().padStart(5, '0')}.gguf`
+        `${baseURL}-${current}-of-${total.toString().padStart(5, '0')}.gguf${queryParams}`
     );
   }
 };
@@ -196,6 +198,21 @@ export const isSafari = (): boolean => {
     isSafariMobile() ||
     !!navigator.userAgent.match(/Version\/([0-9\._]+).*Safari/)
   ); // safari
+};
+
+/**
+ * Regular expression to validate GGUF file paths/URLs
+ * Matches paths ending with .gguf and optional query parameters
+ */
+export const GGUF_FILE_REGEX = /^.*\.gguf(?:\?.*)?$/;
+
+/**
+ * Validates if a given string is a valid GGUF file path/URL
+ * @param path The file path or URL to validate
+ * @returns true if the path is a valid GGUF file path/URL
+ */
+export const isValidGgufFile = (path: string): boolean => {
+  return GGUF_FILE_REGEX.test(path);
 };
 
 /**
