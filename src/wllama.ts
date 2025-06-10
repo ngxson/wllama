@@ -91,6 +91,9 @@ export interface AssetsPathConfig {
    * Path or URL to the single threaded Wllama wasm file
    */
   'single-thread/wllama.wasm': string;
+  /**
+   * Path or URL to the multi threaded Wllama wasm file
+   */
   'multi-thread/wllama.wasm'?: string;
 }
 
