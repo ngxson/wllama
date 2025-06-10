@@ -76,11 +76,20 @@ export interface WllamaConfig {
 }
 
 export interface WllamaChatMessage {
+  /**
+   * The role of the message
+   */
   role: 'system' | 'user' | 'assistant';
+  /**
+   * the content of the message
+   */
   content: string;
 }
 
 export interface AssetsPathConfig {
+  /**
+   * Path or URL to the single threaded Wllama wasm file
+   */
   'single-thread/wllama.wasm': string;
   'multi-thread/wllama.wasm'?: string;
 }
