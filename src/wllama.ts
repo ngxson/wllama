@@ -81,7 +81,7 @@ export interface WllamaChatMessage {
    */
   role: 'system' | 'user' | 'assistant';
   /**
-   * the content of the message
+   * The content of the message
    */
   content: string;
 }
@@ -98,34 +98,118 @@ export interface AssetsPathConfig {
 }
 
 export interface LoadModelConfig {
+  /**
+   * Seed used by the sampler and other random processes
+   *
+   * @defaultValue 0xFFFFFFFF
+   */
   seed?: number;
+  /**
+   * Context window size
+   *
+   * @defaultValue 1024
+   */
   n_ctx?: number;
+  /**
+   * Prompt processing maximum batch size
+   *
+   * @defaultValue 2048
+   */
   n_batch?: number;
-  // by default, on multi-thread build, we take half number of available threads (hardwareConcurrency / 2)
+  /**
+   * Number of threads to use for generation
+   *
+   * @defaultValue navigator.hardwareConcurrency / 2 on multi-thread build
+   */
   n_threads?: number;
+  /**
+   * Enabled embedding extraction (together with logits)
+   *
+   * @defaultValue false
+   */
   embeddings?: boolean;
+  /**
+   * Offload the KQV ops (including the KV cache) to GPU
+   *
+   * @defaultValue false
+   */
   offload_kqv?: boolean;
+  /**
+   * Pooling type for embeddings
+   *
+   * @defaultValue 'LLAMA_POOLING_TYPE_UNSPECIFIED'
+   */
   pooling_type?:
     | 'LLAMA_POOLING_TYPE_UNSPECIFIED'
     | 'LLAMA_POOLING_TYPE_NONE'
     | 'LLAMA_POOLING_TYPE_MEAN'
     | 'LLAMA_POOLING_TYPE_CLS';
-  // context extending
+  /**
+   * Rotary Position Embeddings (RoPE) frequency scaling method
+   *
+   * @defaultValue 'LLAMA_ROPE_SCALING_TYPE_LINEAR' unless specified by the model
+   */
   rope_scaling_type?:
     | 'LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED'
     | 'LLAMA_ROPE_SCALING_TYPE_NONE'
     | 'LLAMA_ROPE_SCALING_TYPE_LINEAR'
     | 'LLAMA_ROPE_SCALING_TYPE_YARN';
+  /**
+   * Rotary Position Embeddings (RoPE) base frequency, used by NTK-aware scaling (default: loaded from model)"
+   *
+   * @defaultValue loaded from model
+   */
   rope_freq_base?: number;
+  /**
+   * Rotary Position Embeddings (RoPE) context scaling factor
+   *
+   * @defaultValue loaded from model
+   */
   rope_freq_scale?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) extrapolation mix factor
+   *
+   * @defaultValue -1.0
+   */
   yarn_ext_factor?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) attention factor
+   * or scale sqrt(t) or attention magnitude
+   *
+   * @defaultValue 1.0
+   */
   yarn_attn_factor?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) low correction dim or beta
+   *
+   * @defaultValue 32.0
+   */
   yarn_beta_fast?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) high correction dim or alpha
+   *
+   * @defaultValue 1.0
+   */
   yarn_beta_slow?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) original context size of the model
+   *
+   * @defaultValue loaded from model
+   */
   yarn_orig_ctx?: number;
   // TODO: add group attention
   // optimizations
+  /**
+   * KV cache data type for K
+   *
+   * @defaultValue f16
+   */
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
+  /**
+   * KV cache data type for V
+   *
+   * @defaultValue f16
+   */
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
 }
 
