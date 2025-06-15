@@ -215,22 +215,126 @@ export interface LoadModelConfig {
 
 export interface SamplingConfig {
   // See sampling.h for more details
-  mirostat?: number; // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
+  /**
+   * Mirostat sampling
+   *
+   * 0 = disabled
+   * 1 = mirostat v1.0
+   * 2 = mirostat v2.0
+   *
+   * @defaultValue 0 (disabled)
+   */
+  mirostat?: number;
+  /**
+   * Mirostat target entropy
+   *
+   * @defaultValue 5.0
+   */
   mirostat_tau?: number;
-  temp?: number; // temperature
+  /**
+   * Adjust the randomness of the generated text
+   *
+   * 0 = sample greedily
+   *
+   * @defaultValue 0.8
+   */
+  temp?: number;
+  /**
+   * Limit the next token selection to a subset of tokens with a cumulative probability above a threshold P
+   *
+   * @defaultValue 0.95
+   */
   top_p?: number;
+  /**
+   * Limit the next token selection to the K most probable tokens
+   *
+   * @defaultValue 40
+   */
   top_k?: number;
+  /**
+   * How many tokens to scan for repetitions
+   *
+   * -1 = context size
+   * 0 = disabled
+   * N = number of tokens
+   *
+   * @defaultValue -1 (context size)
+   */
   penalty_last_n?: number;
+  /**
+   * Prevent the model from generating repetitive or monotonous text.
+   * A higher value (e.g., 1.5) will penalize repetitions more strongly, while a lower value (e.g., 0.9)
+   *
+   * @defaultValue 1.0 (disabled)
+   */
   penalty_repeat?: number;
+  /**
+   * Repeat alpha frequence penalty
+   *
+   * @defaultValue 0.0 (disabled)
+   */
   penalty_freq?: number;
+  /**
+   * Repeat alpha presence penalty
+   *
+   * @defaultValue 0.0 (disabled)
+   */
   penalty_present?: number;
+  /**
+   * The final temperature will be in the range of [temperature - dynatemp_range; temperature + dynatemp_range]
+   *
+   * @defaultValue 0.0 (disabled)
+   */
   dynatemp_range?: number;
+  /**
+   * Controls how entropy maps to temperature in dynamic temperature sampler
+   *
+   * @defaultValue 1.0 (disabled)
+   */
   dynatemp_exponent?: number;
+  /**
+   * BNF-like grammar to constrain generations
+   *
+   * @defaultValue ""
+   */
   grammar?: string;
+  /**
+   * Number of previous tokens to remember
+   *
+   * @defaultValue 64
+   */
   n_prev?: number;
+  /**
+   * Output probabilities of top N tokens
+   *
+   * 0 = disabled
+   * N = N tokens
+   *
+   * @defaultValue 0
+   */
   n_probs?: number;
+  /**
+   * Min P sampling
+   * Recommended for non-english: ~ 0.4
+   *
+   * 0.0 = disabled
+   *
+   * @defaultValue 0.1
+   */
   min_p?: number;
+  /**
+   * Enable locally typical sampling with parameter p.
+   *
+   * 1.0 = disabled
+   *
+   * @defaultValue 1.0
+   */
   typical_p?: number;
+  /**
+   * Modifies the likelihood of token appearing in the completion
+   *
+   * @defaultValue []
+   */
   logit_bias?: { token: number; bias: number }[];
 }
 
