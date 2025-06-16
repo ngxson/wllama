@@ -339,8 +339,17 @@ export interface SamplingConfig {
 }
 
 export interface CompletionChunk {
+  /**
+   * Token ID
+   */
   token: number;
+  /**
+   * Detokenized value of token (UTF8 encoded)
+   */
   piece: Uint8Array;
+  /**
+   * Generated text from start
+   */
   currentText: string;
 }
 
