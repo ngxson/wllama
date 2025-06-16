@@ -76,71 +76,280 @@ export interface WllamaConfig {
 }
 
 export interface WllamaChatMessage {
+  /**
+   * The role of the message
+   */
   role: 'system' | 'user' | 'assistant';
+  /**
+   * The content of the message
+   */
   content: string;
 }
 
 export interface AssetsPathConfig {
+  /**
+   * Path or URL to the single threaded Wllama wasm file
+   */
   'single-thread/wllama.wasm': string;
+  /**
+   * Path or URL to the multi threaded Wllama wasm file
+   */
   'multi-thread/wllama.wasm'?: string;
 }
 
 export interface LoadModelConfig {
+  /**
+   * Seed used by the sampler and other random processes
+   *
+   * @defaultValue 0xFFFFFFFF
+   */
   seed?: number;
+  /**
+   * Context window size
+   *
+   * @defaultValue 1024
+   */
   n_ctx?: number;
+  /**
+   * Prompt processing maximum batch size
+   *
+   * @defaultValue 2048
+   */
   n_batch?: number;
-  // by default, on multi-thread build, we take half number of available threads (hardwareConcurrency / 2)
+  /**
+   * Number of threads to use for generation
+   *
+   * @defaultValue navigator.hardwareConcurrency / 2 on multi-thread build
+   */
   n_threads?: number;
+  /**
+   * Enabled embedding extraction (together with logits)
+   *
+   * @defaultValue false
+   */
   embeddings?: boolean;
+  /**
+   * Offload the KQV ops (including the KV cache) to GPU
+   *
+   * @defaultValue false
+   */
   offload_kqv?: boolean;
+  /**
+   * Pooling type for embeddings
+   *
+   * @defaultValue 'LLAMA_POOLING_TYPE_UNSPECIFIED'
+   */
   pooling_type?:
     | 'LLAMA_POOLING_TYPE_UNSPECIFIED'
     | 'LLAMA_POOLING_TYPE_NONE'
     | 'LLAMA_POOLING_TYPE_MEAN'
     | 'LLAMA_POOLING_TYPE_CLS';
-  // context extending
+  /**
+   * Rotary Position Embeddings (RoPE) frequency scaling method
+   *
+   * @defaultValue 'LLAMA_ROPE_SCALING_TYPE_LINEAR' unless specified by the model
+   */
   rope_scaling_type?:
     | 'LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED'
     | 'LLAMA_ROPE_SCALING_TYPE_NONE'
     | 'LLAMA_ROPE_SCALING_TYPE_LINEAR'
     | 'LLAMA_ROPE_SCALING_TYPE_YARN';
+  /**
+   * Rotary Position Embeddings (RoPE) base frequency, used by NTK-aware scaling (default: loaded from model)"
+   *
+   * @defaultValue loaded from model
+   */
   rope_freq_base?: number;
+  /**
+   * Rotary Position Embeddings (RoPE) context scaling factor
+   *
+   * @defaultValue loaded from model
+   */
   rope_freq_scale?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) extrapolation mix factor
+   *
+   * @defaultValue -1.0
+   */
   yarn_ext_factor?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) attention factor
+   * or scale sqrt(t) or attention magnitude
+   *
+   * @defaultValue 1.0
+   */
   yarn_attn_factor?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) low correction dim or beta
+   *
+   * @defaultValue 32.0
+   */
   yarn_beta_fast?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) high correction dim or alpha
+   *
+   * @defaultValue 1.0
+   */
   yarn_beta_slow?: number;
+  /**
+   * Yet another RoPE extensioN (YaRN) original context size of the model
+   *
+   * @defaultValue loaded from model
+   */
   yarn_orig_ctx?: number;
   // TODO: add group attention
   // optimizations
+  /**
+   * KV cache data type for K
+   *
+   * @defaultValue f16
+   */
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
+  /**
+   * KV cache data type for V
+   *
+   * @defaultValue f16
+   */
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
 }
 
 export interface SamplingConfig {
   // See sampling.h for more details
-  mirostat?: number; // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
+  /**
+   * Mirostat sampling
+   *
+   * 0 = disabled
+   * 1 = mirostat v1.0
+   * 2 = mirostat v2.0
+   *
+   * @defaultValue 0 (disabled)
+   */
+  mirostat?: number;
+  /**
+   * Mirostat target entropy
+   *
+   * @defaultValue 5.0
+   */
   mirostat_tau?: number;
-  temp?: number; // temperature
+  /**
+   * Adjust the randomness of the generated text
+   *
+   * 0 = sample greedily
+   *
+   * @defaultValue 0.8
+   */
+  temp?: number;
+  /**
+   * Limit the next token selection to a subset of tokens with a cumulative probability above a threshold P
+   *
+   * @defaultValue 0.95
+   */
   top_p?: number;
+  /**
+   * Limit the next token selection to the K most probable tokens
+   *
+   * @defaultValue 40
+   */
   top_k?: number;
+  /**
+   * How many tokens to scan for repetitions
+   *
+   * -1 = context size
+   * 0 = disabled
+   * N = number of tokens
+   *
+   * @defaultValue -1 (context size)
+   */
   penalty_last_n?: number;
+  /**
+   * Prevent the model from generating repetitive or monotonous text.
+   * A higher value (e.g., 1.5) will penalize repetitions more strongly, while a lower value (e.g., 0.9)
+   *
+   * @defaultValue 1.0 (disabled)
+   */
   penalty_repeat?: number;
+  /**
+   * Repeat alpha frequence penalty
+   *
+   * @defaultValue 0.0 (disabled)
+   */
   penalty_freq?: number;
+  /**
+   * Repeat alpha presence penalty
+   *
+   * @defaultValue 0.0 (disabled)
+   */
   penalty_present?: number;
+  /**
+   * The final temperature will be in the range of [temperature - dynatemp_range; temperature + dynatemp_range]
+   *
+   * @defaultValue 0.0 (disabled)
+   */
   dynatemp_range?: number;
+  /**
+   * Controls how entropy maps to temperature in dynamic temperature sampler
+   *
+   * @defaultValue 1.0 (disabled)
+   */
   dynatemp_exponent?: number;
+  /**
+   * BNF-like grammar to constrain generations
+   *
+   * @defaultValue ""
+   */
   grammar?: string;
+  /**
+   * Number of previous tokens to remember
+   *
+   * @defaultValue 64
+   */
   n_prev?: number;
+  /**
+   * Output probabilities of top N tokens
+   *
+   * 0 = disabled
+   * N = N tokens
+   *
+   * @defaultValue 0
+   */
   n_probs?: number;
+  /**
+   * Min P sampling
+   * Recommended for non-english: ~ 0.4
+   *
+   * 0.0 = disabled
+   *
+   * @defaultValue 0.1
+   */
   min_p?: number;
+  /**
+   * Enable locally typical sampling with parameter p.
+   *
+   * 1.0 = disabled
+   *
+   * @defaultValue 1.0
+   */
   typical_p?: number;
+  /**
+   * Modifies the likelihood of token appearing in the completion
+   *
+   * @defaultValue []
+   */
   logit_bias?: { token: number; bias: number }[];
 }
 
 export interface CompletionChunk {
+  /**
+   * Token ID
+   */
   token: number;
+  /**
+   * Detokenized value of token (UTF8 encoded)
+   */
   piece: Uint8Array;
+  /**
+   * Generated text from start
+   */
   currentText: string;
 }
 
