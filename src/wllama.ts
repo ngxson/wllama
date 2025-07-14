@@ -119,23 +119,26 @@ export interface LoadModelConfig {
 
 export interface SamplingConfig {
   // See sampling.h for more details
-  mirostat?: number; // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
-  mirostat_tau?: number;
-  temp?: number; // temperature
-  top_p?: number;
-  top_k?: number;
-  penalty_last_n?: number;
-  penalty_repeat?: number;
-  penalty_freq?: number;
-  penalty_present?: number;
-  dynatemp_range?: number;
-  dynatemp_exponent?: number;
+  mirostat?: number | undefined; // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
+  mirostat_eta?: number | undefined;
+  mirostat_tau?: number | undefined;
+  samplers_sequence?: string[] | undefined; // unused for now
+  temp?: number | undefined; // temperature
+  top_p?: number | undefined;
+  top_k?: number | undefined;
+  penalty_last_n?: number | undefined;
+  penalty_repeat?: number | undefined;
+  penalty_freq?: number | undefined;
+  penalty_present?: number | undefined;
+  dynatemp_range?: number | undefined;
+  dynatemp_exponent?: number | undefined;
   grammar?: string;
-  n_prev?: number;
-  n_probs?: number;
-  min_p?: number;
-  typical_p?: number;
-  logit_bias?: { token: number; bias: number }[];
+  n_prev?: number | undefined;
+  n_probs?: number | undefined;
+  min_p?: number | undefined;
+  typ_p?: number | undefined;
+  typical_p?: number | undefined;
+  logit_bias?: { token: number; bias: number }[] | undefined;
 }
 
 export interface CompletionChunk {
@@ -613,6 +616,7 @@ export class Wllama {
       yarn_orig_ctx: config.yarn_orig_ctx,
       cache_type_k: config.cache_type_k as string,
       cache_type_v: config.cache_type_v as string,
+      n_seq_max: 1, // only support single sequence for now
     });
     const loadedCtxInfo: LoadedContextInfo = {
       ...loadResult,
@@ -839,11 +843,16 @@ export class Wllama {
   ): Promise<void> {
     this.checkModelLoaded();
     this.samplingConfig = config;
+    const logitBias = config.logit_bias ?? [];
+    const logitBiasTok = logitBias.map((b) => b.token);
+    const logitBiasVal = logitBias.map((b) => b.bias);
     const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>(
       'sampling_init',
       {
         _name: 'sint_req',
         ...config,
+        logit_bias_toks: logitBiasTok,
+        logit_bias_vals: logitBiasVal,
         tokens: pastTokens,
       }
     );

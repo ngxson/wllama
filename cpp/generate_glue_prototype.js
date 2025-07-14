@@ -102,7 +102,7 @@ ${protos
         console.error('Unknown type:', field.type);
         process.exit(1);
       }
-      interfaceCode += `  ${field.name}${field.isNullable ? '?' : ''}: ${mappedType};\n`;
+      interfaceCode += `  ${field.name}${field.isNullable ? '?' : ''}: ${mappedType}${field.isNullable ? ' | undefined' : ''};\n`;
     }
     interfaceCode += '}\n';
     return interfaceCode;
