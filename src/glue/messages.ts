@@ -1000,9 +1000,9 @@ export interface GlueMsgLoadReq {
   embeddings?: boolean | undefined;
   offload_kqv?: boolean | undefined;
   n_batch?: number | undefined;
-  n_seq_max?: number;
-  pooling_type?: string;
-  rope_scaling_type?: string;
+  n_seq_max?: number | undefined;
+  pooling_type?: string | undefined;
+  rope_scaling_type?: string | undefined;
   rope_freq_base?: number | undefined;
   rope_freq_scale?: number | undefined;
   yarn_ext_factor?: number | undefined;
@@ -1010,7 +1010,7 @@ export interface GlueMsgLoadReq {
   yarn_beta_fast?: number | undefined;
   yarn_beta_slow?: number | undefined;
   yarn_orig_ctx?: number | undefined;
-  cache_type_k?: string;
+  cache_type_k?: string | undefined;
   cache_type_v?: string | undefined;
 }
 
@@ -1052,28 +1052,28 @@ export interface GlueMsgSetOptionsRes {
 // struct glue_msg_sampling_init_req
 export interface GlueMsgSamplingInitReq {
   _name: "sint_req";
-  mirostat?: number;
-  mirostat_tau?: number;
-  mirostat_eta?: number;
-  temp?: number;
-  top_p?: number;
-  top_k?: number;
-  penalty_last_n?: number;
-  penalty_repeat?: number;
-  penalty_freq?: number;
-  penalty_present?: number;
-  dynatemp_range?: number;
-  dynatemp_exponent?: number;
-  samplers_sequence?: string[];
-  grammar?: string;
-  n_prev?: number;
-  n_probs?: number;
-  min_p?: number;
-  typical_p?: number;
-  typ_p?: number;
-  logit_bias_toks?: number[];
-  logit_bias_vals?: number[];
-  tokens?: number[];
+  mirostat?: number | undefined;
+  mirostat_tau?: number | undefined;
+  mirostat_eta?: number | undefined;
+  temp?: number | undefined;
+  top_p?: number | undefined;
+  top_k?: number | undefined;
+  penalty_last_n?: number | undefined;
+  penalty_repeat?: number | undefined;
+  penalty_freq?: number | undefined;
+  penalty_present?: number | undefined;
+  dynatemp_range?: number | undefined;
+  dynatemp_exponent?: number | undefined;
+  samplers_sequence?: string[] | undefined;
+  grammar?: string | undefined;
+  n_prev?: number | undefined;
+  n_probs?: number | undefined;
+  min_p?: number | undefined;
+  typical_p?: number | undefined;
+  typ_p?: number | undefined;
+  logit_bias_toks?: number[] | undefined;
+  logit_bias_vals?: number[] | undefined;
+  tokens?: number[] | undefined;
 }
 
 // struct glue_msg_sampling_init_res
@@ -1317,7 +1317,7 @@ export interface GlueMsgTestPerplexityRes {
 export interface GlueMsgChatFormatReq {
   _name: "cfmt_req";
   tmpl?: string | undefined;
-  add_ass?: boolean;
+  add_ass?: boolean | undefined;
   roles: string[];
   contents: string[];
 }
