@@ -15,6 +15,30 @@ export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 export const LIST_MODELS = [
   {
+    url: 'https://huggingface.co/LiquidAI/LFM2-350M-GGUF/resolve/main/LFM2-350M-Q4_K_M.gguf',
+    size: 229309376,
+  },
+  {
+    url: 'https://huggingface.co/LiquidAI/LFM2-700M-GGUF/resolve/main/LFM2-700M-Q4_K_M.gguf',
+    size: 468624320,
+  },
+  {
+    url: 'https://huggingface.co/LiquidAI/LFM2-1.2B-GGUF/resolve/main/LFM2-1.2B-Q4_K_M.gguf',
+    size: 730893248,
+  },
+  {
+    url: 'https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf',
+    size: 639447744,
+  },
+  {
+    url: 'https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf',
+    size: 1107409472,
+  },
+  {
+    url: 'https://huggingface.co/ggml-org/SmolLM3-3B-GGUF/resolve/main/SmolLM3-Q4_K_M.gguf',
+    size: 1915305312,
+  },
+  {
     url: 'https://huggingface.co/ngxson/SmolLM2-360M-Instruct-Q8_0-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf',
     size: 386404992,
   },
