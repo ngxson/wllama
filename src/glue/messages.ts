@@ -244,16 +244,6 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "int",
         "name": "token_decoder_start",
         "isNullable": false
-      },
-      {
-        "type": "bool",
-        "name": "is_recurrent",
-        "isNullable": false
-      },
-      {
-        "type": "bool",
-        "name": "is_hybrid",
-        "isNullable": false
       }
     ]
   },
@@ -1057,8 +1047,6 @@ export interface GlueMsgLoadRes {
   add_eos_token: boolean;
   has_encoder: boolean;
   token_decoder_start: number;
-  is_recurrent: boolean;
-  is_hybrid: boolean;
 }
 
 // struct glue_msg_set_options_req

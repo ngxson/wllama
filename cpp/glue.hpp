@@ -538,8 +538,6 @@ struct glue_msg_load_res
   GLUE_FIELD(bool, add_eos_token)
   GLUE_FIELD(bool, has_encoder)
   GLUE_FIELD(int, token_decoder_start)
-  GLUE_FIELD(bool, is_recurrent)
-  GLUE_FIELD(bool, is_hybrid)
 };
 
 /////////

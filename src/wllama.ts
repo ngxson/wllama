@@ -618,6 +618,8 @@ export class Wllama {
       cache_type_k: config.cache_type_k as string,
       cache_type_v: config.cache_type_v as string,
       n_seq_max: 1, // only support single sequence for now
+      flash_attn: config.flash_attn,
+      swa_full: true, // TODO: properly support SWA
     });
     const loadedCtxInfo: LoadedContextInfo = {
       ...loadResult,
