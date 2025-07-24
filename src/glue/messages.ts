@@ -137,6 +137,16 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "str",
         "name": "cache_type_v",
         "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "flash_attn",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "swa_full",
+        "isNullable": true
       }
     ]
   },
@@ -233,6 +243,16 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "int",
         "name": "token_decoder_start",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "is_recurrent",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "is_hybrid",
         "isNullable": false
       }
     ]
@@ -1012,6 +1032,8 @@ export interface GlueMsgLoadReq {
   yarn_orig_ctx?: number | undefined;
   cache_type_k?: string | undefined;
   cache_type_v?: string | undefined;
+  flash_attn?: boolean | undefined;
+  swa_full?: boolean | undefined;
 }
 
 // struct glue_msg_load_res
@@ -1035,6 +1057,8 @@ export interface GlueMsgLoadRes {
   add_eos_token: boolean;
   has_encoder: boolean;
   token_decoder_start: number;
+  is_recurrent: boolean;
+  is_hybrid: boolean;
 }
 
 // struct glue_msg_set_options_req

@@ -115,6 +115,7 @@ export interface LoadModelConfig {
   // optimizations
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
+  flash_attn?: boolean;
 }
 
 export interface SamplingConfig {
@@ -1355,7 +1356,7 @@ export class Wllama {
    * Compare the input sequence and cachedToken, then return the part that is not in cache.
    * This function also remove mismatch part in cache (via kvRemove)
    */
-  private async computeNonCachedTokens(seq: number[]) {
+  private async computeNonCachedTokens(seq: number[]): Promise<number[]> {
     const cachedTokens = await this.getCachedTokens();
     let nKeep = 0;
     for (; nKeep < Math.min(cachedTokens.length, seq.length); nKeep++) {
@@ -1364,8 +1365,14 @@ export class Wllama {
       }
     }
     this.logger().debug(`Cache nKeep=${nKeep}`);
-    await this.kvRemove(nKeep, -1);
-    return seq.slice(nKeep, seq.length);
+    try {
+      await this.kvRemove(nKeep, -1);
+      return seq.slice(nKeep, seq.length);
+    } catch (e) {
+      this.logger().warn('Failed to rollback KV cache, clearing it instead');
+      await this.kvClear();
+      return seq;
+    }
   }
 
   // TODO: add current_status

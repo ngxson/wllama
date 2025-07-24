@@ -513,6 +513,8 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(int, yarn_orig_ctx)
   GLUE_FIELD_NULLABLE(str, cache_type_k)
   GLUE_FIELD_NULLABLE(str, cache_type_v)
+  GLUE_FIELD_NULLABLE(bool, flash_attn)
+  GLUE_FIELD_NULLABLE(bool, swa_full)
 };
 
 struct glue_msg_load_res
@@ -536,6 +538,8 @@ struct glue_msg_load_res
   GLUE_FIELD(bool, add_eos_token)
   GLUE_FIELD(bool, has_encoder)
   GLUE_FIELD(int, token_decoder_start)
+  GLUE_FIELD(bool, is_recurrent)
+  GLUE_FIELD(bool, is_hybrid)
 };
 
 /////////
