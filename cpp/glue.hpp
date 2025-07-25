@@ -513,6 +513,8 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(int, yarn_orig_ctx)
   GLUE_FIELD_NULLABLE(str, cache_type_k)
   GLUE_FIELD_NULLABLE(str, cache_type_v)
+  GLUE_FIELD_NULLABLE(bool, flash_attn)
+  GLUE_FIELD_NULLABLE(bool, swa_full)
 };
 
 struct glue_msg_load_res

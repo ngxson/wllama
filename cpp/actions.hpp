@@ -199,6 +199,10 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
     cparams.type_k = kv_cache_type_from_str(req.cache_type_k.value);
   if (req.cache_type_v.not_null())
     cparams.type_v = kv_cache_type_from_str(req.cache_type_v.value);
+  if (req.swa_full.not_null())
+    cparams.swa_full = req.swa_full.value;
+  if (req.flash_attn.not_null())
+    cparams.flash_attn = req.flash_attn.value;
 
   // init threadpool
   ggml_threadpool_params_default(cparams.n_threads);
@@ -650,12 +654,28 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
   const int n_keep = req.n_keep.value;
   const int n_discard = req.n_discard.value;
   auto * mem = llama_get_memory(app.ctx);
+  
+  glue_msg_get_kv_remove_res res;
+  bool & success = res.success.value;
+  success = false;
+  res.n_past.value = app.tokens.size();
+
+  llama_pos pos_min = llama_memory_seq_pos_min(mem, 0);
+  if (pos_min > 0) {
+    // TODO: rm tokens from SWA is currently unsupported
+    success = false;
+    return res;
+  }
 
   if (n_discard > 0)
   {
     // TODO: this code branch is kinda broken, to be fixed later
     const int n_past = app.tokens.size();
-    llama_memory_seq_rm(mem, 0, n_keep, n_keep + n_discard);
+    success = llama_memory_seq_rm(mem, 0, n_keep, n_keep + n_discard);
+    if (!success)
+    {
+      return res;
+    }
     llama_memory_seq_add(mem, 0, n_keep + n_discard, n_past, -n_discard);
     app.tokens.erase(
         app.tokens.begin() + n_keep,
@@ -669,16 +689,17 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
     }
     else
     {
-      llama_memory_seq_rm(mem, 0, n_keep, -1);
+      success = llama_memory_seq_rm(mem, 0, n_keep, -1);
+      if (!success)
+      {
+        return res;
+      }
       app.tokens.erase(
           app.tokens.begin() + n_keep,
           app.tokens.end());
     }
   }
 
-  glue_msg_get_kv_remove_res res;
-  res.success.value = true;
-  res.n_past.value = app.tokens.size();
   return res;
 }
 

@@ -137,6 +137,16 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "str",
         "name": "cache_type_v",
         "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "flash_attn",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "swa_full",
+        "isNullable": true
       }
     ]
   },
@@ -1012,6 +1022,8 @@ export interface GlueMsgLoadReq {
   yarn_orig_ctx?: number | undefined;
   cache_type_k?: string | undefined;
   cache_type_v?: string | undefined;
+  flash_attn?: boolean | undefined;
+  swa_full?: boolean | undefined;
 }
 
 // struct glue_msg_load_res
