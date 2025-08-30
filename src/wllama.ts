@@ -115,7 +115,7 @@ export interface LoadModelConfig {
   // optimizations
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
-  flash_attn?: boolean;
+  flash_attn?: boolean; // true is auto, false is disabled
 }
 
 export interface SamplingConfig {

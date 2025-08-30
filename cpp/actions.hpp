@@ -202,7 +202,7 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
   if (req.swa_full.not_null())
     cparams.swa_full = req.swa_full.value;
   if (req.flash_attn.not_null())
-    cparams.flash_attn = req.flash_attn.value;
+    cparams.flash_attn_type = req.flash_attn.value ? LLAMA_FLASH_ATTN_TYPE_AUTO : LLAMA_FLASH_ATTN_TYPE_DISABLED;
 
   // init threadpool
   ggml_threadpool_params_default(cparams.n_threads);
