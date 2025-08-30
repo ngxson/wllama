@@ -31,6 +31,7 @@ import type {
   GlueMsgTestPerplexityRes,
   GlueMsgTokenizeRes,
 } from './glue/messages';
+import { LIBLLAMA_VERSION } from './workers-code/generated';
 
 const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
 const HF_MODEL_ID_REGEX_EXPLAIN =
@@ -115,7 +116,7 @@ export interface LoadModelConfig {
   // optimizations
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
-  flash_attn?: boolean;
+  flash_attn?: boolean; // true is auto, false is disabled
 }
 
 export interface SamplingConfig {
@@ -324,6 +325,15 @@ export class Wllama {
         'model_not_loaded'
       );
     }
+  }
+
+  /**
+   * Get the libllama version string, e.g. "b6327-4d74393".
+   *
+   * @returns version string embedded at build time.
+   */
+  static getLibllamaVersion(): string {
+    return LIBLLAMA_VERSION;
   }
 
   /**
@@ -1195,7 +1205,12 @@ export class Wllama {
     if (!result.success) {
       throw new WllamaError('kvRemove unknown error');
     }
-    this.nCachedTokens -= nDiscard;
+    // When nDiscard is negative (-1), it means remove everything after nKeep
+    if (nDiscard < 0) {
+      this.nCachedTokens = nKeep;
+    } else {
+      this.nCachedTokens -= nDiscard;
+    }
   }
 
   /**

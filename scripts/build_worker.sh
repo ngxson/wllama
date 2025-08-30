@@ -3,13 +3,22 @@
 set -e
 
 CURRENT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# change to the llama.cpp directory
+cd $CURRENT_PATH
+cd ../llama.cpp
+BUILD_NUMBER="$(git rev-list --count HEAD)"
+SHORT_HASH="$(git rev-parse --short=7 HEAD)"
+
+# change to the root of the project
 cd $CURRENT_PATH
 cd ..
 
-# we're on the root of the project
-
 echo "// This file is auto-generated" > ./src/workers-code/generated.ts
 echo "// To re-generate it, run: npm run build:worker" >> ./src/workers-code/generated.ts
+echo "" >> ./src/workers-code/generated.ts
+echo "export const LIBLLAMA_VERSION = 'b${BUILD_NUMBER}-${SHORT_HASH}';" >> ./src/workers-code/generated.ts
+echo "" >> ./src/workers-code/generated.ts
 
 process_file() {
   local file="$1"
