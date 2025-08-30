@@ -328,9 +328,9 @@ export class Wllama {
   }
 
   /**
-   * Get the libllama version number. Format: "b{build_number}-{git_short_hash}""
+   * Get the libllama version string, e.g. "b6327-4d74393".
    *
-   * @returns the jinja template. null if there is no template in gguf
+   * @returns version string embedded at build time.
    */
   static getLibllamaVersion(): string {
     return LIBLLAMA_VERSION;
