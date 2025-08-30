@@ -1195,7 +1195,12 @@ export class Wllama {
     if (!result.success) {
       throw new WllamaError('kvRemove unknown error');
     }
-    this.nCachedTokens -= nDiscard;
+    // When nDiscard is negative (-1), it means remove everything after nKeep
+    if (nDiscard < 0) {
+      this.nCachedTokens = nKeep;
+    } else {
+      this.nCachedTokens -= nDiscard;
+    }
   }
 
   /**

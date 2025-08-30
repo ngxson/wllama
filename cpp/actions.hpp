@@ -775,7 +775,7 @@ glue_msg_status_res action_current_status(app_t &app, const char *req_raw)
   PARSE_REQ(glue_msg_status_req);
   glue_msg_status_res res;
   res.success.value = true;
-  res.tokens.arr = std::move(app.tokens);
+  res.tokens.arr = app.tokens; // copy
   return res;
 }
 
