@@ -31,6 +31,7 @@ import type {
   GlueMsgTestPerplexityRes,
   GlueMsgTokenizeRes,
 } from './glue/messages';
+import { LIBLLAMA_VERSION } from './workers-code/generated';
 
 const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
 const HF_MODEL_ID_REGEX_EXPLAIN =
@@ -324,6 +325,15 @@ export class Wllama {
         'model_not_loaded'
       );
     }
+  }
+
+  /**
+   * Get the libllama version number. Format: "b{build_number}-{git_short_hash}""
+   *
+   * @returns the jinja template. null if there is no template in gguf
+   */
+  static getLibllamaVersion(): string {
+    return LIBLLAMA_VERSION;
   }
 
   /**
