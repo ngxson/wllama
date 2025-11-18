@@ -2,7 +2,7 @@
 
 #set -e
 
-export EMSDK_IMAGE_TAG="4.0.3"
+export EMSDK_IMAGE_TAG="4.0.10"
 
 CURRENT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd $CURRENT_PATH

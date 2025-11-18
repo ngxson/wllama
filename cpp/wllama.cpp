@@ -171,7 +171,7 @@ extern "C" const char *wllama_debug()
 #ifdef __EMSCRIPTEN__
     auto i = mallinfo();
     unsigned int total_mem = get_mem_total();
-    unsigned int dynamic_top = (unsigned int)sbrk(0);
+    unsigned int dynamic_top = (unsigned int)(size_t)sbrk(0);
     return total_mem - dynamic_top + i.fordblks;
 #else
     return 0;
