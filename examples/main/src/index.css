@@ -18,3 +18,39 @@ body {
     }
   }
 }
+
+.chat-markdown {
+  @apply whitespace-pre-wrap space-y-2 break-words text-left;
+
+  p {
+    @apply m-0;
+  }
+
+  ul {
+    @apply list-disc pl-5 my-1;
+  }
+
+  ol {
+    @apply list-decimal pl-5 my-1;
+  }
+
+  li {
+    @apply my-1;
+  }
+
+  pre {
+    @apply bg-base-200 rounded p-3 overflow-x-auto whitespace-pre-wrap;
+  }
+
+  code {
+    @apply bg-base-200 rounded px-1 py-[2px];
+  }
+
+  pre code {
+    @apply bg-transparent p-0 whitespace-pre-wrap;
+  }
+
+  a {
+    @apply link;
+  }
+}
