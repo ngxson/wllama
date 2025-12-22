@@ -17,6 +17,7 @@ import { createWorker, isSafariMobile } from './utils';
 import {
   LLAMA_CPP_WORKER_CODE,
   WLLAMA_MULTI_THREAD_CODE,
+  WLLAMA_WEBGPU_SINGLE_THREAD_CODE,
   WLLAMA_SINGLE_THREAD_CODE,
 } from './workers-code/generated';
 
@@ -58,18 +59,21 @@ export class ProxyToWorker {
   pathConfig: any;
   multiThread: boolean;
   nbThread: number;
+  useWebGpuSingleThread: boolean;
 
   constructor(
     pathConfig: any,
     nbThread: number = 1,
     suppressNativeLog: boolean,
-    logger: Logger
+    logger: Logger,
+    useWebGpuSingleThread: boolean = false
   ) {
     this.pathConfig = pathConfig;
     this.nbThread = nbThread;
     this.multiThread = nbThread > 1;
     this.logger = logger;
     this.suppressNativeLog = suppressNativeLog;
+    this.useWebGpuSingleThread = useWebGpuSingleThread;
   }
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
@@ -78,7 +82,9 @@ export class ProxyToWorker {
     }
     let moduleCode = this.multiThread
       ? WLLAMA_MULTI_THREAD_CODE
-      : WLLAMA_SINGLE_THREAD_CODE;
+      : this.useWebGpuSingleThread
+        ? WLLAMA_WEBGPU_SINGLE_THREAD_CODE
+        : WLLAMA_SINGLE_THREAD_CODE;
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
       pathConfig: this.pathConfig,

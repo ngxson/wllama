@@ -55,10 +55,16 @@ interface WllamaContextValue {
 const WllamaContext = createContext<WllamaContextValue>({} as any);
 
 const modelManager = new ModelManager();
-let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
+let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, {
+  logger: DebugLogger,
+  backend: 'webgpu',
+});
 let stopSignal = false;
 const resetWllamaInstance = () => {
-  wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
+  wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, {
+    logger: DebugLogger,
+    backend: 'webgpu',
+  });
 };
 
 export const WllamaProvider = ({ children }: any) => {

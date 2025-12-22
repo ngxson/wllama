@@ -238,6 +238,7 @@ const callWrapper = (name, ret, args) => {
         result = fn();
       }
     } catch (ex) {
+      console.log('Error in callWrapper:', name, ret, args, action, req);
       console.error(ex);
       throw ex;
     }

@@ -74,6 +74,11 @@ export interface WllamaConfig {
    * Custom model manager (only for advanced usage)
    */
   modelManager?: ModelManager;
+  /**
+   * Identify the backend this wasm build targets.
+   * 'webgpu' prefers the WebGPU single-thread build when provided.
+   */
+  backend?: 'cpu' | 'webgpu';
 }
 
 export interface WllamaChatMessage {
@@ -84,6 +89,7 @@ export interface WllamaChatMessage {
 export interface AssetsPathConfig {
   'single-thread/wllama.wasm': string;
   'multi-thread/wllama.wasm'?: string;
+  'webgpu-single-thread/wllama.wasm'?: string;
 }
 
 export interface LoadModelConfig {
@@ -556,14 +562,26 @@ export class Wllama {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
     // detect if we can use multi-thread
-    const supportMultiThread = await isSupportMultiThread();
+    let supportMultiThread = await isSupportMultiThread();
     if (!supportMultiThread) {
       this.logger().warn(
         'Multi-threads are not supported in this environment, falling back to single-thread'
       );
     }
+    const preferWebGpu = this.config.backend === 'webgpu';
+    const hasPathWebGpu =
+      !!this.pathConfig['webgpu-single-thread/wllama.wasm'];
+    if (preferWebGpu && !hasPathWebGpu) {
+      this.logger().warn(
+        'Missing paths to "webgpu-single-thread/wllama.wasm", falling back to CPU build'
+      );
+    }
+    const useWebGpuBuild = preferWebGpu && hasPathWebGpu;
+    if (supportMultiThread && useWebGpuBuild) {
+      supportMultiThread = false;
+    }
     const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm'];
-    if (!hasPathMultiThread) {
+    if (supportMultiThread && !hasPathMultiThread) {
       this.logger().warn(
         'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
       );
@@ -572,23 +590,30 @@ export class Wllama {
     const nbThreads = config.n_threads ?? hwConccurency;
     this.nbThreads = nbThreads;
     this.useMultiThread =
-      supportMultiThread && hasPathMultiThread && nbThreads > 1;
-    const mPathConfig = this.useMultiThread
+      !useWebGpuBuild && supportMultiThread && hasPathMultiThread && nbThreads > 1;
+    const mPathConfig = useWebGpuBuild
       ? {
           'wllama.wasm': absoluteUrl(
-            this.pathConfig['multi-thread/wllama.wasm']!!
+            this.pathConfig['webgpu-single-thread/wllama.wasm']!!
           ),
         }
-      : {
-          'wllama.wasm': absoluteUrl(
-            this.pathConfig['single-thread/wllama.wasm']
-          ),
-        };
+      : this.useMultiThread
+        ? {
+            'wllama.wasm': absoluteUrl(
+              this.pathConfig['multi-thread/wllama.wasm']!!
+            ),
+          }
+        : {
+            'wllama.wasm': absoluteUrl(
+              this.pathConfig['single-thread/wllama.wasm']
+            ),
+          };
     this.proxy = new ProxyToWorker(
       mPathConfig,
       this.useMultiThread ? nbThreads : 1,
       this.config.suppressNativeLog ?? false,
-      this.logger()
+      this.logger(),
+      useWebGpuBuild
     );
     const modelFiles = blobs.map((blob, i) => ({
       name: `model-${i}.gguf`,
