@@ -227,18 +227,19 @@ const heapfsWrite = (id, buffer, offset) => {
 // MAIN CODE
 //////////////////////////////////////////////////////////////
 
-const callWrapper = (name, ret, args) => {
-  const fn = Module.cwrap(name, ret, args);
-  return async (action, req) => {
+const callWrapper = (name, ret, args, isAsync) => {
+  const fn = Module.cwrap(
+    name,
+    ret,
+    args,
+    isAsync ? { async: true } : undefined
+  );
+  return async (...callArgs) => {
     let result;
     try {
-      if (args.length === 2) {
-        result = await fn(action, req);
-      } else {
-        result = fn();
-      }
+      result = isAsync ? await fn(...callArgs) : fn(...callArgs);
     } catch (ex) {
-      console.log('Error in callWrapper:', name, ret, args, action, req);
+      console.log('Error in callWrapper:', name, ret, args, ...callArgs);
       console.error(ex);
       throw ex;
     }
@@ -269,14 +270,14 @@ onmessage = async (e) => {
         wllamaMalloc = callWrapper('wllama_malloc', pointer, [
           'number',
           pointer,
-        ]);
-        wllamaStart = callWrapper('wllama_start', 'string', []);
+        ], false);
+        wllamaStart = callWrapper('wllama_start', 'string', [], true);
         wllamaAction = callWrapper('wllama_action', pointer, [
           'string',
           pointer,
-        ]);
-        wllamaExit = callWrapper('wllama_exit', 'string', []);
-        wllamaDebug = callWrapper('wllama_debug', 'string', []);
+        ], true);
+        wllamaExit = callWrapper('wllama_exit', 'string', [], false);
+        wllamaDebug = callWrapper('wllama_debug', 'string', [], false);
         msg({ callbackId, result: null });
       };
       wModuleInit();

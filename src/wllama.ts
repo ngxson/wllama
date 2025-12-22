@@ -632,7 +632,7 @@ export class Wllama {
       _name: 'load_req',
       use_mmap: true,
       use_mlock: true,
-      n_gpu_layers: 0, // not supported for now
+      n_gpu_layers: 999, // temporary WebGPU test
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,

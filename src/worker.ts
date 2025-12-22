@@ -85,6 +85,12 @@ export class ProxyToWorker {
       : this.useWebGpuSingleThread
         ? WLLAMA_WEBGPU_SINGLE_THREAD_CODE
         : WLLAMA_SINGLE_THREAD_CODE;
+    if (this.useWebGpuSingleThread) {
+      moduleCode = moduleCode.replace(
+        'var exportPattern=/^(main|__main_argc_argv)$/;',
+        'var exportPattern=/^(main|__main_argc_argv|wllama_start|wllama_action|wllama_exit|wllama_debug)$/;'
+      );
+    }
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
       pathConfig: this.pathConfig,
