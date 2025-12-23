@@ -21,6 +21,7 @@
 
 struct app_t
 {
+  ggml_backend_dev_t device = nullptr;
   llama_model *model;
   llama_context *ctx;
   const llama_vocab *vocab;
@@ -160,22 +161,21 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
     mparams.use_mmap = req.use_mmap.value;
   if (req.use_mlock.not_null())
     mparams.use_mlock = req.use_mlock.value;
-  ggml_backend_dev_t devices[1] = { nullptr };
-  if (req.use_webgpu.not_null()) {
-    devices[0] = req.use_webgpu.value
-      ? ggml_backend_dev_by_name("WebGPU")
-      : ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
-    if (!devices[0]) {
-      throw app_exception(
-        req.use_webgpu.value
-          ? "WebGPU backend not available"
-          : "CPU backend not available"
-      );
-    }
-    mparams.devices = devices;
+  if (req.use_webgpu.value) {
+    app.device = ggml_backend_dev_by_name("WebGPU");
+    mparams.n_gpu_layers = 999;
+  } else {
+    app.device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    mparams.n_gpu_layers = 0;
   }
-  if (req.n_gpu_layers.not_null())
-    mparams.n_gpu_layers = req.n_gpu_layers.value;
+  if (!app.device) {
+    throw app_exception(
+      req.use_webgpu.value
+        ? "WebGPU backend not available"
+        : "CPU backend not available"
+    );
+  }
+  mparams.devices = &app.device;
 
   auto cparams = llama_context_default_params();
   app.seed = req.seed.value;

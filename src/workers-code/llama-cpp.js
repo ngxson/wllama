@@ -239,7 +239,6 @@ const callWrapper = (name, ret, args, isAsync) => {
     try {
       result = isAsync ? await fn(...callArgs) : fn(...callArgs);
     } catch (ex) {
-      console.log('Error in callWrapper:', name, ret, args, ...callArgs);
       console.error(ex);
       throw ex;
     }

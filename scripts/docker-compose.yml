@@ -19,24 +19,21 @@ services:
         set -e
         cd /source
 
+        export EMCC_CFLAGS_BASE="--no-entry -O3 -msimd128 -DNDEBUG -flto=full -frtti -fwasm-exceptions -sEXPORT_ALL=1 -sEXPORT_ES6=0 -sMODULARIZE=0 -sINITIAL_MEMORY=128MB -sMAXIMUM_MEMORY=4096MB -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8 -sNO_EXIT_RUNTIME=1 -sSIGNATURE_CONVERSIONS=wllama_malloc:_p -Wno-unused-command-line-argument -sIMPORTED_MEMORY"
+
         mkdir -p wasm/single-thread
         cd wasm/single-thread
-
-        export CPU_EMCC_CFLAGS_SINGLE="--no-entry -O3 -msimd128 -DNDEBUG -flto=full -frtti -fwasm-exceptions -sEXPORT_ALL=1 -sEXPORT_ES6=0 -sMODULARIZE=0 -sINITIAL_MEMORY=128MB -sMAXIMUM_MEMORY=4096MB -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8 -sNO_EXIT_RUNTIME=1 -sSIGNATURE_CONVERSIONS=wllama_malloc:_p -Wno-unused-command-line-argument -sIMPORTED_MEMORY -sJSPI -sASYNCIFY_EXPORTS=['wllama_start','wllama_action','wllama_exit','wllama_debug']"
-        export CPU_EMCC_CFLAGS_MULTI="--no-entry -O3 -msimd128 -DNDEBUG -flto=full -frtti -fwasm-exceptions -sEXPORT_ALL=1 -sEXPORT_ES6=0 -sMODULARIZE=0 -sINITIAL_MEMORY=128MB -sMAXIMUM_MEMORY=4096MB -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8 -sNO_EXIT_RUNTIME=1 -sSIGNATURE_CONVERSIONS=wllama_malloc:_p -Wno-unused-command-line-argument -sIMPORTED_MEMORY"
-
-        # emcc --clear-cache
-
         emcmake cmake ../.. -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=1 -DLLAMA_WASM_MEM64=0
-        export EMCC_CFLAGS="$$CPU_EMCC_CFLAGS_SINGLE"
+        export EMCC_CFLAGS="$$EMCC_CFLAGS_BASE -sJSPI -sJSPI_EXPORTS=['wllama_start','wllama_action']"
         emmake make wllama -j
 
         cd ../..
+
         mkdir -p wasm/multi-thread
         cd wasm/multi-thread
         export EMCC_CFLAGS="" # temporary clear it
         emcmake cmake ../.. -DGGML_WEBGPU=OFF -DLLAMA_WASM_MEM64=0
-        export EMCC_CFLAGS="$$CPU_EMCC_CFLAGS_MULTI -pthread -sUSE_PTHREADS=1 -sPTHREAD_POOL_SIZE=Module[\\\"pthreadPoolSize\\\"]"
+        export EMCC_CFLAGS="$$EMCC_CFLAGS_BASE -pthread -sUSE_PTHREADS=1 -sPTHREAD_POOL_SIZE=Module[\\\"pthreadPoolSize\\\"]"
         emmake make wllama -j
 
         # go back to root
@@ -45,6 +42,7 @@ services:
         # list files
         echo "wasm/single-thread"; ls -lh wasm/single-thread
         echo "wasm/multi-thread";  ls -lh wasm/multi-thread
+
         # copy output files
         mkdir -p src/multi-thread
         cp wasm/multi-thread/wllama.js         src/multi-thread

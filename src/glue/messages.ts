@@ -46,11 +46,6 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "bool",
         "name": "use_webgpu",
-        "isNullable": true
-      },
-      {
-        "type": "int",
-        "name": "n_gpu_layers",
         "isNullable": false
       },
       {
@@ -1008,8 +1003,7 @@ export interface GlueMsgLoadReq {
   n_ctx_auto: boolean;
   use_mmap: boolean;
   use_mlock: boolean;
-  use_webgpu?: boolean | undefined;
-  n_gpu_layers: number;
+  use_webgpu: boolean;
   seed: number;
   n_ctx: number;
   n_threads: number;
