@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "llama.h"
+#include "ggml-backend.h"
 #include "helpers/wcommon.h"
 #include "helpers/wsampling.h"
 
@@ -159,6 +160,20 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
     mparams.use_mmap = req.use_mmap.value;
   if (req.use_mlock.not_null())
     mparams.use_mlock = req.use_mlock.value;
+  ggml_backend_dev_t devices[1] = { nullptr };
+  if (req.use_webgpu.not_null()) {
+    devices[0] = req.use_webgpu.value
+      ? ggml_backend_dev_by_name("WebGPU")
+      : ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    if (!devices[0]) {
+      throw app_exception(
+        req.use_webgpu.value
+          ? "WebGPU backend not available"
+          : "CPU backend not available"
+      );
+    }
+    mparams.devices = devices;
+  }
   if (req.n_gpu_layers.not_null())
     mparams.n_gpu_layers = req.n_gpu_layers.value;
 
@@ -654,7 +669,7 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
   const int n_keep = req.n_keep.value;
   const int n_discard = req.n_discard.value;
   auto * mem = llama_get_memory(app.ctx);
-  
+
   glue_msg_get_kv_remove_res res;
   bool & success = res.success.value;
   success = false;

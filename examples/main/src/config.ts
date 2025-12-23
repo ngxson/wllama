@@ -1,7 +1,6 @@
 // See: https://vitejs.dev/guide/assets#explicit-url-imports
 import wllamaSingle from '@wllama/wllama/src/single-thread/wllama.wasm?url';
 import wllamaMulti from '@wllama/wllama/src/multi-thread/wllama.wasm?url';
-import wllamaWebGpuSingle from '@wllama/wllama/src/webgpu-single-thread/wllama.wasm?url';
 import wllamaPackageJson from '@wllama/wllama/package.json';
 import { InferenceParams } from './utils/types';
 
@@ -10,7 +9,6 @@ export const WLLAMA_VERSION = wllamaPackageJson.version;
 export const WLLAMA_CONFIG_PATHS = {
   'single-thread/wllama.wasm': wllamaSingle,
   'multi-thread/wllama.wasm': wllamaMulti,
-  'webgpu-single-thread/wllama.wasm': wllamaWebGpuSingle,
 };
 
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
@@ -93,6 +91,8 @@ export const DEFAULT_INFERENCE_PARAMS: InferenceParams = {
   nBatch: 128,
   temperature: 0.2,
 };
+
+export const DEFAULT_BACKEND: 'cpu' | 'webgpu' = 'webgpu';
 
 export const DEFAULT_CHAT_TEMPLATE =
   "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";

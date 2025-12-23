@@ -6,7 +6,11 @@ import {
   WllamaStorage,
 } from './utils';
 import { Model, ModelManager, Wllama } from '@wllama/wllama';
-import { DEFAULT_INFERENCE_PARAMS, WLLAMA_CONFIG_PATHS } from '../config';
+import {
+  DEFAULT_BACKEND,
+  DEFAULT_INFERENCE_PARAMS,
+  WLLAMA_CONFIG_PATHS,
+} from '../config';
 import { InferenceParams, RuntimeInfo, ModelState, Screen } from './types';
 import { verifyCustomModel } from './custom-models';
 import {
@@ -57,13 +61,13 @@ const WllamaContext = createContext<WllamaContextValue>({} as any);
 const modelManager = new ModelManager();
 let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, {
   logger: DebugLogger,
-  backend: 'webgpu',
+  backend: DEFAULT_BACKEND,
 });
 let stopSignal = false;
 const resetWllamaInstance = () => {
   wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, {
     logger: DebugLogger,
-    backend: 'webgpu',
+    backend: DEFAULT_BACKEND,
   });
 };
 
