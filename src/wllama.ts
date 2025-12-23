@@ -74,6 +74,10 @@ export interface WllamaConfig {
    * Custom model manager (only for advanced usage)
    */
   modelManager?: ModelManager;
+  /**
+   * Select the backend device when supported by the build.
+   */
+  backend?: 'cpu' | 'webgpu';
 }
 
 export interface WllamaChatMessage {
@@ -555,24 +559,32 @@ export class Wllama {
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
+    const useWebGPU = this.config.backend === 'webgpu' && navigator.gpu !== undefined;
+    if (this.config.backend === 'webgpu' && !useWebGPU) {
+      this.logger().warn(
+        'WebGPU backend requested but WebGPU is not available, falling back to CPU'
+      );
+    }
     // detect if we can use multi-thread
-    const supportMultiThread = await isSupportMultiThread();
-    if (!supportMultiThread) {
+    let supportMultiThread = await isSupportMultiThread();
+    if (!useWebGPU && !supportMultiThread) {
       this.logger().warn(
         'Multi-threads are not supported in this environment, falling back to single-thread'
       );
     }
     const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm'];
-    if (!hasPathMultiThread) {
+    if (!useWebGPU && supportMultiThread && !hasPathMultiThread) {
       this.logger().warn(
         'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
       );
     }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
-    const nbThreads = config.n_threads ?? hwConccurency;
+    const nbThreads = useWebGPU
+      ? 1
+      : config.n_threads ?? hwConccurency;
     this.nbThreads = nbThreads;
     this.useMultiThread =
-      supportMultiThread && hasPathMultiThread && nbThreads > 1;
+      !useWebGPU && supportMultiThread && hasPathMultiThread && nbThreads > 1;
     const mPathConfig = this.useMultiThread
       ? {
           'wllama.wasm': absoluteUrl(
@@ -607,7 +619,7 @@ export class Wllama {
       _name: 'load_req',
       use_mmap: true,
       use_mlock: true,
-      n_gpu_layers: 0, // not supported for now
+      use_webgpu: useWebGPU,
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
