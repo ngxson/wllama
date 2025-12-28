@@ -23,6 +23,8 @@ import type {
   GlueMsgGetVocabRes,
   GlueMsgLoadRes,
   GlueMsgLookupTokenRes,
+  GlueMsgPerfContextRes,
+  GlueMsgPerfResetRes,
   GlueMsgSamplingAcceptRes,
   GlueMsgSamplingSampleRes,
   GlueMsgSetOptionsRes,
@@ -78,6 +80,12 @@ export interface WllamaConfig {
    * Select the backend device when supported by the build.
    */
   backend?: 'cpu' | 'webgpu';
+  /**
+   * Disable llama.cpp performance metrics.
+   *
+   * Default: noPerf = false
+   */
+  noPerf?: boolean;
 }
 
 export interface WllamaChatMessage {
@@ -121,6 +129,17 @@ export interface LoadModelConfig {
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   flash_attn?: boolean; // true is auto, false is disabled
+}
+
+export interface PerfContextData {
+  success: boolean;
+  t_start_ms: number;
+  t_load_ms: number;
+  t_p_eval_ms: number;
+  t_eval_ms: number;
+  n_p_eval: number;
+  n_eval: number;
+  n_reused: number;
 }
 
 export interface SamplingConfig {
@@ -620,6 +639,7 @@ export class Wllama {
       use_mmap: true,
       use_mlock: true,
       use_webgpu: useWebGPU,
+      no_perf: this.config.noPerf ?? false,
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
@@ -1335,6 +1355,29 @@ export class Wllama {
   async _getDebugInfo(): Promise<any> {
     this.checkModelLoaded();
     return await this.proxy.wllamaDebug();
+  }
+
+  /**
+   * Get llama.cpp performance counters for the current context.
+   */
+  async getPerfContext(): Promise<PerfContextData> {
+    this.checkModelLoaded();
+    return await this.proxy.wllamaAction<GlueMsgPerfContextRes>(
+      'perf_context',
+      {
+        _name: 'pctx_req',
+      }
+    );
+  }
+
+  /**
+   * Reset llama.cpp performance counters for the current context.
+   */
+  async resetPerfContext(): Promise<{ success: boolean }> {
+    this.checkModelLoaded();
+    return await this.proxy.wllamaAction<GlueMsgPerfResetRes>('perf_reset', {
+      _name: 'prst_req',
+    });
   }
 
   /**
