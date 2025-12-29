@@ -27,7 +27,8 @@
     "outDir": "esm",
     "rootDir": "./src",
     "baseUrl": ".",
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "types": ["@webgpu/types"]
   },
   "include": [ "./src/**/*.ts" ],
   "exclude": [ "./src/**/*.test.ts" ]

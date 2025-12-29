@@ -3,7 +3,7 @@
 
 import type { GlueMessageProto } from './glue';
 
-export const GLUE_VERSION = 1;
+export const GLUE_VERSION = 2;
 
 export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
   "erro_evt": {
@@ -44,8 +44,8 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
-        "type": "int",
-        "name": "n_gpu_layers",
+        "type": "bool",
+        "name": "use_webgpu",
         "isNullable": false
       },
       {
@@ -1003,7 +1003,7 @@ export interface GlueMsgLoadReq {
   n_ctx_auto: boolean;
   use_mmap: boolean;
   use_mlock: boolean;
-  n_gpu_layers: number;
+  use_webgpu: boolean;
   seed: number;
   n_ctx: number;
   n_threads: number;

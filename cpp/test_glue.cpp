@@ -15,7 +15,7 @@ static glue_outbuf outbuf;
 void test_load_req() {
   glue_msg_load_req req;
   req.use_mmap.value = true;
-  req.n_gpu_layers.value = 32;
+  req.use_webgpu = true;
   req.seed.value = 42;
   req.n_ctx.value = 2048;
   req.embeddings.value = false;
@@ -27,13 +27,13 @@ void test_load_req() {
   fclose(fp);
 
   printf("\n----------\n\n");
-  
+
   glue_msg_load_req req2;
   glue_inbuf inbuf(outbuf.data.data());
   req2.handler.deserialize(inbuf);
 
   assert(req2.use_mmap.value == true);
-  assert(req2.n_gpu_layers.value == 32); 
+  assert(req2.use_webgpu.value == true);
   assert(req2.seed.value == 42);
   assert(req2.n_ctx.value == 2048);
   assert(req2.embeddings.value == false);
@@ -63,7 +63,7 @@ void test_sampling_init() {
 
   assert(req2.mirostat.value == 2);
   assert(cmp_float(req2.temp.value, 0.8));
-  assert(cmp_float(req2.top_p.value, 0.95)); 
+  assert(cmp_float(req2.top_p.value, 0.95));
   assert(cmp_float(req2.penalty_repeat.value, 1.1));
   assert(req2.grammar.value == "test grammar");
   for (int i = 0; i < tokens.size(); i++) {

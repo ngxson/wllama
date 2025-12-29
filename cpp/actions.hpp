@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "llama.h"
+#include "ggml-backend.h"
 #include "helpers/wcommon.h"
 #include "helpers/wsampling.h"
 
@@ -20,6 +21,7 @@
 
 struct app_t
 {
+  ggml_backend_dev_t device = nullptr;
   llama_model *model;
   llama_context *ctx;
   const llama_vocab *vocab;
@@ -159,8 +161,22 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
     mparams.use_mmap = req.use_mmap.value;
   if (req.use_mlock.not_null())
     mparams.use_mlock = req.use_mlock.value;
-  if (req.n_gpu_layers.not_null())
-    mparams.n_gpu_layers = req.n_gpu_layers.value;
+  if (req.use_webgpu.value) {
+    app.device = ggml_backend_dev_by_name("WebGPU");
+    mparams.n_gpu_layers = 999;
+  } else {
+    app.device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    mparams.n_gpu_layers = 0;
+  }
+  if (!app.device) {
+    throw app_exception(
+      req.use_webgpu.value
+        ? "WebGPU backend not available"
+        : "CPU backend not available"
+    );
+  }
+  ggml_backend_dev_t devices[] = { app.device, nullptr };
+  mparams.devices = devices;
 
   auto cparams = llama_context_default_params();
   app.seed = req.seed.value;
@@ -654,7 +670,7 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
   const int n_keep = req.n_keep.value;
   const int n_discard = req.n_discard.value;
   auto * mem = llama_get_memory(app.ctx);
-  
+
   glue_msg_get_kv_remove_res res;
   bool & success = res.success.value;
   success = false;

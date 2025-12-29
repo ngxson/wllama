@@ -330,6 +330,11 @@ function ModelCard({
               />
               &nbsp;&nbsp;&nbsp;&nbsp;
               <InfoOnOffDisplay
+                text="WebGPU"
+                on={currRuntimeInfo.usingWebGPU}
+              />
+              &nbsp;&nbsp;&nbsp;&nbsp;
+              <InfoOnOffDisplay
                 text="Chat template"
                 on={currRuntimeInfo.hasChatTemplate}
               />
