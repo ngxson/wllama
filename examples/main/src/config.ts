@@ -92,7 +92,5 @@ export const DEFAULT_INFERENCE_PARAMS: InferenceParams = {
   temperature: 0.2,
 };
 
-export const DEFAULT_BACKEND: 'cpu' | 'webgpu' = 'webgpu';
-
 export const DEFAULT_CHAT_TEMPLATE =
   "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";

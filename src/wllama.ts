@@ -75,9 +75,9 @@ export interface WllamaConfig {
    */
   modelManager?: ModelManager;
   /**
-   * Select the backend device when supported by the build.
+   * Use the WebGPU backend if available.
    */
-  backend?: 'cpu' | 'webgpu';
+  preferWebGPU?: boolean;
 }
 
 export interface WllamaChatMessage {
@@ -285,6 +285,7 @@ export class Wllama {
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
+  private useWebGPU: boolean = false;
   private nbThreads: number = 1;
   private useEmbeddings: boolean = false;
   // available when loaded
@@ -441,6 +442,11 @@ export class Wllama {
     return this.useMultiThread ? this.nbThreads : 1;
   }
 
+  usingWebGPU(): boolean {
+    this.checkModelLoaded();
+    return this.useWebGPU;
+  }
+
   /**
    * Check if the current model uses encoder-decoder architecture
    *
@@ -559,32 +565,35 @@ export class Wllama {
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
-    const useWebGPU = this.config.backend === 'webgpu' && navigator.gpu !== undefined;
-    if (this.config.backend === 'webgpu' && !useWebGPU) {
-      this.logger().warn(
-        'WebGPU backend requested but WebGPU is not available, falling back to CPU'
-      );
+    if (this.config.preferWebGPU) {
+      if (navigator.gpu) {
+        this.useWebGPU = true;
+      } else {
+        this.logger().warn(
+          'WebGPU backend requested but WebGPU is not available, falling back to CPU'
+        );
+      }
     }
-    // detect if we can use multi-thread
-    let supportMultiThread = await isSupportMultiThread();
-    if (!useWebGPU && !supportMultiThread) {
-      this.logger().warn(
-        'Multi-threads are not supported in this environment, falling back to single-thread'
-      );
+    if (!this.useWebGPU) {
+     // detect if we can use multi-thread
+      if (await isSupportMultiThread()) {
+        if (this.pathConfig['multi-thread/wllama.wasm']) {
+          const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
+          this.nbThreads = config.n_threads ?? hwConccurency;
+          if (this.nbThreads > 1) {
+            this.useMultiThread = true;
+          }
+        } else {
+          this.logger().warn(
+            'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
+          );
+        }
+      } else {
+        this.logger().warn(
+          'Multi-threads are not supported in this environment, falling back to single-thread'
+        );
+      }
     }
-    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm'];
-    if (!useWebGPU && supportMultiThread && !hasPathMultiThread) {
-      this.logger().warn(
-        'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
-      );
-    }
-    const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
-    const nbThreads = useWebGPU
-      ? 1
-      : config.n_threads ?? hwConccurency;
-    this.nbThreads = nbThreads;
-    this.useMultiThread =
-      !useWebGPU && supportMultiThread && hasPathMultiThread && nbThreads > 1;
     const mPathConfig = this.useMultiThread
       ? {
           'wllama.wasm': absoluteUrl(
@@ -598,7 +607,7 @@ export class Wllama {
         };
     this.proxy = new ProxyToWorker(
       mPathConfig,
-      this.useMultiThread ? nbThreads : 1,
+      this.nbThreads,
       this.config.suppressNativeLog ?? false,
       this.logger()
     );
@@ -619,10 +628,10 @@ export class Wllama {
       _name: 'load_req',
       use_mmap: true,
       use_mlock: true,
-      use_webgpu: useWebGPU,
+      use_webgpu: this.useWebGPU,
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,
-      n_threads: this.useMultiThread ? nbThreads : 1,
+      n_threads: this.nbThreads,
       n_ctx_auto: false, // not supported for now
       model_paths: modelFiles.map((f) => `models/${f.name}`),
       embeddings: config.embeddings,

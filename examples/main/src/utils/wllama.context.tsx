@@ -7,7 +7,6 @@ import {
 } from './utils';
 import { Model, ModelManager, Wllama } from '@wllama/wllama';
 import {
-  DEFAULT_BACKEND,
   DEFAULT_INFERENCE_PARAMS,
   WLLAMA_CONFIG_PATHS,
 } from '../config';
@@ -61,13 +60,13 @@ const WllamaContext = createContext<WllamaContextValue>({} as any);
 const modelManager = new ModelManager();
 let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, {
   logger: DebugLogger,
-  backend: DEFAULT_BACKEND,
+  preferWebGPU: true,
 });
 let stopSignal = false;
 const resetWllamaInstance = () => {
   wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, {
     logger: DebugLogger,
-    backend: DEFAULT_BACKEND,
+    preferWebGPU: true,
   });
 };
 
@@ -176,6 +175,7 @@ export const WllamaProvider = ({ children }: any) => {
       setLoadedModel(model.clone({ state: ModelState.LOADED }));
       setCurrRuntimeInfo({
         isMultithread: wllamaInstance.isMultithread(),
+        usingWebGPU: wllamaInstance.usingWebGPU(),
         hasChatTemplate: !!wllamaInstance.getChatTemplate(),
       });
     } catch (e) {

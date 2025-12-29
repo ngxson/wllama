@@ -175,7 +175,8 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
         : "CPU backend not available"
     );
   }
-  mparams.devices = &app.device;
+  ggml_backend_dev_t devices[] = { app.device, nullptr };
+  mparams.devices = devices;
 
   auto cparams = llama_context_default_params();
   app.seed = req.seed.value;
