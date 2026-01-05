@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { PerfContextData } from '@wllama/wllama';
 import { useMessages } from '../utils/messages.context';
 import { useWllama } from '../utils/wllama.context';
 import { Message, Screen } from '../utils/types';
@@ -9,8 +10,24 @@ import ScreenWrapper from './ScreenWrapper';
 import { useIntervalWhen } from '../utils/use-interval-when';
 import { MarkdownMessage } from './MarkdownMessage';
 
+const createInitialPerfData = (): PerfContextData => ({
+  success: true,
+  t_start_ms: 0,
+  t_load_ms: 0,
+  t_p_eval_ms: 0,
+  t_eval_ms: 0,
+  n_p_eval: 0,
+  n_eval: 0,
+  n_reused: 0,
+});
+
 export default function ChatScreen() {
   const [input, setInput] = useState('');
+  const [perfData, setPerfData] = useState<PerfContextData>(
+    createInitialPerfData()
+  );
+  const [perfError, setPerfError] = useState<string | null>(null);
+  const [perfBusy, setPerfBusy] = useState(false);
   const {
     currentConvId,
     isGenerating,
@@ -30,6 +47,37 @@ export default function ChatScreen() {
   useIntervalWhen(chatScrollToBottom, 500, isGenerating, true);
 
   const currConv = getConversationById(currentConvId);
+
+  const refreshPerf = async () => {
+    setPerfBusy(true);
+    setPerfError(null);
+    try {
+       setPerfData(await getWllamaInstance().getPerfContext());
+    } catch (e) {
+      setPerfError((e as any)?.message ?? 'Failed to fetch perf data');
+    } finally {
+      setPerfBusy(false);
+    }
+  };
+
+  const resetPerf = async () => {
+    if (!loadedModel) return;
+    setPerfBusy(true);
+    setPerfError(null);
+    try {
+      await getWllamaInstance().resetPerfContext();
+      setPerfData(await getWllamaInstance().getPerfContext());
+    } catch (e) {
+      setPerfError((e as any)?.message ?? 'Failed to reset perf data');
+    } finally {
+      setPerfBusy(false);
+    }
+  };
+
+  const formatTokPerSec = (tokens: number, ms: number) => {
+    if (ms <= 0) return '0.0';
+    return (tokens / (ms / 1000)).toFixed(1);
+  };
 
   const onSubmit = async () => {
     if (isGenerating) return;
@@ -81,6 +129,7 @@ export default function ChatScreen() {
     await createCompletion(formattedChat, (newContent) => {
       editMessageInConversation(convId, assistantMsg.id, newContent);
     });
+    await refreshPerf();
   };
 
   return (
@@ -131,19 +180,52 @@ export default function ChatScreen() {
         )}
 
         {loadedModel && (
-          <textarea
-            className="textarea textarea-bordered w-full"
-            placeholder="Your message..."
-            disabled={isGenerating}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.keyCode == 13 && e.shiftKey == false) {
-                e.preventDefault();
-                onSubmit();
-              }
-            }}
-          />
+          <>
+            <textarea
+              className="textarea textarea-bordered w-full"
+              placeholder="Your message..."
+              disabled={isGenerating}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.keyCode == 13 && e.shiftKey == false) {
+                  e.preventDefault();
+                  onSubmit();
+                }
+              }}
+            />
+            <div className="mt-3 text-xs">
+              <div className="flex items-center justify-between">
+                <div>
+                  {perfError && (
+                    <div className="text-error">Error: {perfError}</div>
+                  )}
+                  {!perfError && (
+                    <div>
+                      Prefill:{' '}
+                      {formatTokPerSec(
+                        perfData.n_p_eval,
+                        perfData.t_p_eval_ms
+                      )}{' '}
+                      tok/s, Decode:{' '}
+                      {formatTokPerSec(
+                        perfData.n_eval,
+                        perfData.t_eval_ms
+                      )}{' '}
+                      tok/s
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="btn btn-xs btn-outline"
+                  disabled={perfBusy || isGenerating}
+                  onClick={resetPerf}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         {!loadedModel && <WarnNoModel />}

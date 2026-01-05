@@ -183,6 +183,7 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
   cparams.n_ctx = req.n_ctx.value;
   cparams.n_threads = req.n_threads.value;
   cparams.n_threads_batch = cparams.n_threads;
+  cparams.no_perf = req.no_perf.value;
   if (req.embeddings.not_null())
     cparams.embeddings = req.embeddings.value;
   if (req.offload_kqv.not_null())
@@ -792,6 +793,41 @@ glue_msg_status_res action_current_status(app_t &app, const char *req_raw)
   glue_msg_status_res res;
   res.success.value = true;
   res.tokens.arr = app.tokens; // copy
+  return res;
+}
+
+glue_msg_perf_context_res action_perf_context(app_t &app, const char *req_raw)
+{
+  PARSE_REQ(glue_msg_perf_context_req);
+  glue_msg_perf_context_res res;
+  if (app.ctx == nullptr)
+  {
+    res.success.value = false;
+    return res;
+  }
+  const llama_perf_context_data data = llama_perf_context(app.ctx);
+  res.success.value = true;
+  res.t_start_ms.value = data.t_start_ms;
+  res.t_load_ms.value = data.t_load_ms;
+  res.t_p_eval_ms.value = data.t_p_eval_ms;
+  res.t_eval_ms.value = data.t_eval_ms;
+  res.n_p_eval.value = data.n_p_eval;
+  res.n_eval.value = data.n_eval;
+  res.n_reused.value = data.n_reused;
+  return res;
+}
+
+glue_msg_perf_reset_res action_perf_reset(app_t &app, const char *req_raw)
+{
+  PARSE_REQ(glue_msg_perf_reset_req);
+  glue_msg_perf_reset_res res;
+  if (app.ctx == nullptr)
+  {
+    res.success.value = false;
+    return res;
+  }
+  llama_perf_context_reset(app.ctx);
+  res.success.value = true;
   return res;
 }
 

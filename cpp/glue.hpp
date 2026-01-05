@@ -495,6 +495,7 @@ struct glue_msg_load_req
   GLUE_FIELD(bool, use_mmap)
   GLUE_FIELD(bool, use_mlock)
   GLUE_FIELD(bool, use_webgpu)
+  GLUE_FIELD(bool, no_perf)
   GLUE_FIELD(int, seed)
   GLUE_FIELD(int, n_ctx)
   GLUE_FIELD(int, n_threads)
@@ -815,6 +816,37 @@ struct glue_msg_status_res
   GLUE_HANDLER("stat_res")
   GLUE_FIELD(bool, success)
   GLUE_FIELD(arr_int, tokens)
+};
+
+/////////
+
+struct glue_msg_perf_context_req
+{
+  GLUE_HANDLER("pctx_req")
+};
+
+struct glue_msg_perf_context_res
+{
+  GLUE_HANDLER("pctx_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(float, t_start_ms)
+  GLUE_FIELD(float, t_load_ms)
+  GLUE_FIELD(float, t_p_eval_ms)
+  GLUE_FIELD(float, t_eval_ms)
+  GLUE_FIELD(int, n_p_eval)
+  GLUE_FIELD(int, n_eval)
+  GLUE_FIELD(int, n_reused)
+};
+
+struct glue_msg_perf_reset_req
+{
+  GLUE_HANDLER("prst_req")
+};
+
+struct glue_msg_perf_reset_res
+{
+  GLUE_HANDLER("prst_res")
+  GLUE_FIELD(bool, success)
 };
 
 /////////
