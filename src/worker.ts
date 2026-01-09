@@ -58,6 +58,7 @@ export class ProxyToWorker {
   pathConfig: any;
   multiThread: boolean;
   nbThread: number;
+
   constructor(
     pathConfig: any,
     nbThread: number = 1,
