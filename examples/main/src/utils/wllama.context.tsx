@@ -6,7 +6,10 @@ import {
   WllamaStorage,
 } from './utils';
 import { Model, ModelManager, Wllama } from '@wllama/wllama';
-import { DEFAULT_INFERENCE_PARAMS, WLLAMA_CONFIG_PATHS } from '../config';
+import {
+  DEFAULT_INFERENCE_PARAMS,
+  WLLAMA_CONFIG_PATHS,
+} from '../config';
 import { InferenceParams, RuntimeInfo, ModelState, Screen } from './types';
 import { verifyCustomModel } from './custom-models';
 import {
@@ -55,10 +58,16 @@ interface WllamaContextValue {
 const WllamaContext = createContext<WllamaContextValue>({} as any);
 
 const modelManager = new ModelManager();
-let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
+let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, {
+  logger: DebugLogger,
+  preferWebGPU: true,
+});
 let stopSignal = false;
 const resetWllamaInstance = () => {
-  wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
+  wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, {
+    logger: DebugLogger,
+    preferWebGPU: true,
+  });
 };
 
 export const WllamaProvider = ({ children }: any) => {
@@ -166,6 +175,7 @@ export const WllamaProvider = ({ children }: any) => {
       setLoadedModel(model.clone({ state: ModelState.LOADED }));
       setCurrRuntimeInfo({
         isMultithread: wllamaInstance.isMultithread(),
+        usingWebGPU: wllamaInstance.usingWebGPU(),
         hasChatTemplate: !!wllamaInstance.getChatTemplate(),
       });
     } catch (e) {

@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.14)
 project("wllama")
+
+option(GGML_WEBGPU "Enable GGML WebGPU backend" ON)
+option(GGML_WEBGPU_JSPI "Enable GGML WebGPU JSPI support" ON)
+option(LLAMA_WASM_MEM64 "Enable 64-bit memory for WebAssembly builds" OFF)
 add_subdirectory(llama.cpp)
 
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")

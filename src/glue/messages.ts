@@ -3,7 +3,7 @@
 
 import type { GlueMessageProto } from './glue';
 
-export const GLUE_VERSION = 1;
+export const GLUE_VERSION = 2;
 
 export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
   "erro_evt": {
@@ -44,8 +44,18 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "bool",
+        "name": "use_webgpu",
+        "isNullable": false
+      },
+      {
         "type": "int",
         "name": "n_gpu_layers",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "no_perf",
         "isNullable": false
       },
       {
@@ -846,6 +856,77 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       }
     ]
   },
+  "pctx_req": {
+    "name": "pctx_req",
+    "structName": "glue_msg_perf_context_req",
+    "className": "GlueMsgPerfContextReq",
+    "fields": []
+  },
+  "pctx_res": {
+    "name": "pctx_res",
+    "structName": "glue_msg_perf_context_res",
+    "className": "GlueMsgPerfContextRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      },
+      {
+        "type": "float",
+        "name": "t_start_ms",
+        "isNullable": false
+      },
+      {
+        "type": "float",
+        "name": "t_load_ms",
+        "isNullable": false
+      },
+      {
+        "type": "float",
+        "name": "t_p_eval_ms",
+        "isNullable": false
+      },
+      {
+        "type": "float",
+        "name": "t_eval_ms",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "n_p_eval",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "n_eval",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "n_reused",
+        "isNullable": false
+      }
+    ]
+  },
+  "prst_req": {
+    "name": "prst_req",
+    "structName": "glue_msg_perf_reset_req",
+    "className": "GlueMsgPerfResetReq",
+    "fields": []
+  },
+  "prst_res": {
+    "name": "prst_res",
+    "structName": "glue_msg_perf_reset_res",
+    "className": "GlueMsgPerfResetRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
+  },
   "tben_req": {
     "name": "tben_req",
     "structName": "glue_msg_test_benchmark_req",
@@ -1003,7 +1084,9 @@ export interface GlueMsgLoadReq {
   n_ctx_auto: boolean;
   use_mmap: boolean;
   use_mlock: boolean;
+  use_webgpu: boolean;
   n_gpu_layers: number;
+  no_perf: boolean;
   seed: number;
   n_ctx: number;
   n_threads: number;
@@ -1292,6 +1375,35 @@ export interface GlueMsgStatusRes {
   tokens: number[];
 }
 
+// struct glue_msg_perf_context_req
+export interface GlueMsgPerfContextReq {
+  _name: "pctx_req";
+}
+
+// struct glue_msg_perf_context_res
+export interface GlueMsgPerfContextRes {
+  _name: "pctx_res";
+  success: boolean;
+  t_start_ms: number;
+  t_load_ms: number;
+  t_p_eval_ms: number;
+  t_eval_ms: number;
+  n_p_eval: number;
+  n_eval: number;
+  n_reused: number;
+}
+
+// struct glue_msg_perf_reset_req
+export interface GlueMsgPerfResetReq {
+  _name: "prst_req";
+}
+
+// struct glue_msg_perf_reset_res
+export interface GlueMsgPerfResetRes {
+  _name: "prst_res";
+  success: boolean;
+}
+
 // struct glue_msg_test_benchmark_req
 export interface GlueMsgTestBenchmarkReq {
   _name: "tben_req";
@@ -1343,4 +1455,4 @@ export interface GlueMsgChatFormatRes {
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgSetOptionsReq | GlueMsgSetOptionsRes | GlueMsgSamplingInitReq | GlueMsgSamplingInitRes | GlueMsgGetVocabReq | GlueMsgGetVocabRes | GlueMsgLookupTokenReq | GlueMsgLookupTokenRes | GlueMsgTokenizeReq | GlueMsgTokenizeRes | GlueMsgDetokenizeReq | GlueMsgDetokenizeRes | GlueMsgDecodeReq | GlueMsgDecodeRes | GlueMsgEncodeReq | GlueMsgEncodeRes | GlueMsgSamplingSampleReq | GlueMsgSamplingSampleRes | GlueMsgSamplingAcceptReq | GlueMsgSamplingAcceptRes | GlueMsgGetLogitsReq | GlueMsgGetLogitsRes | GlueMsgGetEmbeddingsReq | GlueMsgGetEmbeddingsRes | GlueMsgGetKvRemoveReq | GlueMsgGetKvRemoveRes | GlueMsgGetKvClearReq | GlueMsgGetKvClearRes | GlueMsgSessionSaveReq | GlueMsgSessionSaveRes | GlueMsgSessionLoadReq | GlueMsgSessionLoadRes | GlueMsgStatusReq | GlueMsgStatusRes | GlueMsgTestBenchmarkReq | GlueMsgTestBenchmarkRes | GlueMsgTestPerplexityReq | GlueMsgTestPerplexityRes | GlueMsgChatFormatReq | GlueMsgChatFormatRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgSetOptionsReq | GlueMsgSetOptionsRes | GlueMsgSamplingInitReq | GlueMsgSamplingInitRes | GlueMsgGetVocabReq | GlueMsgGetVocabRes | GlueMsgLookupTokenReq | GlueMsgLookupTokenRes | GlueMsgTokenizeReq | GlueMsgTokenizeRes | GlueMsgDetokenizeReq | GlueMsgDetokenizeRes | GlueMsgDecodeReq | GlueMsgDecodeRes | GlueMsgEncodeReq | GlueMsgEncodeRes | GlueMsgSamplingSampleReq | GlueMsgSamplingSampleRes | GlueMsgSamplingAcceptReq | GlueMsgSamplingAcceptRes | GlueMsgGetLogitsReq | GlueMsgGetLogitsRes | GlueMsgGetEmbeddingsReq | GlueMsgGetEmbeddingsRes | GlueMsgGetKvRemoveReq | GlueMsgGetKvRemoveRes | GlueMsgGetKvClearReq | GlueMsgGetKvClearRes | GlueMsgSessionSaveReq | GlueMsgSessionSaveRes | GlueMsgSessionLoadReq | GlueMsgSessionLoadRes | GlueMsgStatusReq | GlueMsgStatusRes | GlueMsgPerfContextReq | GlueMsgPerfContextRes | GlueMsgPerfResetReq | GlueMsgPerfResetRes | GlueMsgTestBenchmarkReq | GlueMsgTestBenchmarkRes | GlueMsgTestPerplexityReq | GlueMsgTestPerplexityRes | GlueMsgChatFormatReq | GlueMsgChatFormatRes;

@@ -15,6 +15,7 @@ export enum ModelState {
 
 export interface RuntimeInfo {
   isMultithread: boolean;
+  usingWebGPU: boolean;
   hasChatTemplate: boolean;
 }
 
