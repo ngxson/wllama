@@ -266,15 +266,19 @@ onmessage = async (e) => {
         // init cwrap
         const pointer = 'number';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument
-        wllamaMalloc = callWrapper('wllama_malloc', pointer, [
-          'number',
+        wllamaMalloc = callWrapper(
+          'wllama_malloc',
           pointer,
-        ], false);
+          ['number', pointer],
+          false
+        );
         wllamaStart = callWrapper('wllama_start', 'string', [], true);
-        wllamaAction = callWrapper('wllama_action', pointer, [
-          'string',
+        wllamaAction = callWrapper(
+          'wllama_action',
           pointer,
-        ], true);
+          ['string', pointer],
+          true
+        );
         wllamaExit = callWrapper('wllama_exit', 'string', [], false);
         wllamaDebug = callWrapper('wllama_debug', 'string', [], false);
         msg({ callbackId, result: null });

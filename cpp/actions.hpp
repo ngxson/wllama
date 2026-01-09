@@ -163,10 +163,8 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
     mparams.use_mlock = req.use_mlock.value;
   if (req.use_webgpu.value) {
     app.device = ggml_backend_dev_by_name("WebGPU");
-    mparams.n_gpu_layers = 999;
   } else {
     app.device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
-    mparams.n_gpu_layers = 0;
   }
   if (!app.device) {
     throw app_exception(
@@ -177,6 +175,9 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
   }
   ggml_backend_dev_t devices[] = { app.device, nullptr };
   mparams.devices = devices;
+
+  if (req.n_gpu_layers.not_null())
+    mparams.n_gpu_layers = req.n_gpu_layers.value;
 
   auto cparams = llama_context_default_params();
   app.seed = req.seed.value;

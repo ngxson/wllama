@@ -52,7 +52,7 @@ export default function ChatScreen() {
     setPerfBusy(true);
     setPerfError(null);
     try {
-       setPerfData(await getWllamaInstance().getPerfContext());
+      setPerfData(await getWllamaInstance().getPerfContext());
     } catch (e) {
       setPerfError((e as any)?.message ?? 'Failed to fetch perf data');
     } finally {
@@ -203,15 +203,9 @@ export default function ChatScreen() {
                   {!perfError && (
                     <div>
                       Prefill:{' '}
-                      {formatTokPerSec(
-                        perfData.n_p_eval,
-                        perfData.t_p_eval_ms
-                      )}{' '}
+                      {formatTokPerSec(perfData.n_p_eval, perfData.t_p_eval_ms)}{' '}
                       tok/s, Decode:{' '}
-                      {formatTokPerSec(
-                        perfData.n_eval,
-                        perfData.t_eval_ms
-                      )}{' '}
+                      {formatTokPerSec(perfData.n_eval, perfData.t_eval_ms)}{' '}
                       tok/s
                     </div>
                   )}

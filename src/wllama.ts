@@ -458,7 +458,7 @@ export class Wllama {
    */
   getNumThreads(): number {
     this.checkModelLoaded();
-    return this.useMultiThread ? this.nbThreads : 1;
+    return this.nbThreads;
   }
 
   usingWebGPU(): boolean {
@@ -593,26 +593,38 @@ export class Wllama {
         );
       }
     }
-    if (!this.useWebGPU) {
-     // detect if we can use multi-thread
-      if (await isSupportMultiThread()) {
-        if (this.pathConfig['multi-thread/wllama.wasm']) {
-          const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
-          this.nbThreads = config.n_threads ?? hwConccurency;
-          if (this.nbThreads > 1) {
-            this.useMultiThread = true;
-          }
+    // detect if we can use multi-thread
+    if (await isSupportMultiThread()) {
+      if (this.pathConfig['multi-thread/wllama.wasm']) {
+        const hwConcurrency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
+        this.nbThreads = config.n_threads ?? hwConcurrency;
+        if (this.nbThreads > 1) {
+          this.useMultiThread = true;
         } else {
           this.logger().warn(
-            'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
+            'Falling back single-thread due to n_threads configuration or limited hardware concurrency'
           );
         }
       } else {
         this.logger().warn(
-          'Multi-threads are not supported in this environment, falling back to single-thread'
+          'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
         );
       }
+    } else {
+      this.logger().warn(
+        'Multi-threads are not supported in this environment, falling back to single-thread'
+      );
     }
+
+    // TODO: investigate why WebGPU + multi-threading causes performance issues
+    if (this.useWebGPU) {
+      this.logger().warn(
+        'Disabling multi-threading when using WebGPU backend'
+      );
+      this.useMultiThread = false;
+      this.nbThreads = 1;
+    }
+
     const mPathConfig = this.useMultiThread
       ? {
           'wllama.wasm': absoluteUrl(
@@ -648,6 +660,7 @@ export class Wllama {
       use_mmap: true,
       use_mlock: true,
       use_webgpu: this.useWebGPU,
+      n_gpu_layers: this.useWebGPU ? 999 : 0,
       no_perf: this.config.noPerf ?? false,
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,

@@ -15,7 +15,8 @@ static glue_outbuf outbuf;
 void test_load_req() {
   glue_msg_load_req req;
   req.use_mmap.value = true;
-  req.use_webgpu = true;
+  req.n_gpu_layers.value = 32;
+  req.use_webgpu.value = true;
   req.seed.value = 42;
   req.n_ctx.value = 2048;
   req.embeddings.value = false;
@@ -33,6 +34,7 @@ void test_load_req() {
   req2.handler.deserialize(inbuf);
 
   assert(req2.use_mmap.value == true);
+  assert(req2.n_gpu_layers.value == 32);
   assert(req2.use_webgpu.value == true);
   assert(req2.seed.value == 42);
   assert(req2.n_ctx.value == 2048);

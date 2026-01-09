@@ -495,6 +495,7 @@ struct glue_msg_load_req
   GLUE_FIELD(bool, use_mmap)
   GLUE_FIELD(bool, use_mlock)
   GLUE_FIELD(bool, use_webgpu)
+  GLUE_FIELD(int, n_gpu_layers)
   GLUE_FIELD(bool, no_perf)
   GLUE_FIELD(int, seed)
   GLUE_FIELD(int, n_ctx)
