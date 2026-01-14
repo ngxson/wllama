@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project("wllama")
+set(LLAMA_WASM_MEM64 OFF CACHE BOOL "disable MEMORY64 for wllama")
+set(CMAKE_SYSTEM_PROCESSOR "wasm" CACHE STRING "set system processor to wasm for wllama build")
+
 add_subdirectory(llama.cpp)
 
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
