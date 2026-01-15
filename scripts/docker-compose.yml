@@ -27,6 +27,54 @@ services:
 
         # run tests
         su pwuser -c "xvfb-run npm run-script test -- $${TEST_ARGS:-}"
+  llamacpp-wasm-tests:
+    container_name: llamacpp-wasm-tests
+    build:
+      context: .
+      dockerfile_inline: |
+        ARG EMSDK_IMAGE_TAG=none  # modify it in test_wasm.sh
+        FROM emscripten/emsdk:$${EMSDK_IMAGE_TAG}
+        RUN apt update && apt install -y git
+      args:
+        EMSDK_IMAGE_TAG: ${EMSDK_IMAGE_TAG}
+    user: "${D_UID}:${D_GID}"
+    volumes:
+      - ..:/source:Z
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        cd /source/llama.cpp
+
+        mkdir -p wasm/tests
+        cd wasm/tests
+
+        export EMCC_CFLAGS_ARRAY=(
+          -O3 -Wno-unused-command-line-argument
+          -msimd128 -DNDEBUG
+          -sENVIRONMENT=node -sNODERAWFS=1
+          -sINITIAL_MEMORY=128MB -sMAXIMUM_MEMORY=4096MB -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1
+        )
+        export EMCC_CFLAGS="$${EMCC_CFLAGS_ARRAY[@]}"
+
+
+        emcmake cmake -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm \
+          -DLLAMA_BUILD_COMMON=ON \
+          -DLLAMA_BUILD_TESTS=ON \
+          -DLLAMA_BUILD_EXAMPLES=OFF \
+          -DLLAMA_BUILD_TOOLS=ON \
+          -DLLAMA_BUILD_SERVER=OFF \
+          -DGGML_SCHED_NO_REALLOC=ON \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DLLAMA_BUILD_HTML=OFF \
+          -DCMAKE_EXECUTABLE_SUFFIX=.cjs \
+          -DLLAMA_WASM_MEM64=OFF \
+          -DCMAKE_CROSSCOMPILING_EMULATOR=node \
+          ../..
+
+        emmake make -j
+        ctest -L main --output-on-failure
   llamacpp-wasm-builder:
     container_name: llamacpp-wasm-builder
     build:
