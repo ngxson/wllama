@@ -1,8 +1,8 @@
 #!/bin/bash
 
-#set -e
+set -e
 
-export EMSDK_IMAGE_TAG="4.0.3"
+export EMSDK_IMAGE_TAG="4.0.23"
 
 CURRENT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd $CURRENT_PATH
@@ -16,4 +16,4 @@ if [[ $(uname -m) == "arm64" ]]; then
   export EMSDK_IMAGE_TAG="${EMSDK_IMAGE_TAG}-arm64"
 fi
 
-docker compose up llamacpp-wasm-builder --exit-code-from llamacpp-wasm-builder
+docker compose up --no-log-prefix llamacpp-wasm-builder --abort-on-container-exit --exit-code-from llamacpp-wasm-builder
