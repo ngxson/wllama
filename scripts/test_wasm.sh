@@ -16,4 +16,4 @@ if [[ $(uname -m) == "arm64" ]]; then
   export EMSDK_IMAGE_TAG="${EMSDK_IMAGE_TAG}-arm64"
 fi
 
-docker compose up --no-log-prefix llamacpp-wasm-builder --abort-on-container-exit --exit-code-from llamacpp-wasm-builder
+docker compose up --build --no-log-prefix llamacpp-wasm-tests --abort-on-container-exit --exit-code-from llamacpp-wasm-tests

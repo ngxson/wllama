@@ -24,7 +24,9 @@
     "format": "prettier --write .",
     "test": "vitest",
     "test:firefox": "BROWSER=firefox vitest",
-    "test:safari": "BROWSER=safari vitest"
+    "test:safari": "BROWSER=safari vitest",
+    "test:docker": "./scripts/test_in_docker.sh",
+    "test:wasm": "./scripts/test_wasm.sh"
   },
   "repository": {
     "type": "git",

@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.14)
 project("wllama")
+
+set(GGML_CPU_REPACK ON CACHE BOOL "enable ggml CPU repack optimizations")
+set(LLAMA_WASM_MEM64 OFF CACHE BOOL "disable MEMORY64 for wllama")
+
 add_subdirectory(llama.cpp)
 
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")

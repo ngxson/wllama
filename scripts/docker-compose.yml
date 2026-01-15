@@ -1,4 +1,80 @@
 services:
+  wllama-test:
+    container_name:  wllama-test
+    image: mcr.microsoft.com/playwright:focal
+    userns_mode: "host"
+    privileged: true
+    network_mode: host
+    ipc: host
+    pid: host
+    volumes:
+      - ..:/source:Z
+      - ${HOME}/.cache/ms-playwright:/ms-playwright:Z
+    working_dir: /source
+    entrypoint: /bin/bash
+    environment:
+      TEST_ARGS: "${TEST_ARGS}"
+    command:
+      - -c
+      - |
+        set -e
+        env
+        echo "Running tests in container as user $(id)"
+        echo "Test args: $${TEST_ARGS:-}"
+        cd /source
+
+        npx playwright install --with-deps chromium
+
+        # run tests
+        su pwuser -c "xvfb-run npm run-script test -- $${TEST_ARGS:-}"
+  llamacpp-wasm-tests:
+    container_name: llamacpp-wasm-tests
+    build:
+      context: .
+      dockerfile_inline: |
+        ARG EMSDK_IMAGE_TAG=none  # modify it in test_wasm.sh
+        FROM emscripten/emsdk:$${EMSDK_IMAGE_TAG}
+        RUN apt update && apt install -y git
+      args:
+        EMSDK_IMAGE_TAG: ${EMSDK_IMAGE_TAG}
+    user: "${D_UID}:${D_GID}"
+    volumes:
+      - ..:/source:Z
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        cd /source/llama.cpp
+
+        mkdir -p wasm/tests
+        cd wasm/tests
+
+        export EMCC_CFLAGS_ARRAY=(
+          -O3 -Wno-unused-command-line-argument
+          -msimd128 -DNDEBUG
+          -sENVIRONMENT=node -sNODERAWFS=1
+          -sINITIAL_MEMORY=128MB -sMAXIMUM_MEMORY=4096MB -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1
+        )
+        export EMCC_CFLAGS="$${EMCC_CFLAGS_ARRAY[@]}"
+
+
+        emcmake cmake -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm \
+          -DLLAMA_BUILD_COMMON=ON \
+          -DLLAMA_BUILD_TESTS=ON \
+          -DLLAMA_BUILD_EXAMPLES=OFF \
+          -DLLAMA_BUILD_TOOLS=ON \
+          -DLLAMA_BUILD_SERVER=OFF \
+          -DGGML_SCHED_NO_REALLOC=ON \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DLLAMA_BUILD_HTML=OFF \
+          -DCMAKE_EXECUTABLE_SUFFIX=.cjs \
+          -DLLAMA_WASM_MEM64=OFF \
+          -DCMAKE_CROSSCOMPILING_EMULATOR=node \
+          ../..
+
+        emmake make -j
+        ctest -L main --output-on-failure
   llamacpp-wasm-builder:
     container_name: llamacpp-wasm-builder
     build:
@@ -22,20 +98,27 @@ services:
         mkdir -p wasm/single-thread
         cd wasm/single-thread
 
-        export SHARED_EMCC_CFLAGS="--no-entry -O3 -msimd128 -DNDEBUG -flto=full -frtti -fwasm-exceptions -sEXPORT_ALL=1 -sEXPORT_ES6=0 -sMODULARIZE=0 -sINITIAL_MEMORY=128MB -sMAXIMUM_MEMORY=4096MB -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sNO_EXIT_RUNTIME=1"
+        export SHARED_EMCC_CFLAGS=(
+          --no-entry -O3 -Wno-unused-command-line-argument
+          -msimd128 -DNDEBUG -flto=full -frtti -fwasm-exceptions
+          -sEXPORT_ALL=1 -sEXPORT_ES6=0 -sMODULARIZE=0
+          -sINITIAL_MEMORY=128MB -sMAXIMUM_MEMORY=4096MB -sALLOW_MEMORY_GROWTH=1
+          -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
+          -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sNO_EXIT_RUNTIME=1
+        )
 
         # emcc --clear-cache
 
-        emcmake cmake ../..
-        export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS"
+        emcmake cmake -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm ../..
+        export EMCC_CFLAGS="$${SHARED_EMCC_CFLAGS[@]}"
         emmake make wllama -j
 
         cd ../..
         mkdir -p wasm/multi-thread
         cd wasm/multi-thread
-        export EMCC_CFLAGS="" # temporary clear it
-        emcmake cmake ../..
-        export EMCC_CFLAGS="$$SHARED_EMCC_CFLAGS -pthread -sUSE_PTHREADS=1 -sPTHREAD_POOL_SIZE=Module[\\\"pthreadPoolSize\\\"]"
+        export EMCC_CFLAGS="" # temporarily clear it
+        emcmake cmake -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm ../..
+        export EMCC_CFLAGS="$${SHARED_EMCC_CFLAGS[@]} -pthread -sUSE_PTHREADS=1 -sPTHREAD_POOL_SIZE=Module[\\\"pthreadPoolSize\\\"]"
         emmake make wllama -j
 
         # go back to root
