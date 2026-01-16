@@ -49,6 +49,7 @@ export default function ChatScreen() {
   const currConv = getConversationById(currentConvId);
 
   const refreshPerf = async () => {
+    if (!loadedModel) return;
     setPerfBusy(true);
     setPerfError(null);
     try {

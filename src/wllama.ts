@@ -586,7 +586,11 @@ export class Wllama {
     }
     if (this.config.preferWebGPU) {
       if (navigator.gpu) {
-        this.useWebGPU = true;
+        if(await navigator.gpu.requestAdapter()) {
+            this.useWebGPU = true;
+        } else {
+          this.logger().warn('WebGPU backend requested but no adapter found, falling back to CPU');
+        }
       } else {
         this.logger().warn(
           'WebGPU backend requested but WebGPU is not available, falling back to CPU'
