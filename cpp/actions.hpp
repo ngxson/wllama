@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "llama.h"
+#include "ggml-backend.h"
 #include "helpers/wcommon.h"
 #include "helpers/wsampling.h"
 
@@ -20,6 +21,7 @@
 
 struct app_t
 {
+  ggml_backend_dev_t device = nullptr;
   llama_model *model;
   llama_context *ctx;
   const llama_vocab *vocab;
@@ -159,6 +161,21 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
     mparams.use_mmap = req.use_mmap.value;
   if (req.use_mlock.not_null())
     mparams.use_mlock = req.use_mlock.value;
+  if (req.use_webgpu.value) {
+    app.device = ggml_backend_dev_by_name("WebGPU");
+  } else {
+    app.device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+  }
+  if (!app.device) {
+    throw app_exception(
+      req.use_webgpu.value
+        ? "WebGPU backend not available"
+        : "CPU backend not available"
+    );
+  }
+  ggml_backend_dev_t devices[] = { app.device, nullptr };
+  mparams.devices = devices;
+
   if (req.n_gpu_layers.not_null())
     mparams.n_gpu_layers = req.n_gpu_layers.value;
 
@@ -167,6 +184,7 @@ glue_msg_load_res action_load(app_t &app, const char *req_raw)
   cparams.n_ctx = req.n_ctx.value;
   cparams.n_threads = req.n_threads.value;
   cparams.n_threads_batch = cparams.n_threads;
+  cparams.no_perf = req.no_perf.value;
   if (req.embeddings.not_null())
     cparams.embeddings = req.embeddings.value;
   if (req.offload_kqv.not_null())
@@ -654,7 +672,7 @@ glue_msg_get_kv_remove_res action_kv_remove(app_t &app, const char *req_raw)
   const int n_keep = req.n_keep.value;
   const int n_discard = req.n_discard.value;
   auto * mem = llama_get_memory(app.ctx);
-  
+
   glue_msg_get_kv_remove_res res;
   bool & success = res.success.value;
   success = false;
@@ -776,6 +794,41 @@ glue_msg_status_res action_current_status(app_t &app, const char *req_raw)
   glue_msg_status_res res;
   res.success.value = true;
   res.tokens.arr = app.tokens; // copy
+  return res;
+}
+
+glue_msg_perf_context_res action_perf_context(app_t &app, const char *req_raw)
+{
+  PARSE_REQ(glue_msg_perf_context_req);
+  glue_msg_perf_context_res res;
+  if (app.ctx == nullptr)
+  {
+    res.success.value = false;
+    return res;
+  }
+  const llama_perf_context_data data = llama_perf_context(app.ctx);
+  res.success.value = true;
+  res.t_start_ms.value = data.t_start_ms;
+  res.t_load_ms.value = data.t_load_ms;
+  res.t_p_eval_ms.value = data.t_p_eval_ms;
+  res.t_eval_ms.value = data.t_eval_ms;
+  res.n_p_eval.value = data.n_p_eval;
+  res.n_eval.value = data.n_eval;
+  res.n_reused.value = data.n_reused;
+  return res;
+}
+
+glue_msg_perf_reset_res action_perf_reset(app_t &app, const char *req_raw)
+{
+  PARSE_REQ(glue_msg_perf_reset_req);
+  glue_msg_perf_reset_res res;
+  if (app.ctx == nullptr)
+  {
+    res.success.value = false;
+    return res;
+  }
+  llama_perf_context_reset(app.ctx);
+  res.success.value = true;
   return res;
 }
 

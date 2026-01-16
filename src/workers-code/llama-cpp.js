@@ -227,16 +227,17 @@ const heapfsWrite = (id, buffer, offset) => {
 // MAIN CODE
 //////////////////////////////////////////////////////////////
 
-const callWrapper = (name, ret, args) => {
-  const fn = Module.cwrap(name, ret, args);
-  return async (action, req) => {
+const callWrapper = (name, ret, args, isAsync) => {
+  const fn = Module.cwrap(
+    name,
+    ret,
+    args,
+    isAsync ? { async: true } : undefined
+  );
+  return async (...callArgs) => {
     let result;
     try {
-      if (args.length === 2) {
-        result = await fn(action, req);
-      } else {
-        result = fn();
-      }
+      result = isAsync ? await fn(...callArgs) : fn(...callArgs);
     } catch (ex) {
       console.error(ex);
       throw ex;
@@ -265,17 +266,21 @@ onmessage = async (e) => {
         // init cwrap
         const pointer = 'number';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument
-        wllamaMalloc = callWrapper('wllama_malloc', pointer, [
-          'number',
+        wllamaMalloc = callWrapper(
+          'wllama_malloc',
           pointer,
-        ]);
-        wllamaStart = callWrapper('wllama_start', 'string', []);
-        wllamaAction = callWrapper('wllama_action', pointer, [
-          'string',
+          ['number', pointer],
+          false
+        );
+        wllamaStart = callWrapper('wllama_start', 'string', [], true);
+        wllamaAction = callWrapper(
+          'wllama_action',
           pointer,
-        ]);
-        wllamaExit = callWrapper('wllama_exit', 'string', []);
-        wllamaDebug = callWrapper('wllama_debug', 'string', []);
+          ['string', pointer],
+          true
+        );
+        wllamaExit = callWrapper('wllama_exit', 'string', [], false);
+        wllamaDebug = callWrapper('wllama_debug', 'string', [], false);
         msg({ callbackId, result: null });
       };
       wModuleInit();

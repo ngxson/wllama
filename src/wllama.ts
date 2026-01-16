@@ -23,6 +23,8 @@ import type {
   GlueMsgGetVocabRes,
   GlueMsgLoadRes,
   GlueMsgLookupTokenRes,
+  GlueMsgPerfContextRes,
+  GlueMsgPerfResetRes,
   GlueMsgSamplingAcceptRes,
   GlueMsgSamplingSampleRes,
   GlueMsgSetOptionsRes,
@@ -74,6 +76,16 @@ export interface WllamaConfig {
    * Custom model manager (only for advanced usage)
    */
   modelManager?: ModelManager;
+  /**
+   * Use the WebGPU backend if available.
+   */
+  preferWebGPU?: boolean;
+  /**
+   * Disable llama.cpp performance metrics.
+   *
+   * Default: noPerf = false
+   */
+  noPerf?: boolean;
 }
 
 export interface WllamaChatMessage {
@@ -117,6 +129,17 @@ export interface LoadModelConfig {
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   flash_attn?: boolean; // true is auto, false is disabled
+}
+
+export interface PerfContextData {
+  success: boolean;
+  t_start_ms: number;
+  t_load_ms: number;
+  t_p_eval_ms: number;
+  t_eval_ms: number;
+  n_p_eval: number;
+  n_eval: number;
+  n_reused: number;
 }
 
 export interface SamplingConfig {
@@ -281,6 +304,7 @@ export class Wllama {
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
+  private useWebGPU: boolean = false;
   private nbThreads: number = 1;
   private useEmbeddings: boolean = false;
   // available when loaded
@@ -434,7 +458,12 @@ export class Wllama {
    */
   getNumThreads(): number {
     this.checkModelLoaded();
-    return this.useMultiThread ? this.nbThreads : 1;
+    return this.nbThreads;
+  }
+
+  usingWebGPU(): boolean {
+    this.checkModelLoaded();
+    return this.useWebGPU;
   }
 
   /**
@@ -555,24 +584,51 @@ export class Wllama {
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
+    if (this.config.preferWebGPU) {
+      if (navigator.gpu) {
+        if(await navigator.gpu.requestAdapter()) {
+            this.useWebGPU = true;
+        } else {
+          this.logger().warn('WebGPU backend requested but no adapter found, falling back to CPU');
+        }
+      } else {
+        this.logger().warn(
+          'WebGPU backend requested but WebGPU is not available, falling back to CPU'
+        );
+      }
+    }
     // detect if we can use multi-thread
-    const supportMultiThread = await isSupportMultiThread();
-    if (!supportMultiThread) {
+    if (await isSupportMultiThread()) {
+      if (this.pathConfig['multi-thread/wllama.wasm']) {
+        const hwConcurrency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
+        this.nbThreads = config.n_threads ?? hwConcurrency;
+        if (this.nbThreads > 1) {
+          this.useMultiThread = true;
+        } else {
+          this.logger().warn(
+            'Falling back single-thread due to n_threads configuration or limited hardware concurrency'
+          );
+        }
+      } else {
+        this.logger().warn(
+          'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
+        );
+      }
+    } else {
       this.logger().warn(
         'Multi-threads are not supported in this environment, falling back to single-thread'
       );
     }
-    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm'];
-    if (!hasPathMultiThread) {
+
+    // TODO: investigate why WebGPU + multi-threading causes performance issues
+    if (this.useWebGPU) {
       this.logger().warn(
-        'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
+        'Disabling multi-threading when using WebGPU backend'
       );
+      this.useMultiThread = false;
+      this.nbThreads = 1;
     }
-    const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
-    const nbThreads = config.n_threads ?? hwConccurency;
-    this.nbThreads = nbThreads;
-    this.useMultiThread =
-      supportMultiThread && hasPathMultiThread && nbThreads > 1;
+
     const mPathConfig = this.useMultiThread
       ? {
           'wllama.wasm': absoluteUrl(
@@ -586,7 +642,7 @@ export class Wllama {
         };
     this.proxy = new ProxyToWorker(
       mPathConfig,
-      this.useMultiThread ? nbThreads : 1,
+      this.nbThreads,
       this.config.suppressNativeLog ?? false,
       this.logger()
     );
@@ -607,10 +663,12 @@ export class Wllama {
       _name: 'load_req',
       use_mmap: true,
       use_mlock: true,
-      n_gpu_layers: 0, // not supported for now
+      use_webgpu: this.useWebGPU,
+      n_gpu_layers: this.useWebGPU ? 999 : 0,
+      no_perf: this.config.noPerf ?? false,
       seed: config.seed || Math.floor(Math.random() * 100000),
       n_ctx: config.n_ctx || 1024,
-      n_threads: this.useMultiThread ? nbThreads : 1,
+      n_threads: this.nbThreads,
       n_ctx_auto: false, // not supported for now
       model_paths: modelFiles.map((f) => `models/${f.name}`),
       embeddings: config.embeddings,
@@ -1323,6 +1381,29 @@ export class Wllama {
   async _getDebugInfo(): Promise<any> {
     this.checkModelLoaded();
     return await this.proxy.wllamaDebug();
+  }
+
+  /**
+   * Get llama.cpp performance counters for the current context.
+   */
+  async getPerfContext(): Promise<PerfContextData> {
+    this.checkModelLoaded();
+    return await this.proxy.wllamaAction<GlueMsgPerfContextRes>(
+      'perf_context',
+      {
+        _name: 'pctx_req',
+      }
+    );
+  }
+
+  /**
+   * Reset llama.cpp performance counters for the current context.
+   */
+  async resetPerfContext(): Promise<{ success: boolean }> {
+    this.checkModelLoaded();
+    return await this.proxy.wllamaAction<GlueMsgPerfResetRes>('perf_reset', {
+      _name: 'prst_req',
+    });
   }
 
   /**
