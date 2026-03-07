@@ -933,7 +933,7 @@ glue_msg_chat_format_res action_chat_format(app_t &app, const char *req_raw)
         kwargs.find("false") != std::string::npos) {
         enable_thinking = false;
     }
-}
+  }
 
   std::vector<wcommon_chat_msg> chat;
   for (size_t i = 0; i < req.roles.arr.size(); i++) {

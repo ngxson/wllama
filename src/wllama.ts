@@ -1282,6 +1282,7 @@ export class Wllama {
     this.checkModelLoaded();
     const roles = messages.map((m) => m.role);
     const contents = messages.map((m) => m.content);
+    console.warn('formatChat kwargs:', chatTemplateKwargs);
     const result = await this.proxy.wllamaAction<GlueMsgChatFormatRes>(
       'chat_format',
       {
