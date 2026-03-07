@@ -1,4 +1,65 @@
+## Fork Notes (ill13/wllama)
+
+This fork adds `chatTemplateKwargs` support to `createChatCompletion`, allowing
+per-request Jinja template variable injection at the C++ level.
+
+The primary use case is controlling thinking/reasoning mode on hybrid reasoning
+models like Qwen3.5, which requires `enable_thinking:false` to be set in the Jinja
+template context rather than via a prompt switch.
+
+### Usage
+
+```javascript
+await wllama.createChatCompletion(messages, {
+  chatTemplateKwargs: { enable_thinking: false },
+  sampling: { temp: 0.7 },
+});
+```
+
+### How it works
+
+When `chatTemplateKwargs` is provided, the kwargs are serialized and passed
+through the glue layer to `wcommon_chat_apply_template` in C++. If
+`enable_thinking: false` is present, the string
+`{% set enable_thinking = false %}` is prepended to the model's Jinja template
+before formatting, overriding the default behavior.
+
+### Model compatibility
+
+| Model | Status |
+|-------|--------|
+| Qwen3.5 (08.b) | Tested - does not crash. Full thinking suppression unverified. |
+| Other models | Should be unaffected when `chatTemplateKwargs` is omitted. |
+
+
+### Changes from upstream
+
+- `src/glue/messages.ts` - added `chat_template_kwargs` field to `cfmt_req`
+- `src/wllama.ts` - added `chatTemplateKwargs` to `ChatCompletionOptions` and `formatChat`
+- `cpp/glue.hpp` - added `chat_template_kwargs` field to `glue_msg_chat_format_req`
+- `cpp/helpers/wcommon.h` - added `enable_thinking` parameter to `wcommon_chat_apply_template`
+- `cpp/helpers/wcommon.cpp` - added Jinja variable injection logic
+- `cpp/actions.hpp` - updated `action_chat_format` to parse and apply kwargs
+
+***
+
+## Building with recent llama.cpp
+
+Sometime after ngxson's last update, llama.cpp enabled `LLAMA_WASM_MEM64` by default, which causes the build to fail unless the toolchain and cmake flags are updated.
+
+Two changes are required in `build_wasm.sh` and `docker-compose.yml`:
+
+- Update `EMSDK_IMAGE_TAG` to a version that supports wasm64 linking (tested with `latest`, pin to a specific version for reproducibility)
+- Pass `-DLLAMA_WASM_MEM64=OFF` to both `emcmake cmake` calls to restore wasm32 compatibility
+
+Full wasm64 support via `-sMEMORY64=1` is not yet viable due to incomplete browser support in Firefox and Safari.
+
+
+***
+
+
 # wllama - Wasm binding for llama.cpp
+
 
 ![](./README_banner.png)
 

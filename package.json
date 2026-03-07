@@ -1,6 +1,6 @@
 {
   "name": "@wllama/wllama",
-  "version": "2.3.7",
+  "version": "2.3.9",
   "description": "WebAssembly binding for llama.cpp - Enabling on-browser LLM inference",
   "main": "index.js",
   "type": "module",
@@ -28,7 +28,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ngxson/wllama.git"
+    "url": "git+https://github.com/ill13/wllama.git"
   },
   "keywords": [
     "wasm",
