@@ -922,28 +922,36 @@ glue_msg_test_perplexity_res action_test_perplexity(app_t &app, const char *req_
 glue_msg_chat_format_res action_chat_format(app_t &app, const char *req_raw)
 {
   PARSE_REQ(glue_msg_chat_format_req);
-  std::string tmpl = req.tmpl.not_null() ? req.tmpl.value : "";
-  bool add_ass = req.add_ass.not_null() ? req.add_ass.value : false;
-  std::vector<std::string> &roles = req.roles.arr;
-  std::vector<std::string> &contents = req.contents.arr;
+
+  std::string tmpl = req.tmpl.not_null()   ? req.tmpl.value    : "";
+  bool add_ass     = req.add_ass.not_null() ? req.add_ass.value : false;
+  bool enable_thinking = true;
+
+  if (req.chat_template_kwargs.not_null()) {
+    std::string kwargs = req.chat_template_kwargs.value;
+    if (kwargs.find("\"enable_thinking\"") != std::string::npos &&
+        kwargs.find("false") != std::string::npos) {
+        enable_thinking = false;
+    }
+}
+
   std::vector<wcommon_chat_msg> chat;
-  for (size_t i = 0; i < roles.size(); i++)
-  {
-    chat.push_back({roles[i], contents[i]});
+  for (size_t i = 0; i < req.roles.arr.size(); i++) {
+    chat.push_back({req.roles.arr[i], req.contents.arr[i]});
   }
-  try
-  {
-    std::string formatted_chat = wcommon_chat_apply_template(app.model, tmpl, chat, add_ass);
-    glue_msg_chat_format_res res;
-    res.success.value = true;
-    res.formatted_chat.value = formatted_chat;
-    return res;
+
+  glue_msg_chat_format_res res;
+  try {
+    std::string formatted = wcommon_chat_apply_template(
+      app.model, tmpl, chat, add_ass, enable_thinking
+    );
+    res.success.value        = true;
+    res.message.value        = "";
+    res.formatted_chat.value = formatted;
+  } catch (const std::exception &e) {
+    res.success.value        = true; // keep true for backward compat
+    res.message.value        = e.what();
+    res.formatted_chat.value = "";
   }
-  catch (const std::exception &e)
-  {
-    glue_msg_chat_format_res res;
-    res.success.value = true;
-    res.message.value = std::string(e.what());
-    return res;
-  }
+  return res;
 }

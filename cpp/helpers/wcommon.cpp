@@ -479,7 +479,8 @@ std::string wcommon_detokenize(const struct llama_vocab * vocab, const std::vect
 std::string wcommon_chat_apply_template(const struct llama_model *model,
                                            const std::string &tmpl,
                                            const std::vector<wcommon_chat_msg> &msgs,
-                                           bool add_ass)
+                                           bool add_ass,
+                                            bool enable_thinking)
 {
     int alloc_size = 0;
     bool fallback = false; // indicate if we must fallback to default chatml
@@ -491,6 +492,12 @@ std::string wcommon_chat_apply_template(const struct llama_model *model,
 
     const char *ptr_tmpl = tmpl.empty() ? llama_model_chat_template(model, nullptr) : tmpl.c_str();
     std::vector<char> buf(alloc_size);
+
+    std::string modified_tmpl;
+    if (!enable_thinking && ptr_tmpl != nullptr) {
+        modified_tmpl = std::string("{% set enable_thinking = false %}") + ptr_tmpl;
+        ptr_tmpl = modified_tmpl.c_str();
+    }
 
     // run the first time to get the total output length
     int32_t res = llama_chat_apply_template(ptr_tmpl, chat.data(), chat.size(), add_ass, buf.data(), buf.size());

@@ -863,6 +863,7 @@ struct glue_msg_chat_format_req
   GLUE_FIELD_NULLABLE(bool, add_ass)
   GLUE_FIELD(arr_str, roles)
   GLUE_FIELD(arr_str, contents)
+  GLUE_FIELD_NULLABLE(str, chat_template_kwargs)
 };
 
 struct glue_msg_chat_format_res

@@ -199,6 +199,7 @@ export interface ChatCompletionOptions {
    * If true, return an AsyncIterable instead of a string
    */
   stream?: boolean;
+  chatTemplateKwargs?: Record<string, unknown>;
 }
 
 export interface ModelMetadata {
@@ -727,7 +728,7 @@ export class Wllama {
     messages: WllamaChatMessage[],
     options: ChatCompletionOptions
   ): Promise<string | AsyncIterable<CompletionChunk>> {
-    const prompt = await this.formatChat(messages, true);
+    const prompt = await this.formatChat(messages, true, undefined, options.chatTemplateKwargs)
     return options.stream
       ? await this.createCompletionGenerator(prompt, options)
       : await this.createCompletion(prompt, { ...options, stream: false });
@@ -1269,12 +1270,14 @@ export class Wllama {
    * @param messages list of messages
    * @param addAssistant whether to add assistant prompt at the end
    * @param template (optional) custom template, see llama-server --chat-template argument for more details
+   * @param chatTemplateKwargs for qwen3.5
    * @returns formatted chat
    */
   async formatChat(
     messages: WllamaChatMessage[],
     addAssistant: boolean,
-    template?: string
+    template?: string,
+    chatTemplateKwargs?: Record<string, unknown>
   ): Promise<string> {
     this.checkModelLoaded();
     const roles = messages.map((m) => m.role);
@@ -1287,6 +1290,9 @@ export class Wllama {
         contents,
         tmpl: template,
         add_ass: addAssistant,
+        chat_template_kwargs: chatTemplateKwargs
+          ? JSON.stringify(chatTemplateKwargs)
+          : undefined,  
       }
     );
     if (!result.success) {

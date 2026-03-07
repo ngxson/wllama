@@ -549,7 +549,8 @@ struct wcommon_chat_msg {
 std::string wcommon_chat_apply_template(const struct llama_model * model,
                                            const std::string & tmpl,
                                            const std::vector<wcommon_chat_msg> & msgs,
-                                           bool add_ass);
+                                           bool add_ass,
+                                           bool enable_thinking = true);
 
 //
 // Embedding utils

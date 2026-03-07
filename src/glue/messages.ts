@@ -963,6 +963,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "arr_str",
         "name": "contents",
         "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "chat_template_kwargs",
+        "isNullable": true
       }
     ]
   },
@@ -1332,6 +1337,7 @@ export interface GlueMsgChatFormatReq {
   add_ass?: boolean | undefined;
   roles: string[];
   contents: string[];
+  chat_template_kwargs?: string | undefined;
 }
 
 // struct glue_msg_chat_format_res
