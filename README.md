@@ -1,11 +1,8 @@
 ## Fork Notes (ill13/wllama)
 
-This fork adds `chatTemplateKwargs` support to `createChatCompletion`, allowing
-per-request Jinja template variable injection at the C++ level.
+This fork adds `chatTemplateKwargs` support to `createChatCompletion`, allowing Jinja template variable injection at the C++ level.
 
-The primary use case is controlling thinking/reasoning mode on hybrid reasoning
-models like Qwen3.5, which requires `enable_thinking:false` to be set in the Jinja
-template context rather than via a prompt switch.
+The primary use case is controlling thinking/reasoning mode on hybrid reasoning models like Qwen3.5, which requires `enable_thinking:false` to be set in the Jinja template context rather than via a prompt switch.
 
 ### Usage
 
