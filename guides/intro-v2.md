@@ -47,6 +47,19 @@ Key features of `ModelManager`:
 - Built-in model validation
 - Parallel downloads of model shards
 - Cache management with refresh and removal options
+- Importing local GGUF files into persistent browser storage
+
+You can also import a user-selected local GGUF file into cache:
+
+```typescript
+const modelManager = new ModelManager();
+const file = fileInput.files?.[0];
+
+if (file) {
+  const model = await modelManager.importFile(file);
+  await wllama.loadModel(model);
+}
+```
 
 ## Added `loadModelFromHF`
 

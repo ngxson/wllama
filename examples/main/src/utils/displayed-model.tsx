@@ -10,7 +10,7 @@ export class DisplayedModel {
   cachedModel?: Model;
 
   state: ModelState = ModelState.NOT_DOWNLOADED;
-  downloadPercent: number = -1; // from 0.0 to 1.0; -1 means not downloading
+  downloadPercent: number = -1;
 
   constructor(
     url: string,
@@ -21,11 +21,18 @@ export class DisplayedModel {
     this.url = url;
     this.size = size;
     this.isUserAdded = isUserAdded;
-    this.state = !!cachedModel ? ModelState.READY : ModelState.NOT_DOWNLOADED;
+    this.state = cachedModel ? ModelState.READY : ModelState.NOT_DOWNLOADED;
     this.cachedModel = cachedModel;
   }
 
+  get isLocalFile(): boolean {
+    return this.url.startsWith('local://');
+  }
+
   get hfModel() {
+    if (this.isLocalFile) {
+      return 'Local file';
+    }
     const parts = this.url
       .replace(/https:\/\/(huggingface.co|hf.co)\/+/, '')
       .split('/');
@@ -33,6 +40,9 @@ export class DisplayedModel {
   }
 
   get hfPath() {
+    if (this.isLocalFile) {
+      return this.url.replace('local://', '');
+    }
     const parts = this.url
       .replace(/https:\/\/(huggingface.co|hf.co)\/+/, '')
       .split('/');

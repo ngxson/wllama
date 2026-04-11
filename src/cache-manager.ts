@@ -80,8 +80,53 @@ class CacheManager {
     stream: ReadableStream,
     metadata: CacheEntryMetadata
   ): Promise<void> {
-    this.writeMetadata(name, metadata); // no need await
-    return await opfsWrite(name, stream);
+    await this.writeMetadata(name, metadata);
+    const writable = await opfsWriteViaWorker(name);
+    await writable.truncate(0);
+    const reader = stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writable.write(value);
+    }
+    await writable.close();
+  }
+
+  /**
+   * Write a Blob directly to cache.
+   *
+   * This is primarily used for importing user-selected local GGUF files into
+   * OPFS so they can be reused later like downloaded models.
+   */
+  async writeFileFromBlob(
+    localUrl: string,
+    blob: Blob,
+    metadata: CacheEntryMetadata
+  ): Promise<void> {
+    const name = await urlToFileName(localUrl, '');
+    const metadataFileName = PREFIX_METADATA + name;
+    const metadataBlob = new Blob([JSON.stringify(metadata)], {
+      type: 'text/plain',
+    });
+    const metadataStream = metadataBlob.stream();
+    const metadataWritable = await opfsWriteViaWorker(metadataFileName);
+    await metadataWritable.truncate(0);
+    const metadataReader = metadataStream.getReader();
+    while (true) {
+      const { done, value } = await metadataReader.read();
+      if (done) break;
+      await metadataWritable.write(value);
+    }
+    await metadataWritable.close();
+    const dataWritable = await opfsWriteViaWorker(name);
+    await dataWritable.truncate(0);
+    const dataReader = blob.stream().getReader();
+    while (true) {
+      const { done, value } = await dataReader.read();
+      if (done) break;
+      await dataWritable.write(value);
+    }
+    await dataWritable.close();
   }
 
   async download(url: string, options: DownloadOptions = {}): Promise<void> {
@@ -254,8 +299,17 @@ class CacheManager {
     name: string,
     metadata: CacheEntryMetadata
   ): Promise<void> {
+    const metadataFileName = PREFIX_METADATA + name;
     const blob = new Blob([JSON.stringify(metadata)], { type: 'text/plain' });
-    await opfsWrite(name, blob.stream(), PREFIX_METADATA);
+    const writable = await opfsWriteViaWorker(metadataFileName);
+    await writable.truncate(0);
+    const reader = blob.stream().getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writable.write(value);
+    }
+    await writable.close();
   }
 }
 
@@ -269,20 +323,16 @@ async function opfsWrite(
   stream: ReadableStream,
   prefix = ''
 ): Promise<void> {
-  try {
-    const fileName = await urlToFileName(key, prefix);
-    const writable = await opfsWriteViaWorker(fileName);
-    await writable.truncate(0); // clear file content
-    const reader = stream.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      await writable.write(value);
-    }
-    await writable.close();
-  } catch (e) {
-    console.error('opfsWrite', e);
+  const fileName = await urlToFileName(key, prefix);
+  const writable = await opfsWriteViaWorker(fileName);
+  await writable.truncate(0); // clear file content
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    await writable.write(value);
   }
+  await writable.close();
 }
 
 /**
@@ -361,9 +411,9 @@ async function opfsWriteViaWorker(fileName: string): Promise<{
     else if (e.data.err) pReject(e.data.err);
   };
   const workerExec = (data: {
-    open?: string;
-    value?: Uint8Array;
-    done?: boolean;
+    action: string;
+    filename?: string;
+    buf?: Uint8Array;
   }) =>
     new Promise<void>((resolve, reject) => {
       pResolve = resolve;
@@ -374,18 +424,18 @@ async function opfsWriteViaWorker(fileName: string): Promise<{
         isSafariMobile()
           ? undefined
           : {
-              transfer: data.value ? [data.value.buffer] : [],
+              transfer: data.buf ? [data.buf.buffer] : [],
             }
       );
     });
-  await workerExec({ open: fileName });
+  await workerExec({ action: 'open', filename: fileName });
   return {
     truncate: async () => {
       /* noop */
     },
-    write: (value) => workerExec({ value }),
+    write: (value) => workerExec({ action: 'write', buf: value }),
     close: async () => {
-      await workerExec({ done: true });
+      await workerExec({ action: 'close' });
       worker.terminate();
     },
   };

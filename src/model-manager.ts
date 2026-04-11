@@ -321,4 +321,50 @@ export class ModelManager {
   async clear(): Promise<void> {
     await this.cacheManager.clear();
   }
+
+  /**
+   * Import a local GGUF file into the cache.
+   *
+   * The file will be stored in OPFS under a `local://` URL scheme.
+   * This allows local files to be treated the same as downloaded models,
+   * including persistence across page refreshes.
+   *
+   * @param file The File object to import
+   * @param progressCallback Optional callback for tracking import progress
+   * @returns A Model object representing the cached file
+   */
+  async importFile(
+    file: File,
+    progressCallback?: (progress: { loaded: number; total: number }) => void
+  ): Promise<Model> {
+    const localUrl = `local://${file.name}`;
+    const existingModels = await this.getModels();
+    const existing = existingModels.find((m) => m.url === localUrl);
+    if (existing) {
+      const validity = existing.validate();
+      if (validity === ModelValidationStatus.VALID) {
+        progressCallback?.({ loaded: file.size, total: file.size });
+        return existing;
+      }
+    }
+
+    const cacheEntry: CacheEntry = {
+      name: await this.cacheManager.getNameFromURL(localUrl),
+      size: file.size,
+      metadata: {
+        etag: '',
+        originalSize: file.size,
+        originalURL: localUrl,
+      },
+    };
+
+    await this.cacheManager.writeFileFromBlob(
+      localUrl,
+      file,
+      cacheEntry.metadata
+    );
+    progressCallback?.({ loaded: file.size, total: file.size });
+
+    return new Model(this, localUrl, [cacheEntry]);
+  }
 }

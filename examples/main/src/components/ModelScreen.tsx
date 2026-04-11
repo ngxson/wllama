@@ -9,7 +9,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { DEFAULT_INFERENCE_PARAMS, MAX_GGUF_SIZE } from '../config';
 import { toHumanReadableSize, useDebounce } from '../utils/utils';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import ScreenWrapper from './ScreenWrapper';
 import { DisplayedModel } from '../utils/displayed-model';
 import { isValidGgufFile } from '@wllama/wllama';
@@ -151,10 +151,14 @@ export default function ModelScreen() {
 }
 
 function AddCustomModelDialog({ onClose }: { onClose(): void }) {
-  const { isLoadingModel, addCustomModel } = useWllama();
+  const { isLoadingModel, addCustomModel, addLocalModel } = useWllama();
+  const [activeTab, setActiveTab] = useState<'huggingface' | 'local'>(
+    'huggingface'
+  );
   const [hfRepo, setHfRepo] = useState<string>('');
   const [hfFile, setHfFile] = useState<string>('');
   const [hfFiles, setHfFiles] = useState<string[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [abortSignal, setAbortSignal] = useState<AbortController>(
     new AbortController()
   );
@@ -199,7 +203,7 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
     }
   }, [hfFiles]);
 
-  const onSubmit = async () => {
+  const onSubmitHF = async () => {
     try {
       await addCustomModel(
         `https://huggingface.co/${hfRepo}/resolve/main/${hfFile}`
@@ -210,9 +214,32 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
     }
   };
 
+  const onSubmitLocal = async () => {
+    if (!selectedFile) return;
+    try {
+      await addLocalModel(selectedFile);
+      onClose();
+    } catch (e) {
+      setErr((e as any)?.message ?? 'unknown error');
+    }
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.name.toLowerCase().endsWith('.gguf')) {
+        setErr('File must have .gguf extension');
+        setSelectedFile(null);
+        return;
+      }
+      setSelectedFile(file);
+      setErr(undefined);
+    }
+  };
+
   return (
     <dialog className="modal modal-open">
-      <div className="modal-box">
+      <div className="modal-box max-w-lg">
         <h3 className="font-bold text-lg">Add custom GGUF</h3>
         <div className="mt-4">
           Max GGUF file size is 2GB. If your model is bigger than 2GB, please{' '}
@@ -226,45 +253,110 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
           </a>{' '}
           to split it into smaller shards.
         </div>
-        <div className="mt-4">
-          <label className="input input-bordered flex items-center gap-2 mb-2">
-            HF repo
-            <input
-              type="text"
-              className="grow"
-              placeholder="{username}/{repo}"
-              value={hfRepo}
-              onChange={(e) => {
-                abortSignal.abort();
-                setHfRepo(e.target.value);
-                setAbortSignal(new AbortController());
-              }}
-            />
-          </label>
-          <select
-            className="select select-bordered w-full"
-            onChange={(e) => setHfFile(e.target.value)}
+
+        <div className="tabs tabs-boxed mt-6">
+          <button
+            className={`tab ${activeTab === 'huggingface' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('huggingface')}
           >
-            <option value="">Select a model file</option>
-            {hfFiles.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
+            From HuggingFace
+          </button>
+          <button
+            className={`tab ${activeTab === 'local' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('local')}
+          >
+            From Local File
+          </button>
         </div>
+
+        {activeTab === 'huggingface' ? (
+          <div className="mt-4">
+            <label className="input input-bordered flex items-center gap-2 mb-2">
+              HF repo
+              <input
+                type="text"
+                className="grow"
+                placeholder="{username}/{repo}"
+                value={hfRepo}
+                onChange={(e) => {
+                  abortSignal.abort();
+                  setHfRepo(e.target.value);
+                  setAbortSignal(new AbortController());
+                }}
+              />
+            </label>
+            <select
+              className="select select-bordered w-full"
+              onChange={(e) => setHfFile(e.target.value)}
+              value={hfFile}
+            >
+              <option value="">Select a model file</option>
+              {hfFiles.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="mt-4">
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">
+                  Select a GGUF file from your device
+                </span>
+              </label>
+              <input
+                type="file"
+                className="file-input file-input-bordered w-full"
+                accept=".gguf"
+                onChange={handleFileChange}
+              />
+              {selectedFile && (
+                <label className="label">
+                  <span className="label-text-alt text-success">
+                    Selected: {selectedFile.name} (
+                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                  </span>
+                </label>
+              )}
+            </div>
+            <div className="alert alert-info mt-4 text-sm">
+              <span>
+                Note: Local files are cached in your browser and will persist
+                across page refreshes.
+              </span>
+            </div>
+          </div>
+        )}
+
         {err && <div className="mt-4 text-error">Error: {err}</div>}
         <div className="modal-action">
-          <button
-            className="btn btn-primary"
-            disabled={isLoadingModel || hfRepo.length < 2 || hfFile.length < 5}
-            onClick={onSubmit}
-          >
-            {isLoadingModel && (
-              <span className="loading loading-spinner"></span>
-            )}
-            Add model
-          </button>
+          {activeTab === 'huggingface' ? (
+            <button
+              className="btn btn-primary"
+              disabled={
+                isLoadingModel || hfRepo.length < 2 || hfFile.length < 5
+              }
+              onClick={onSubmitHF}
+            >
+              {isLoadingModel && (
+                <span className="loading loading-spinner"></span>
+              )}
+              Add model
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              disabled={isLoadingModel || !selectedFile}
+              onClick={onSubmitLocal}
+            >
+              {isLoadingModel && (
+                <span className="loading loading-spinner"></span>
+              )}
+              Add model
+            </button>
+          )}
           <button className="btn" disabled={isLoadingModel} onClick={onClose}>
             Close
           </button>
@@ -300,10 +392,14 @@ function ModelCard({
     >
       <div className="card-body p-4 flex flex-row">
         <div className="grow">
-          <b>{m.hfPath.replace(/-\d{5}-of-\d{5}/, '-(shards)')}</b>
+          <b>
+            {m.isLocalFile
+              ? m.url.replace('local://', '')
+              : m.hfPath.replace(/-\d{5}-of-\d{5}/, '-(shards)')}
+          </b>
           <br />
           <small>
-            HF repo: {m.hfModel}
+            {m.isLocalFile ? 'Source: Local file' : `HF repo: ${m.hfModel}`}
             <br />
             Size: {toHumanReadableSize(m.size)}
             {m.size > MAX_GGUF_SIZE && (

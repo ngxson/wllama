@@ -8,7 +8,7 @@ import {
 import { Model, ModelManager, Wllama } from '@wllama/wllama';
 import { DEFAULT_INFERENCE_PARAMS, WLLAMA_CONFIG_PATHS } from '../config';
 import { InferenceParams, RuntimeInfo, ModelState, Screen } from './types';
-import { verifyCustomModel } from './custom-models';
+import { verifyCustomModel, verifyLocalFile } from './custom-models';
 import {
   DisplayedModel,
   getDisplayedModels,
@@ -35,6 +35,7 @@ interface WllamaContextValue {
 
   // function for managing custom user model
   addCustomModel(url: string): Promise<void>;
+  addLocalModel(file: File): Promise<void>;
   removeCustomModel(model: DisplayedModel): Promise<void>;
 
   // functions for chat completion
@@ -81,9 +82,57 @@ export const WllamaProvider = ({ children }: any) => {
   };
   useDidMount(refreshCachedModels);
 
+  useDidMount(async () => {
+    const savedLoadedModelUrl = WllamaStorage.load<string | undefined>(
+      'loaded_model',
+      undefined as any
+    );
+    if (savedLoadedModelUrl) {
+      setBusy(true);
+      try {
+        await refreshCachedModels();
+        const models = await modelManager.getModels();
+        const cachedModel = models.find((m) => m.url === savedLoadedModelUrl);
+        if (cachedModel) {
+          setLoadedModel(
+            new DisplayedModel(
+              savedLoadedModelUrl,
+              cachedModel.size,
+              savedLoadedModelUrl.startsWith('local://'),
+              cachedModel
+            ).clone({ state: ModelState.LOADING })
+          );
+          await wllamaInstance.loadModel(cachedModel, {
+            n_threads:
+              currParams.nThreads > 0 ? currParams.nThreads : undefined,
+            n_ctx: currParams.nContext,
+            n_batch: currParams.nBatch,
+          });
+          setLoadedModel(
+            new DisplayedModel(
+              savedLoadedModelUrl,
+              cachedModel.size,
+              savedLoadedModelUrl.startsWith('local://'),
+              cachedModel
+            ).clone({ state: ModelState.LOADED })
+          );
+          setCurrRuntimeInfo({
+            isMultithread: wllamaInstance.isMultithread(),
+            hasChatTemplate: !!wllamaInstance.getChatTemplate(),
+          });
+        }
+      } catch (e) {
+        console.error('Failed to auto-load model:', e);
+        WllamaStorage.save('loaded_model', undefined as any);
+        resetWllamaInstance();
+      }
+      setBusy(false);
+    }
+  });
+
   // computed variables
   const models = useMemo(() => {
-    const list = getDisplayedModels(cachedModels);
+    const list = [...getDisplayedModels(cachedModels)];
     for (const model of list) {
       model.downloadPercent = downloadingProgress[model.url] ?? -1;
       if (model.downloadPercent >= 0) {
@@ -152,10 +201,10 @@ export const WllamaProvider = ({ children }: any) => {
 
   const loadModel = async (model: DisplayedModel) => {
     if (isDownloading || loadedModel || isLoadingModel) return;
-    // make sure the model is cached
     if (!model.cachedModel) {
       throw new Error('Model is not in cache');
     }
+
     setLoadedModel(model.clone({ state: ModelState.LOADING }));
     try {
       await wllamaInstance.loadModel(model.cachedModel, {
@@ -163,6 +212,7 @@ export const WllamaProvider = ({ children }: any) => {
         n_ctx: currParams.nContext,
         n_batch: currParams.nBatch,
       });
+      WllamaStorage.save('loaded_model', model.url);
       setLoadedModel(model.clone({ state: ModelState.LOADED }));
       setCurrRuntimeInfo({
         isMultithread: wllamaInstance.isMultithread(),
@@ -170,6 +220,7 @@ export const WllamaProvider = ({ children }: any) => {
       });
     } catch (e) {
       resetWllamaInstance();
+      WllamaStorage.save('loaded_model', undefined as any);
       alert(`Failed to load model: ${(e as any).message ?? 'Unknown error'}`);
       setLoadedModel(undefined);
     }
@@ -177,8 +228,13 @@ export const WllamaProvider = ({ children }: any) => {
 
   const unloadModel = async () => {
     if (!loadedModel) return;
-    await wllamaInstance.exit();
+    try {
+      await wllamaInstance.exit();
+    } catch (e) {
+      console.warn('Error during exit:', e);
+    }
     resetWllamaInstance();
+    WllamaStorage.save('loaded_model', undefined as any);
     setLoadedModel(undefined);
     setCurrRuntimeInfo(undefined);
   };
@@ -246,9 +302,37 @@ export const WllamaProvider = ({ children }: any) => {
     setBusy(false);
   };
 
+  const addLocalModel = async (file: File) => {
+    setBusy(true);
+    try {
+      await verifyLocalFile(file);
+      const localUrl = `local://${file.name}`;
+      if (models.some((m) => m.url === localUrl)) {
+        throw new Error('This file has already been added');
+      }
+      const cachedModel = await modelManager.importFile(file);
+      const userAddedModels = getUserAddedModels(cachedModels);
+      const newDisplayedModel = new DisplayedModel(
+        localUrl,
+        file.size,
+        true,
+        cachedModel
+      );
+      updateUserAddedModels([...userAddedModels, newDisplayedModel]);
+      await refreshCachedModels();
+    } catch (e) {
+      setBusy(false);
+      throw e;
+    }
+    setBusy(false);
+  };
+
   const removeCustomModel = async (model: DisplayedModel) => {
     setBusy(true);
     if (model.isUserAdded) {
+      if (model.isLocalFile && model.cachedModel) {
+        await model.cachedModel.remove();
+      }
       const userAddedModels = getUserAddedModels(cachedModels);
       const newList = userAddedModels.filter((m) => m.url !== model.url);
       updateUserAddedModels(newList);
@@ -281,6 +365,7 @@ export const WllamaProvider = ({ children }: any) => {
         currScreen,
         getWllamaInstance: () => wllamaInstance,
         addCustomModel,
+        addLocalModel,
         removeCustomModel,
         currRuntimeInfo,
       }}
