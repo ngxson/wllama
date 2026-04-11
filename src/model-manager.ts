@@ -339,7 +339,7 @@ export class ModelManager {
   ): Promise<Model> {
     await validateLocalGgufFile(file);
 
-    const localUrl = `local://${file.name}`;
+    const localUrl = await getLocalModelUrl(file);
     const cacheEntry: CacheEntry = {
       name: await this.cacheManager.getNameFromURL(localUrl),
       size: file.size,
@@ -362,6 +362,7 @@ export class ModelManager {
 }
 
 const GGUF_MAGIC_NUMBER = new Uint8Array([0x47, 0x47, 0x55, 0x46]);
+const LOCAL_MODEL_SAMPLE_SIZE = 64 * 1024;
 
 async function validateLocalGgufFile(file: File): Promise<void> {
   if (!isValidGgufFile(file.name)) {
@@ -383,4 +384,42 @@ async function validateLocalGgufFile(file: File): Promise<void> {
       'download_error'
     );
   }
+}
+
+async function getLocalModelUrl(file: File): Promise<string> {
+  const fingerprint = await getLocalModelFingerprint(file);
+  return `local://${fingerprint}/${encodeURIComponent(file.name)}`;
+}
+
+async function getLocalModelFingerprint(file: File): Promise<string> {
+  const sampleBuffers: Uint8Array[] = [];
+  const headSize = Math.min(LOCAL_MODEL_SAMPLE_SIZE, file.size);
+  sampleBuffers.push(new Uint8Array(await file.slice(0, headSize).arrayBuffer()));
+
+  if (file.size > headSize) {
+    const tailSize = Math.min(LOCAL_MODEL_SAMPLE_SIZE, file.size - headSize);
+    sampleBuffers.push(
+      new Uint8Array(await file.slice(file.size - tailSize).arrayBuffer())
+    );
+  }
+
+  const metadata = new TextEncoder().encode(
+    `${file.size}:${file.lastModified}:${file.name}`
+  );
+  const hashInput = concatUint8Arrays([metadata, ...sampleBuffers]);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', hashInput));
+  return Array.from(digest)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function concatUint8Arrays(buffers: Uint8Array[]): Uint8Array {
+  const totalLength = buffers.reduce((sum, buffer) => sum + buffer.length, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const buffer of buffers) {
+    combined.set(buffer, offset);
+    offset += buffer.length;
+  }
+  return combined;
 }

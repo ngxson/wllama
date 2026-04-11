@@ -394,7 +394,7 @@ function ModelCard({
         <div className="grow">
           <b>
             {m.isLocalFile
-              ? m.url.replace('local://', '')
+              ? m.hfPath
               : m.hfPath.replace(/-\d{5}-of-\d{5}/, '-(shards)')}
           </b>
           <br />

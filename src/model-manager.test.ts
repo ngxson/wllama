@@ -209,6 +209,7 @@ test.sequential('import local gguf file into cache', async () => {
   ]);
   const file = new File([fileBytes], 'tiny-local.gguf', {
     type: 'application/octet-stream',
+    lastModified: 1710000000000,
   });
 
   let lastProgress: { loaded: number; total: number } | undefined;
@@ -216,9 +217,9 @@ test.sequential('import local gguf file into cache', async () => {
     lastProgress = progress;
   });
 
-  expect(model.url).toBe('local://tiny-local.gguf');
+  expect(model.url).toMatch(/^local:\/\/[0-9a-f]+\/tiny-local\.gguf$/);
   expect(model.size).toBe(file.size);
-  expect(model.validate()).toBe(ModelValidationStatus.VALID);
+  expect(await model.validate()).toBe(ModelValidationStatus.VALID);
   expect(lastProgress).toEqual({ loaded: file.size, total: file.size });
 
   const cachedModels = await manager.getModels();
@@ -257,7 +258,7 @@ test.sequential('importFile rejects invalid gguf magic header', async () => {
   );
 });
 
-test.sequential('importFile overwrites same-name local model with new contents', async () => {
+test.sequential('importFile keeps same-name local models distinct', async () => {
   const manager = new ModelManager();
   await manager.clear();
 
@@ -272,23 +273,30 @@ test.sequential('importFile overwrites same-name local model with new contents',
 
   const firstFile = new File([firstBytes], 'replace-me.gguf', {
     type: 'application/octet-stream',
+    lastModified: 1710000000000,
   });
   const secondFile = new File([secondBytes], 'replace-me.gguf', {
     type: 'application/octet-stream',
+    lastModified: 1710000001000,
   });
 
-  await manager.importFile(firstFile);
-  await manager.importFile(secondFile);
+  const firstModel = await manager.importFile(firstFile);
+  const secondModel = await manager.importFile(secondFile);
+
+  expect(firstModel.url).not.toBe(secondModel.url);
 
   const models = await manager.getModels();
-  expect(models.filter((m) => m.url === 'local://replace-me.gguf')).toHaveLength(
-    1
-  );
+  expect(models).toHaveLength(2);
 
-  const model = models.find((m) => m.url === 'local://replace-me.gguf');
-  expect(model).toBeDefined();
+  const firstCachedModel = models.find((m) => m.url === firstModel.url);
+  const secondCachedModel = models.find((m) => m.url === secondModel.url);
+  expect(firstCachedModel).toBeDefined();
+  expect(secondCachedModel).toBeDefined();
 
-  const [blob] = await model!.open();
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  expect(Array.from(bytes)).toEqual(Array.from(secondBytes));
+  const [firstBlob] = await firstCachedModel!.open();
+  const [secondBlob] = await secondCachedModel!.open();
+  const firstImportedBytes = new Uint8Array(await firstBlob.arrayBuffer());
+  const secondImportedBytes = new Uint8Array(await secondBlob.arrayBuffer());
+  expect(Array.from(firstImportedBytes)).toEqual(Array.from(firstBytes));
+  expect(Array.from(secondImportedBytes)).toEqual(Array.from(secondBytes));
 });

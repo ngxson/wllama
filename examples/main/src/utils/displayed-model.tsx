@@ -41,7 +41,8 @@ export class DisplayedModel {
 
   get hfPath() {
     if (this.isLocalFile) {
-      return this.url.replace('local://', '');
+      const encodedName = this.url.split('/').pop();
+      return decodeURIComponent(encodedName ?? this.url.replace('local://', ''));
     }
     const parts = this.url
       .replace(/https:\/\/(huggingface.co|hf.co)\/+/, '')

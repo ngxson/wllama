@@ -308,17 +308,16 @@ export const WllamaProvider = ({ children }: any) => {
     setBusy(true);
     try {
       await verifyLocalFile(file);
-      const localUrl = `local://${file.name}`;
       const cachedModel = await modelManager.importFile(file);
       const userAddedModels = getUserAddedModels(cachedModels);
       const newDisplayedModel = new DisplayedModel(
-        localUrl,
+        cachedModel.url,
         file.size,
         true,
         cachedModel
       );
       updateUserAddedModels([
-        ...userAddedModels.filter((m) => m.url !== localUrl),
+        ...userAddedModels.filter((m) => m.url !== cachedModel.url),
         newDisplayedModel,
       ]);
       await refreshCachedModels();
