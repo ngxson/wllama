@@ -236,3 +236,59 @@ test.sequential('import local gguf file into cache', async () => {
   const importedBytes = new Uint8Array(await blob.arrayBuffer());
   expect(Array.from(importedBytes)).toEqual(Array.from(fileBytes));
 });
+
+test.sequential('importFile rejects non-gguf extension', async () => {
+  const manager = new ModelManager();
+  const file = new File(['not a gguf'], 'tiny-local.bin', {
+    type: 'application/octet-stream',
+  });
+
+  await expect(manager.importFile(file)).rejects.toThrow('must end with ".gguf"');
+});
+
+test.sequential('importFile rejects invalid gguf magic header', async () => {
+  const manager = new ModelManager();
+  const file = new File([new Uint8Array([0x00, 0x01, 0x02, 0x03])], 'bad.gguf', {
+    type: 'application/octet-stream',
+  });
+
+  await expect(manager.importFile(file)).rejects.toThrow(
+    'does not start with GGUF magic number'
+  );
+});
+
+test.sequential('importFile overwrites same-name local model with new contents', async () => {
+  const manager = new ModelManager();
+  await manager.clear();
+
+  const firstBytes = new Uint8Array([
+    0x47, 0x47, 0x55, 0x46, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00,
+    0x20, 0x00, 0x00, 0x00,
+  ]);
+  const secondBytes = new Uint8Array([
+    0x47, 0x47, 0x55, 0x46, 0xaa, 0xbb, 0xcc, 0xdd, 0x99, 0x88, 0x77, 0x66,
+    0x55, 0x44, 0x33, 0x22,
+  ]);
+
+  const firstFile = new File([firstBytes], 'replace-me.gguf', {
+    type: 'application/octet-stream',
+  });
+  const secondFile = new File([secondBytes], 'replace-me.gguf', {
+    type: 'application/octet-stream',
+  });
+
+  await manager.importFile(firstFile);
+  await manager.importFile(secondFile);
+
+  const models = await manager.getModels();
+  expect(models.filter((m) => m.url === 'local://replace-me.gguf')).toHaveLength(
+    1
+  );
+
+  const model = models.find((m) => m.url === 'local://replace-me.gguf');
+  expect(model).toBeDefined();
+
+  const [blob] = await model!.open();
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  expect(Array.from(bytes)).toEqual(Array.from(secondBytes));
+});

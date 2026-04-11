@@ -337,17 +337,9 @@ export class ModelManager {
     file: File,
     progressCallback?: (progress: { loaded: number; total: number }) => void
   ): Promise<Model> {
-    const localUrl = `local://${file.name}`;
-    const existingModels = await this.getModels();
-    const existing = existingModels.find((m) => m.url === localUrl);
-    if (existing) {
-      const validity = existing.validate();
-      if (validity === ModelValidationStatus.VALID) {
-        progressCallback?.({ loaded: file.size, total: file.size });
-        return existing;
-      }
-    }
+    await validateLocalGgufFile(file);
 
+    const localUrl = `local://${file.name}`;
     const cacheEntry: CacheEntry = {
       name: await this.cacheManager.getNameFromURL(localUrl),
       size: file.size,
@@ -366,5 +358,29 @@ export class ModelManager {
     progressCallback?.({ loaded: file.size, total: file.size });
 
     return new Model(this, localUrl, [cacheEntry]);
+  }
+}
+
+const GGUF_MAGIC_NUMBER = new Uint8Array([0x47, 0x47, 0x55, 0x46]);
+
+async function validateLocalGgufFile(file: File): Promise<void> {
+  if (!isValidGgufFile(file.name)) {
+    throw new WllamaError(
+      `Invalid model file: ${file.name}; file name must end with ".gguf"`,
+      'download_error'
+    );
+  }
+
+  const headerBuf = await file.slice(0, GGUF_MAGIC_NUMBER.length).arrayBuffer();
+  const header = new Uint8Array(headerBuf);
+  const hasGgufMagic = GGUF_MAGIC_NUMBER.every((byte, index) => {
+    return header[index] === byte;
+  });
+
+  if (!hasGgufMagic) {
+    throw new WllamaError(
+      `Invalid model file: ${file.name}; file does not start with GGUF magic number`,
+      'download_error'
+    );
   }
 }

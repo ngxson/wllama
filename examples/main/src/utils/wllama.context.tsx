@@ -125,6 +125,8 @@ export const WllamaProvider = ({ children }: any) => {
         console.error('Failed to auto-load model:', e);
         WllamaStorage.save('loaded_model', undefined as any);
         resetWllamaInstance();
+        setLoadedModel(undefined);
+        setCurrRuntimeInfo(undefined);
       }
       setBusy(false);
     }
@@ -307,9 +309,6 @@ export const WllamaProvider = ({ children }: any) => {
     try {
       await verifyLocalFile(file);
       const localUrl = `local://${file.name}`;
-      if (models.some((m) => m.url === localUrl)) {
-        throw new Error('This file has already been added');
-      }
       const cachedModel = await modelManager.importFile(file);
       const userAddedModels = getUserAddedModels(cachedModels);
       const newDisplayedModel = new DisplayedModel(
@@ -318,7 +317,10 @@ export const WllamaProvider = ({ children }: any) => {
         true,
         cachedModel
       );
-      updateUserAddedModels([...userAddedModels, newDisplayedModel]);
+      updateUserAddedModels([
+        ...userAddedModels.filter((m) => m.url !== localUrl),
+        newDisplayedModel,
+      ]);
       await refreshCachedModels();
     } catch (e) {
       setBusy(false);
