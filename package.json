@@ -1,6 +1,6 @@
 {
   "name": "@wllama/wllama",
-  "version": "2.3.7",
+  "version": "2.4.0",
   "description": "WebAssembly binding for llama.cpp - Enabling on-browser LLM inference",
   "main": "index.js",
   "type": "module",
@@ -50,7 +50,7 @@
     "@vitest/browser": "^2.1.6",
     "express": "^4.18.3",
     "mime-types": "^2.1.35",
-    "playwright": "^1.49.0",
+    "playwright": "^1.59.1",
     "prettier": "^3.3.3",
     "terser": "^5.39.0",
     "tsup": "^8.4.0",
@@ -64,5 +64,8 @@
     "semi": true,
     "singleQuote": true,
     "bracketSameLine": false
+  },
+  "dependencies": {
+    "@huggingface/jinja": "^0.5.8"
   }
 }
