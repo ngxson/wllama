@@ -11,7 +11,7 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
 > [!IMPORTANT]  
-> Memory64 is now a requirement, which drops support for Safari. Please follows [this issue](https://github.com/ngxson/wllama/issues/210) for more info.
+> Memory64 is now a requirement, which drops support for Safari. Please follow [this issue](https://github.com/ngxson/wllama/issues/210) for more info.
 
 ![](./assets/screenshot_0.png)
 
