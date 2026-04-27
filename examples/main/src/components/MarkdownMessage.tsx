@@ -12,10 +12,7 @@ const markdownComponents: Components = {
   code({ inline, children, ...props }: any) {
     if (inline) {
       return (
-        <code
-          className="bg-base-200 rounded px-1 py-[2px] text-sm"
-          {...props}
-        >
+        <code className="bg-base-200 rounded px-1 py-[2px] text-sm" {...props}>
           {children}
         </code>
       );

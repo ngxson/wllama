@@ -86,9 +86,10 @@ const getWasmMemory = () => {
   while (maxBytes > minBytes) {
     try {
       const wasmMemory = new WebAssembly.Memory({
-        initial: minBytes / 65536,
-        maximum: maxBytes / 65536,
+        initial: BigInt(minBytes / 65536),
+        maximum: BigInt(maxBytes / 65536),
         shared: true,
+        address: 'i64',
       });
       return wasmMemory;
     } catch (e) {
@@ -263,7 +264,7 @@ onmessage = async (e) => {
         // init FS
         patchMEMFS();
         // init cwrap
-        const pointer = 'number';
+        const pointer = 'bigint';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument
         wllamaMalloc = callWrapper('wllama_malloc', pointer, [
           'number',
@@ -335,22 +336,26 @@ onmessage = async (e) => {
     const argAction = args[0];
     const argEncodedMsg = args[1];
     try {
-      const inputPtr = await wllamaMalloc(argEncodedMsg.byteLength, 0);
+      const inputPtr = await wllamaMalloc(BigInt(argEncodedMsg.byteLength), 0);
       // copy data to wasm heap
       const inputBuffer = new Uint8Array(
         Module.HEAPU8.buffer,
-        inputPtr,
+        Number(inputPtr),
         argEncodedMsg.byteLength
       );
       inputBuffer.set(argEncodedMsg, 0);
       const outputPtr = await wllamaAction(argAction, inputPtr);
       // length of output buffer is written at the first 4 bytes of input buffer
-      const outputLen = new Uint32Array(Module.HEAPU8.buffer, inputPtr, 1)[0];
+      const outputLen = new Uint32Array(
+        Module.HEAPU8.buffer,
+        Number(inputPtr),
+        1
+      )[0];
       // copy the output buffer to JS heap
       const outputBuffer = new Uint8Array(outputLen);
       const outputSrcView = new Uint8Array(
         Module.HEAPU8.buffer,
-        outputPtr,
+        Number(outputPtr),
         outputLen
       );
       outputBuffer.set(outputSrcView, 0); // copy it
