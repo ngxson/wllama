@@ -108,6 +108,8 @@ enum display_type
   DISPLAY_TYPE_ERROR
 };
 
+static bool has_more_tasks = false;
+
 struct wllama_context
 {
   server_context ctx_server;
@@ -121,13 +123,7 @@ struct wllama_context
   std::function<bool()> should_stop = []()
   { return false; };
   std::string last_error;
-
-  struct dummy_atomic
-  {
-    bool value = false;
-    void store(bool v) { value = v; }
-    operator bool() const { return value; }
-  } g_is_interrupted;
+  std::unique_ptr<server_response_reader> rd;
 
   struct console
   {
@@ -151,14 +147,13 @@ struct wllama_context
     defaults.stream = true;
   }
 
-  std::string generate_completion(result_timings &out_timings)
+  void create_completion_task()
   {
-    server_response_reader rd = ctx_server.get_response_reader();
     auto chat_params = format_chat();
     {
       // TODO: reduce some copies here in the future
       server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
-      task.id = rd.get_new_id();
+      task.id = rd->get_new_id();
       task.index = 0;
       task.params = defaults;               // copy
       task.cli_prompt = chat_params.prompt; // copy
@@ -193,80 +188,14 @@ struct wllama_context
             common_tokenize(vocab, defaults.sampling.reasoning_budget_message + chat_params.thinking_end_tag, false, true);
       }
 
-      rd.post_task({std::move(task)});
+      rd->post_task({std::move(task)});
     }
+  }
 
-    // wait for first result
-    console::spinner::start();
-    server_task_result_ptr result = rd.next(should_stop);
-
-    console::spinner::stop();
-    std::string curr_content;
-    bool is_thinking = false;
-
-    while (result)
-    {
-      if (should_stop())
-      {
-        break;
-      }
-      if (result->is_error())
-      {
-        json err_data = result->to_json();
-        if (err_data.contains("message"))
-        {
-          last_error = err_data["message"].get<std::string>();
-          // console::error("Error: %s\n", last_error.c_str());
-        }
-        else
-        {
-          last_error = err_data.dump();
-          // console::error("Error: %s\n", last_error.c_str());
-        }
-        return curr_content;
-      }
-      auto res_partial = dynamic_cast<server_task_result_cmpl_partial *>(result.get());
-      if (res_partial)
-      {
-        out_timings = std::move(res_partial->timings);
-        for (const auto &diff : res_partial->oaicompat_msg_diffs)
-        {
-          if (!diff.content_delta.empty())
-          {
-            if (is_thinking)
-            {
-              // console::log("\n[End thinking]\n\n");
-              console::set_display(DISPLAY_TYPE_RESET);
-              is_thinking = false;
-            }
-            curr_content += diff.content_delta;
-            // console::log("%s", diff.content_delta.c_str());
-            console::flush();
-          }
-          if (!diff.reasoning_content_delta.empty())
-          {
-            console::set_display(DISPLAY_TYPE_REASONING);
-            if (!is_thinking)
-            {
-              // console::log("[Start thinking]\n");
-            }
-            is_thinking = true;
-            // console::log("%s", diff.reasoning_content_delta.c_str());
-            console::flush();
-          }
-        }
-      }
-      auto res_final = dynamic_cast<server_task_result_cmpl_final *>(result.get());
-      if (res_final)
-      {
-        out_timings = std::move(res_final->timings);
-        break;
-      }
-      result = rd.next(should_stop);
-    }
-    g_is_interrupted.store(false);
-    // server_response_reader automatically cancels pending tasks upon destruction
-    return curr_content;
+  std::string get_next_result()
+  {
+    server_task_result_ptr result = rd->next(should_stop);
+    return result ? result->to_json().dump() : "";
   }
 
   // TODO: support remote files in the future (http, https, etc)
@@ -349,6 +278,13 @@ struct wllama_context
     return output;
   }
 
+  // returns true if there are more tasks in the queue after this one
+  int run_loop()
+  {
+    ctx_server.start_loop(); // only run one iteration of the generation loop (i.e. generating one token)
+    return has_more_tasks;
+  }
+
   //////////////////////////////////////////
   //////////////////////////////////////////
   //////////////////////////////////////////
@@ -361,6 +297,9 @@ struct wllama_context
     bool n_ctx_auto = req.n_ctx_auto.value;
 
     common_params params;
+
+    assert(model_paths.size() > 0);
+    params.model.path = model_paths[0];
 
     // model params
     if (req.use_mmap.not_null())
@@ -424,12 +363,6 @@ struct wllama_context
       return res;
     }
 
-    // prepare model paths
-    std::vector<const char *> model_paths_ptrs;
-    for (auto &path : model_paths)
-    {
-      model_paths_ptrs.push_back(path.c_str());
-    }
     auto metadata = dump_metadata();
 
     // get EOG tokens
@@ -464,6 +397,42 @@ struct wllama_context
     res.add_eos_token.value = llama_vocab_get_add_eos(vocab) == 1;
     res.has_encoder.value = llama_model_has_encoder(model);
     res.token_decoder_start.value = llama_model_decoder_start_token(model);
+    return res;
+  }
+
+  glue_msg_completion_res action_completion(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_completion_req);
+    glue_msg_completion_res res;
+
+    // prepare
+    rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
+    last_error = "";
+    messages = json::parse(req.messages.value);
+    input_files.clear();
+    for (const auto &file : req.files.arr)
+    {
+      input_files.push_back(file);
+    }
+
+    // create completion task and post to the queue
+    create_completion_task();
+
+    res.success.value = true;
+    return res;
+  }
+
+  glue_msg_get_result_res action_get_result(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_get_result_req);
+    glue_msg_get_result_res res;
+
+    bool has_more = run_loop();
+    auto result = get_next_result();
+
+    res.success.value = true;
+    res.has_more.value = has_more;
+    res.data.value = result;
     return res;
   }
 };
@@ -539,20 +508,112 @@ void server_queue::cleanup_pending_task(int id_target)
 
 void server_queue::defer(server_task &&task)
 {
-  // TODO
+  assert(false && "should not be called in wllama");
 }
 
 void server_queue::pop_deferred_task(int id_slot)
 {
-  // TODO
+  // no deferred task in wllama, so this is a no-op
 }
 
 void server_response::send(server_task_result_ptr &&result)
 {
-  // TODO
+  queue_results.push_back(std::move(result));
+}
+
+void server_response::add_waiting_task_id(int id)
+{
+  // no-op
+}
+
+server_task_result_ptr server_response::recv(const std::unordered_set<int> &)
+{
+  for (size_t i = 0; i < queue_results.size(); i++)
+  {
+    server_task_result_ptr res = std::move(queue_results[i]);
+    queue_results.erase(queue_results.begin() + i);
+    return res;
+  }
+  return nullptr;
+}
+
+void server_queue::start_loop(int64_t idle_sleep_ms)
+{
+  while (true)
+  {
+    if (queue_tasks.empty())
+    {
+      break;
+    }
+    server_task task = std::move(queue_tasks.front());
+    queue_tasks.pop_front();
+
+    printf("processing task, id = %d\n", task.id);
+    callback_new_task(std::move(task));
+  }
+  // all tasks in the current loop is processed, slots data is now ready
+  printf("%s", "update slots\n");
+
+  // this will run the main inference process for all slots
+  callback_update_slots();
+
+  has_more_tasks = !queue_tasks.empty();
 }
 
 const char *llama_build_info()
 {
   return "wllama";
+}
+
+////////////////////////////
+// server_response_reader
+
+void server_response_reader::post_task(server_task &&task, bool front)
+{
+  GGML_ASSERT(id_tasks.empty() && "post_task() can only be called once per reader");
+  GGML_ASSERT(!task.is_parent() && "not supported, use post_tasks() instead");
+  task.index = 0;
+  id_tasks.insert(task.id);
+  states.push_back(task.create_state());
+  queue_results.add_waiting_task_id(task.id);
+  queue_tasks.post(std::move(task), front);
+}
+
+void server_response_reader::post_tasks(std::vector<server_task> &&tasks, bool front)
+{
+  GGML_ASSERT(id_tasks.empty() && "post_tasks() can only be called once per reader");
+  id_tasks = server_task::get_list_id(tasks);
+  states.reserve(tasks.size());
+  size_t index = 0;
+  for (auto &task : tasks)
+  {
+    task.index = index++;
+    states.push_back(task.create_state());
+    // for child tasks
+    for (auto &child_task : task.child_tasks)
+    {
+      child_task.index = index++;
+      states.push_back(child_task.create_state());
+    }
+  }
+  GGML_ASSERT(states.size() == id_tasks.size());
+  queue_results.add_waiting_task_ids(id_tasks);
+  queue_tasks.post(std::move(tasks), front);
+}
+
+bool server_response_reader::has_next() const
+{
+  return !cancelled && received_count < id_tasks.size();
+}
+
+// return nullptr if should_stop() is true before receiving a result
+// note: if one error is received, it will stop further processing and return error result
+server_task_result_ptr server_response_reader::next(const std::function<bool()> &should_stop)
+{
+  return queue_results.recv(id_tasks);
+}
+
+void server_response_reader::stop()
+{
+  // no-op
 }
