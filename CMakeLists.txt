@@ -8,16 +8,73 @@ set(CMAKE_USE_WIN32_THREADS_INIT 0)
 set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
-set(WLLAMA_SRC cpp/wllama.cpp
+file(GLOB_RECURSE LLAMA_COMMON_SRC
+    CONFIGURE_DEPENDS
+    llama.cpp/common/*.cpp
+    llama.cpp/common/*.h
+    llama.cpp/common/*.hpp
+    llama.cpp/common/jinja/*.cpp
+    llama.cpp/common/jinja/*.h
+)
+
+list(REMOVE_ITEM WLLAMA_SRC
+    llama.cpp/common/arg.cpp
+    llama.cpp/common/console.cpp
+    llama.cpp/common/debug.cpp
+    llama.cpp/common/fit.cpp
+    llama.cpp/common/hf-cache.cpp
+    llama.cpp/common/log.cpp
+    llama.cpp/common/preset.cpp
+)
+
+set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
+    llama.cpp/tools/server/server-task.cpp
+    llama.cpp/tools/server/server-chat.cpp
+    llama.cpp/tools/server/server-common.cpp
+)
+
+set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}
+    cpp/wllama.cpp
     cpp/actions.hpp
     cpp/glue.hpp
-    cpp/helpers/wlog.cpp
-    cpp/helpers/wcommon.cpp
-    cpp/helpers/wsampling.cpp
     llama.cpp/include/llama.h)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cpp)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cpp/helpers)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/vendor)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/server)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/mtmd)
 
 add_executable(wllama ${WLLAMA_SRC})
 target_link_libraries(wllama PRIVATE ggml llama ${CMAKE_THREAD_LIBS_INIT})
+
+set(EM_CXX_FLAGS
+    -O3 -msimd128 -DNDEBUG
+    -flto=full -frtti -fwasm-exceptions
+    -sMEMORY64=1
+)
+
+set(EM_LINK_FLAGS
+    --no-entry
+    -sEXPORT_ALL=1
+    -sEXPORT_ES6=0
+    -sMODULARIZE=0
+    -sINITIAL_MEMORY=128MB
+    -sMAXIMUM_MEMORY=4096MB
+    -sALLOW_MEMORY_GROWTH=1
+    -sFORCE_FILESYSTEM=1
+    -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
+    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
+    -sNO_EXIT_RUNTIME=1
+    -sIMPORTED_MEMORY=1
+)
+
+string(REPLACE ";" " " EM_CXX_FLAGS_STR "${EM_CXX_FLAGS}")
+string(REPLACE ";" " " EM_LINK_FLAGS_STR "${EM_LINK_FLAGS}")
+
+foreach(target IN ITEMS ggml wllama llama)
+    set_target_properties(${target} PROPERTIES
+        LINK_FLAGS "${EM_CXX_FLAGS_STR} ${EM_LINK_FLAGS_STR}"
+        COMPILE_FLAGS "${EM_CXX_FLAGS_STR}"
+    )
+endforeach()
