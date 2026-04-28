@@ -120,6 +120,27 @@ const wllama = new Wllama(WasmFromCDN);
 // NOTE: this is not recommended, only use when you can't embed wasm files in your project
 ```
 
+### Import a local GGUF into cache
+
+If you want users to pick a local GGUF file and reuse it across page refreshes,
+you can import it into the `ModelManager` cache:
+
+```ts
+import { ModelManager, Wllama } from '@wllama/wllama';
+
+const modelManager = new ModelManager();
+const modelFile = fileInput.files?.[0];
+
+if (modelFile) {
+  const model = await modelManager.importFile(modelFile);
+  const wllama = new Wllama(CONFIG_PATHS);
+  await wllama.loadModel(model);
+}
+```
+
+Imported files are stored in OPFS, so they stay available until the user clears
+site data or removes them from cache.
+
 ### Split model
 
 Cases where we want to split the model:

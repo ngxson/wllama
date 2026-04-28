@@ -12,7 +12,12 @@ export const useDidMount = (callback: () => any) =>
     callback();
   }, []);
 
-type StorageKey = 'conversations' | 'params' | 'welcome' | 'custom_models';
+type StorageKey =
+  | 'conversations'
+  | 'params'
+  | 'welcome'
+  | 'custom_models'
+  | 'loaded_model';
 
 export const WllamaStorage = {
   save<T>(key: StorageKey, data: T) {

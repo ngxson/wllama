@@ -321,4 +321,105 @@ export class ModelManager {
   async clear(): Promise<void> {
     await this.cacheManager.clear();
   }
+
+  /**
+   * Import a local GGUF file into the cache.
+   *
+   * The file will be stored in OPFS under a `local://` URL scheme.
+   * This allows local files to be treated the same as downloaded models,
+   * including persistence across page refreshes.
+   *
+   * @param file The File object to import
+   * @param progressCallback Optional callback for tracking import progress
+   * @returns A Model object representing the cached file
+   */
+  async importFile(
+    file: File,
+    progressCallback?: (progress: { loaded: number; total: number }) => void
+  ): Promise<Model> {
+    await validateLocalGgufFile(file);
+
+    const localUrl = await getLocalModelUrl(file);
+    const cacheEntry: CacheEntry = {
+      name: await this.cacheManager.getNameFromURL(localUrl),
+      size: file.size,
+      metadata: {
+        etag: '',
+        originalSize: file.size,
+        originalURL: localUrl,
+      },
+    };
+
+    await this.cacheManager.writeFileFromBlob(
+      localUrl,
+      file,
+      cacheEntry.metadata
+    );
+    progressCallback?.({ loaded: file.size, total: file.size });
+
+    return new Model(this, localUrl, [cacheEntry]);
+  }
+}
+
+const GGUF_MAGIC_NUMBER = new Uint8Array([0x47, 0x47, 0x55, 0x46]);
+const LOCAL_MODEL_SAMPLE_SIZE = 64 * 1024;
+
+async function validateLocalGgufFile(file: File): Promise<void> {
+  if (!isValidGgufFile(file.name)) {
+    throw new WllamaError(
+      `Invalid model file: ${file.name}; file name must end with ".gguf"`,
+      'download_error'
+    );
+  }
+
+  const headerBuf = await file.slice(0, GGUF_MAGIC_NUMBER.length).arrayBuffer();
+  const header = new Uint8Array(headerBuf);
+  const hasGgufMagic = GGUF_MAGIC_NUMBER.every((byte, index) => {
+    return header[index] === byte;
+  });
+
+  if (!hasGgufMagic) {
+    throw new WllamaError(
+      `Invalid model file: ${file.name}; file does not start with GGUF magic number`,
+      'download_error'
+    );
+  }
+}
+
+async function getLocalModelUrl(file: File): Promise<string> {
+  const fingerprint = await getLocalModelFingerprint(file);
+  return `local://${fingerprint}/${encodeURIComponent(file.name)}`;
+}
+
+async function getLocalModelFingerprint(file: File): Promise<string> {
+  const sampleBuffers: Uint8Array[] = [];
+  const headSize = Math.min(LOCAL_MODEL_SAMPLE_SIZE, file.size);
+  sampleBuffers.push(new Uint8Array(await file.slice(0, headSize).arrayBuffer()));
+
+  if (file.size > headSize) {
+    const tailSize = Math.min(LOCAL_MODEL_SAMPLE_SIZE, file.size - headSize);
+    sampleBuffers.push(
+      new Uint8Array(await file.slice(file.size - tailSize).arrayBuffer())
+    );
+  }
+
+  const metadata = new TextEncoder().encode(
+    `${file.size}:${file.lastModified}:${file.name}`
+  );
+  const hashInput = concatUint8Arrays([metadata, ...sampleBuffers]);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', hashInput));
+  return Array.from(digest)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function concatUint8Arrays(buffers: Uint8Array[]): Uint8Array {
+  const totalLength = buffers.reduce((sum, buffer) => sum + buffer.length, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const buffer of buffers) {
+    combined.set(buffer, offset);
+    offset += buffer.length;
+  }
+  return combined;
 }

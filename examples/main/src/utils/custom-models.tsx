@@ -27,6 +27,31 @@ export async function verifyCustomModel(url: string): Promise<DisplayedModel> {
   return new DisplayedModel(_url, await getModelSize(_url), true, undefined);
 }
 
+/**
+ * Verify a local file is a valid GGUF file
+ * @param file The File object from file input
+ * @throws Error if file is invalid
+ */
+export async function verifyLocalFile(file: File): Promise<void> {
+  if (!file.name.toLowerCase().endsWith('.gguf')) {
+    throw new Error('File must have .gguf extension');
+  }
+
+  if (file.size >= MAX_GGUF_SIZE) {
+    throw new Error(
+      'GGUF file is too big (max. 2GB per file). Please split the file into smaller shards (learn more in "Guide")'
+    );
+  }
+
+  const headerSlice = file.slice(0, 4);
+  const headerBuf = await headerSlice.arrayBuffer();
+  if (!checkBuffer(new Uint8Array(headerBuf), ggufMagicNumber)) {
+    throw new Error(
+      'Not a valid gguf file: not starting with GGUF magic number'
+    );
+  }
+}
+
 const checkBuffer = (buffer: Uint8Array, header: Uint8Array) => {
   for (let i = 0; i < header.length; i++) {
     if (header[i] !== buffer[i]) {
