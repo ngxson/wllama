@@ -15,6 +15,7 @@
 #include "wllama.h"
 
 #include "server-context.h"
+#include "server-queue.h"
 
 #include "glue.hpp"
 
@@ -97,7 +98,8 @@ struct kv_dump
 //////////////////////////////////////////
 //////////////////////////////////////////
 
-enum display_type {
+enum display_type
+{
   DISPLAY_TYPE_RESET = 0,
   DISPLAY_TYPE_INFO,
   DISPLAY_TYPE_PROMPT,
@@ -116,10 +118,12 @@ struct wllama_context
   std::vector<raw_buffer> input_files;
   task_params defaults;
 
-  std::function<bool()> should_stop = []() { return false; };
+  std::function<bool()> should_stop = []()
+  { return false; };
   std::string last_error;
 
-  struct dummy_atomic {
+  struct dummy_atomic
+  {
     bool value = false;
     void store(bool v) { value = v; }
     operator bool() const { return value; }
@@ -463,3 +467,92 @@ struct wllama_context
     return res;
   }
 };
+
+////////////////////////////
+// server_queue
+
+int server_queue::get_new_id()
+{
+  return id++;
+}
+
+int server_queue::post(server_task &&task, bool front)
+{
+  GGML_ASSERT(task.id != -1);
+  // if this is cancel task make sure to clean up pending tasks
+  if (task.type == SERVER_TASK_TYPE_CANCEL)
+  {
+    cleanup_pending_task(task.id_target);
+  }
+  const int task_id = task.id;
+  if (front)
+  {
+    queue_tasks.push_front(std::move(task));
+  }
+  else
+  {
+    queue_tasks.push_back(std::move(task));
+  }
+  time_last_task = ggml_time_ms();
+  return task_id;
+}
+
+int server_queue::post(std::vector<server_task> &&tasks, bool front)
+{
+  for (auto &task : tasks)
+  {
+    if (task.id == -1)
+    {
+      task.id = id++;
+    }
+    // if this is cancel task make sure to clean up pending tasks
+    if (task.type == SERVER_TASK_TYPE_CANCEL)
+    {
+      cleanup_pending_task(task.id_target);
+    }
+    if (front)
+    {
+      queue_tasks.push_front(std::move(task));
+    }
+    else
+    {
+      queue_tasks.push_back(std::move(task));
+    }
+  }
+  time_last_task = ggml_time_ms();
+  return 0;
+}
+
+void server_queue::cleanup_pending_task(int id_target)
+{
+  auto rm_func = [id_target](const server_task &task)
+  {
+    return task.id == id_target;
+  };
+  queue_tasks.erase(
+      std::remove_if(queue_tasks.begin(), queue_tasks.end(), rm_func),
+      queue_tasks.end());
+  queue_tasks_deferred.erase(
+      std::remove_if(queue_tasks_deferred.begin(), queue_tasks_deferred.end(), rm_func),
+      queue_tasks_deferred.end());
+}
+
+void server_queue::defer(server_task &&task)
+{
+  // TODO
+}
+
+void server_queue::pop_deferred_task(int id_slot)
+{
+  // TODO
+}
+
+void server_response::send(server_task_result_ptr &&result)
+{
+  // TODO
+}
+
+const char *llama_build_info()
+{
+  return "wllama";
+}

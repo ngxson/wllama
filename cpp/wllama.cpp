@@ -15,7 +15,7 @@
 // #define GLUE_DEBUG(...) fprintf(stderr, "@@ERROR@@" __VA_ARGS__)
 
 #include "llama.h"
-#include "actions.hpp"
+#include "wllama-context.h"
 #include "wllama.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))

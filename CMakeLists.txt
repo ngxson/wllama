@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.14)
 project("wllama")
 add_subdirectory(llama.cpp)
 
+set(LLAMA_INSTALL_VERSION 0.0.${LLAMA_BUILD_NUMBER})
+add_subdirectory(llama.cpp/tools/mtmd)
+
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 set(CMAKE_HAVE_THREADS_LIBRARY 1)
 set(CMAKE_USE_WIN32_THREADS_INIT 0)
@@ -35,7 +38,6 @@ set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
 
 set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}
     cpp/wllama.cpp
-    cpp/actions.hpp
     cpp/glue.hpp
     llama.cpp/include/llama.h)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cpp)
@@ -46,7 +48,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/server)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/mtmd)
 
 add_executable(wllama ${WLLAMA_SRC})
-target_link_libraries(wllama PRIVATE ggml llama ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(wllama PRIVATE ggml llama mtmd ${CMAKE_THREAD_LIBS_INIT})
 
 set(EM_CXX_FLAGS
     -O3 -msimd128 -DNDEBUG
@@ -72,7 +74,7 @@ set(EM_LINK_FLAGS
 string(REPLACE ";" " " EM_CXX_FLAGS_STR "${EM_CXX_FLAGS}")
 string(REPLACE ";" " " EM_LINK_FLAGS_STR "${EM_LINK_FLAGS}")
 
-foreach(target IN ITEMS ggml wllama llama)
+foreach(target IN ITEMS ggml wllama llama mtmd)
     set_target_properties(${target} PROPERTIES
         LINK_FLAGS "${EM_CXX_FLAGS_STR} ${EM_LINK_FLAGS_STR}"
         COMPILE_FLAGS "${EM_CXX_FLAGS_STR}"
