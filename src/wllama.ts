@@ -18,6 +18,8 @@ import type {
   GlueMsgLoadRes,
 } from './glue/messages';
 import { LIBLLAMA_VERSION } from './workers-code/generated';
+import type { LoadedContextInfo, LoadModelParams, StreamParams } from './types/types';
+import type { ChatCompletionChunk, ChatCompletionParams, ChatCompletionResponse, RawCompletionChunk, RawCompletionParams, RawCompletionResponse } from './types/oai-compat';
 
 const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
 const HF_MODEL_ID_REGEX_EXPLAIN =
@@ -72,131 +74,6 @@ export interface AssetsPathConfig {
   'multi-thread/wllama.wasm'?: string;
 }
 
-export interface LoadModelConfig {
-  seed?: number;
-  n_ctx?: number;
-  n_batch?: number;
-  // by default, on multi-thread build, we take half number of available threads (hardwareConcurrency / 2)
-  n_threads?: number;
-  embeddings?: boolean;
-  offload_kqv?: boolean;
-  pooling_type?:
-    | 'LLAMA_POOLING_TYPE_UNSPECIFIED'
-    | 'LLAMA_POOLING_TYPE_NONE'
-    | 'LLAMA_POOLING_TYPE_MEAN'
-    | 'LLAMA_POOLING_TYPE_CLS';
-  // context extending
-  rope_scaling_type?:
-    | 'LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED'
-    | 'LLAMA_ROPE_SCALING_TYPE_NONE'
-    | 'LLAMA_ROPE_SCALING_TYPE_LINEAR'
-    | 'LLAMA_ROPE_SCALING_TYPE_YARN';
-  rope_freq_base?: number;
-  rope_freq_scale?: number;
-  yarn_ext_factor?: number;
-  yarn_attn_factor?: number;
-  yarn_beta_fast?: number;
-  yarn_beta_slow?: number;
-  yarn_orig_ctx?: number;
-  // TODO: add group attention
-  // optimizations
-  cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
-  cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
-  flash_attn?: boolean; // true is auto, false is disabled
-}
-
-export interface SamplingConfig {
-  // See sampling.h for more details
-  mirostat?: number | undefined; // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
-  mirostat_eta?: number | undefined;
-  mirostat_tau?: number | undefined;
-  samplers_sequence?: string[] | undefined; // unused for now
-  temp?: number | undefined; // temperature
-  top_p?: number | undefined;
-  top_k?: number | undefined;
-  penalty_last_n?: number | undefined;
-  penalty_repeat?: number | undefined;
-  penalty_freq?: number | undefined;
-  penalty_present?: number | undefined;
-  dynatemp_range?: number | undefined;
-  dynatemp_exponent?: number | undefined;
-  grammar?: string;
-  n_prev?: number | undefined;
-  n_probs?: number | undefined;
-  min_p?: number | undefined;
-  typ_p?: number | undefined;
-  typical_p?: number | undefined;
-  logit_bias?: { token: number; bias: number }[] | undefined;
-}
-
-export interface CompletionChunk {
-  token: number;
-  piece: Uint8Array;
-  currentText: string;
-}
-
-export interface CompletionOptions {
-  /**
-   * When processing input prompt, we don't need to get output tokens. Only used by llama_decode()
-   * Default: false
-   */
-  skipLogits?: boolean;
-  /**
-   * Optional abort signal to stop the generation.
-   * This can also be used to stop during prompt processing. In this case, it will throw WllamaAbortError.
-   */
-  abortSignal?: AbortSignal;
-  /**
-   * If true, return an AsyncIterable instead of a string
-   */
-  stream?: boolean;
-}
-
-export interface ChatCompletionInput {
-  messages: WllamaChatMessage[];
-}
-
-export interface RawCompletionInput {
-  prompt: string;
-}
-
-export type CompletionInput = ChatCompletionInput | RawCompletionInput;
-
-export interface ChatCompletionOptions {
-  nPredict?: number;
-  onNewToken?(
-    token: number,
-    piece: Uint8Array,
-    currentText: string,
-    optionals: {
-      /**
-       * DEPRECATED, use ChatCompletionOptions["abortSignal"] instead
-       */
-      abortSignal: () => any;
-    }
-  ): any;
-  sampling?: SamplingConfig;
-  /**
-   * List of custom token IDs for stopping the generation.
-   * Note: To convert from text to token ID, use lookupToken()
-   */
-  stopTokens?: number[];
-  /**
-   * Equivalent to `cache_prompt` option in llama.cpp server.
-   * Useful for chat, because it skip evaluating the history part of the conversation.
-   */
-  useCache?: boolean;
-  /**
-   * Optional abort signal to stop the generation.
-   * This can also be used to stop during prompt processing (with a bit of delay.)
-   */
-  abortSignal?: AbortSignal;
-  /**
-   * If true, return an AsyncIterable instead of a string
-   */
-  stream?: boolean;
-}
-
 export interface ModelMetadata {
   hparams: {
     nVocab: number;
@@ -205,32 +82,6 @@ export interface ModelMetadata {
     nLayer: number;
   };
   meta: Record<string, string>;
-}
-
-export interface ContextOptions {
-  /**
-   * Allow switching between embeddings / generation mode. Useful for models like GritLM.
-   */
-  embeddings: boolean;
-}
-
-export interface LoadedContextInfo {
-  n_vocab: number;
-  n_ctx: number;
-  n_batch: number;
-  n_ubatch: number;
-  n_ctx_train: number;
-  n_embd: number;
-  n_layer: number;
-  metadata: Record<string, string>;
-  token_bos: number;
-  token_eos: number;
-  token_eot: number;
-  list_tokens_eog: number[];
-  has_encoder: boolean;
-  token_decoder_start: number;
-  add_bos_token: boolean;
-  add_eos_token: boolean;
 }
 
 /**
@@ -289,10 +140,8 @@ export class Wllama {
   private addEosToken: boolean = false;
   private chatTemplate?: string;
   private metadata?: ModelMetadata;
-  private samplingConfig: SamplingConfig = {};
   private hasEncoder: boolean = false;
   private decoderStartToken: number = -1;
-  private nCachedTokens: number = 0;
 
   constructor(pathConfig: AssetsPathConfig, wllamaConfig: WllamaConfig = {}) {
     checkEnvironmentCompatible();
@@ -486,19 +335,19 @@ export class Wllama {
    * - If the model already been downloaded (via `downloadModel()`), then we will use the cached model
    * - Else, we download the model from internet
    * @param modelUrl URL to the GGUF file. If the model is splitted, pass the URL to the first shard.
-   * @param config
+   * @param params
    */
   async loadModelFromUrl(
     modelUrl: string | string[],
-    config: LoadModelConfig & DownloadOptions & { useCache?: boolean } = {}
+    params: LoadModelParams & DownloadOptions & { useCache?: boolean } = {}
   ): Promise<void> {
     const url: string = isString(modelUrl) ? (modelUrl as string) : modelUrl[0];
-    const useCache = config.useCache ?? true;
+    const useCache = params.useCache ?? true;
     const model = useCache
-      ? await this.modelManager.getModelOrDownload(url, config)
-      : await this.modelManager.downloadModel(url, config);
+      ? await this.modelManager.getModelOrDownload(url, params)
+      : await this.modelManager.downloadModel(url, params);
     const blobs = await model.open();
-    return await this.loadModel(blobs, config);
+    return await this.loadModel(blobs, params);
   }
 
   /**
@@ -506,12 +355,12 @@ export class Wllama {
    *
    * @param modelId The HF model ID, for example: 'ggml-org/models'
    * @param filePath The GGUF file path, for example: 'tinyllamas/stories15M-q4_0.gguf'
-   * @param config
+   * @param params
    */
   async loadModelFromHF(
     modelId: string,
     filePath: string,
-    config: LoadModelConfig & DownloadOptions & { useCache?: boolean } = {}
+    params: LoadModelParams & DownloadOptions & { useCache?: boolean } = {}
   ) {
     if (!modelId.match(HF_MODEL_ID_REGEX)) {
       throw new WllamaError(HF_MODEL_ID_REGEX_EXPLAIN, 'download_error');
@@ -521,7 +370,7 @@ export class Wllama {
     }
     return await this.loadModelFromUrl(
       `https://huggingface.co/${modelId}/resolve/main/${filePath}`,
-      config
+      params
     );
   }
 
@@ -531,11 +380,11 @@ export class Wllama {
    * You can pass multiple buffers into the function (in case the model contains multiple shards).
    *
    * @param ggufBlobsOrModel Can be either list of Blobs (in case you use local file), or a Model object (in case you use ModelManager)
-   * @param config LoadModelConfig
+   * @param params LoadModelParams
    */
   async loadModel(
     ggufBlobsOrModel: Blob[] | Model,
-    config: LoadModelConfig = {}
+    params: LoadModelParams = {}
   ): Promise<void> {
     const blobs: Blob[] =
       ggufBlobsOrModel instanceof Model
@@ -565,7 +414,7 @@ export class Wllama {
       );
     }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
-    const nbThreads = config.n_threads ?? hwConccurency;
+    const nbThreads = params.n_threads ?? hwConccurency;
     this.nbThreads = nbThreads;
     this.useMultiThread =
       supportMultiThread && hasPathMultiThread && nbThreads > 1;
@@ -592,6 +441,7 @@ export class Wllama {
     }));
     await this.proxy.moduleInit(modelFiles);
     // run it
+    this.logger().debug('Calling wllamaStart...');
     const startResult: any = await this.proxy.wllamaStart();
     if (!startResult.success) {
       throw new WllamaError(
@@ -599,32 +449,33 @@ export class Wllama {
       );
     }
     // load the model
+    this.logger().debug('Loading model...');
     const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
       _name: 'load_req',
       use_mmap: true,
       use_mlock: true,
       n_gpu_layers: 0, // not supported for now
-      seed: config.seed || Math.floor(Math.random() * 100000),
-      n_ctx: config.n_ctx || 1024,
+      seed: params.seed || Math.floor(Math.random() * 100000),
+      n_ctx: params.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       n_ctx_auto: false, // not supported for now
       model_paths: modelFiles.map((f) => `models/${f.name}`),
-      embeddings: config.embeddings,
-      offload_kqv: config.offload_kqv,
-      n_batch: config.n_batch,
-      pooling_type: config.pooling_type as string,
-      rope_scaling_type: config.rope_scaling_type as string,
-      rope_freq_base: config.rope_freq_base,
-      rope_freq_scale: config.rope_freq_scale,
-      yarn_ext_factor: config.yarn_ext_factor,
-      yarn_attn_factor: config.yarn_attn_factor,
-      yarn_beta_fast: config.yarn_beta_fast,
-      yarn_beta_slow: config.yarn_beta_slow,
-      yarn_orig_ctx: config.yarn_orig_ctx,
-      cache_type_k: config.cache_type_k as string,
-      cache_type_v: config.cache_type_v as string,
+      embeddings: params.embeddings,
+      offload_kqv: params.offload_kqv,
+      n_batch: params.n_batch,
+      pooling_type: params.pooling_type as string,
+      rope_scaling_type: params.rope_scaling_type as string,
+      rope_freq_base: params.rope_freq_base,
+      rope_freq_scale: params.rope_freq_scale,
+      yarn_ext_factor: params.yarn_ext_factor,
+      yarn_attn_factor: params.yarn_attn_factor,
+      yarn_beta_fast: params.yarn_beta_fast,
+      yarn_beta_slow: params.yarn_beta_slow,
+      yarn_orig_ctx: params.yarn_orig_ctx,
+      cache_type_k: params.cache_type_k as string,
+      cache_type_v: params.cache_type_v as string,
       n_seq_max: 1, // only support single sequence for now
-      flash_attn: config.flash_attn,
+      flash_attn: params.flash_attn,
       swa_full: false, // TEST
       chat_template: "chatml", // TEST
       jinja: false, // TEST
@@ -640,7 +491,7 @@ export class Wllama {
     this.bosToken = loadedCtxInfo.token_bos;
     this.eosToken = loadedCtxInfo.token_eos;
     this.eotToken = loadedCtxInfo.token_eot;
-    this.useEmbeddings = !!config.embeddings;
+    this.useEmbeddings = !!params.embeddings;
     this.metadata = {
       hparams: {
         nVocab: loadedCtxInfo.n_vocab,
@@ -707,28 +558,22 @@ export class Wllama {
 
   /**
    * Make completion for a given chat messages.
-   *
-   * NOTE: this function uses the chat template (if available) to format the chat messages. If the template is not available, it will use the default format (chatml). It can throw an error if the chat template is not compatible.
-   *
    * @param messages Chat messages
    * @param options
    * @returns Output completion text (only the completion part)
    */
   async createChatCompletion(
-    messages: WllamaChatMessage[],
-    options: ChatCompletionOptions & { stream?: false }
-  ): Promise<string>;
+    options: ChatCompletionParams & { stream?: false }
+  ): Promise<ChatCompletionResponse>;
   async createChatCompletion(
-    messages: WllamaChatMessage[],
-    options: ChatCompletionOptions & { stream: true }
-  ): Promise<AsyncIterable<CompletionChunk>>;
+    options: ChatCompletionParams & StreamParams<ChatCompletionChunk>
+  ): Promise<AsyncIterable<ChatCompletionChunk>>;
   async createChatCompletion(
-    messages: WllamaChatMessage[],
-    options: ChatCompletionOptions
-  ): Promise<string | AsyncIterable<CompletionChunk>> {
+    options: ChatCompletionParams
+  ): Promise<ChatCompletionResponse | AsyncIterable<ChatCompletionChunk>> {
     return options.stream
-      ? await this.createCompletionGenerator({ messages }, options)
-      : await this.createCompletionImpl({ messages }, { ...options, stream: false });
+      ? await this.createCompletionGenerator(options)
+      : await this.createCompletionImpl({ ...options, stream: false });
   }
 
   /**
@@ -738,90 +583,114 @@ export class Wllama {
    * @returns Output completion text (only the completion part)
    */
   async createCompletion(
-    prompt: string,
-    options: ChatCompletionOptions & { stream?: false }
-  ): Promise<string>;
+    options: RawCompletionParams & { stream?: false }
+  ): Promise<RawCompletionResponse>;
   async createCompletion(
-    prompt: string,
-    options: ChatCompletionOptions & { stream: true }
-  ): Promise<AsyncIterable<CompletionChunk>>;
+    options: RawCompletionParams & StreamParams<RawCompletionChunk>
+  ): Promise<AsyncIterable<RawCompletionChunk>>;
   async createCompletion(
-    prompt: string,
-    options: ChatCompletionOptions
-  ): Promise<string | AsyncIterable<CompletionChunk>> {
+    options: RawCompletionParams
+  ): Promise<RawCompletionResponse | AsyncIterable<RawCompletionChunk>> {
     return options.stream
-      ? await this.createCompletionGenerator({ prompt }, options)
-      : await this.createCompletionImpl({ prompt }, { ...options, stream: false });
+      ? await this.createCompletionGenerator(options)
+      : await this.createCompletionImpl({ ...options, stream: false });
   }
 
   /**
    * Private implementation of createCompletion
    */
-  private async createCompletionImpl(
-    input: CompletionInput,
-    options: ChatCompletionOptions
-  ): Promise<string> {
+  private async createCompletionImpl<TOpt, TChunk>(
+    options: TOpt
+  ): Promise<TChunk> {
     this.checkModelLoaded();
-
-    const getMessagesJson = (input: CompletionInput): string | undefined => {
-      if ('messages' in input) {
-        return JSON.stringify(input.messages);
-      }
-      return undefined;
-    };
-
-    if ('prompt' in input) {
-      throw new WllamaError('Raw prompt input is not yet supported', 'inference_error');
-    }
-
+    
+    const isStream = !!(options as any).stream;
     const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
       'completion',
       {
         _name: 'cmpl_req',
-        messages: getMessagesJson(input) ?? '',
+        is_chat: !!(options as any).messages,
+        data_json: JSON.stringify(options),
         files: [], // TODO: support file input
       }
     );
 
-    console.log({ result });
+    let finalResult: any = null;
+    const jsonDecode = (data_json: string) => {
+      try {
+        return JSON.parse(data_json);
+      } catch (e) {
+        this.logger().error('Failed to parse JSON:', data_json);
+        throw new WllamaError('Failed to parse model output', 'inference_error');
+      }
+    }
 
     while (true) {
-      const result2 = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+      const result_chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
         'get_result',
         {
           _name: 'gres_req',
         }
       );
 
-      console.log({ result2 });
+      const jsonString = result_chunk.data_json;
+      if (!jsonString || jsonString.length === 0) {
+        if (!result_chunk.has_more) {
+          break;
+        } else {
+          continue;
+        }
+      }
 
-      if (!result2.has_more) {
+      let jsonData = jsonDecode(jsonString);
+      finalResult = jsonData;
+      if (result_chunk.is_error) {
+        this.logger().error('Model returned an error:', jsonData);
+        throw new WllamaError(
+          jsonData.message || 'Unknown inference error',
+          'inference_error'
+        );
+      }
+
+      if (isStream) {
+        if (!Array.isArray(jsonData)) {
+          jsonData = [jsonData];
+        }
+
+        for (const chunk of jsonData) {
+          (options as StreamParams<any>).onData?.(chunk);
+          finalResult = chunk;
+        }
+      }
+
+      if (!result_chunk.has_more) {
         break;
       }
     }
 
-    return "TODO";
+    return finalResult;
   }
 
   /**
    * Same with `createCompletion`, but returns an async iterator instead.
    */
-  private createCompletionGenerator(
-    input: CompletionInput,
-    options: Exclude<ChatCompletionOptions, 'onNewToken'>
-  ): Promise<AsyncIterable<CompletionChunk>> {
+  private createCompletionGenerator<TOpt, TChunk>(
+    options: Exclude<TOpt, 'onData'>
+  ): Promise<AsyncIterable<TChunk>> {
     return new Promise((resolve, reject) => {
+      const origOnData = (options as StreamParams<TChunk>).onData;
       const createGenerator = cbToAsyncIter(
-        (callback: (val?: CompletionChunk, done?: boolean) => void) => {
-          this.createCompletionImpl(input, {
+        (callback: (val?: TChunk) => void) => {
+          this.createCompletionImpl<TOpt, TChunk>({
             ...options,
-            onNewToken: (token, piece, currentText) => {
-              callback({ token, piece, currentText }, false);
+            onData: (chunk: TChunk) => {
+              callback(chunk);
+              origOnData?.(chunk);
             },
           })
             .catch(reject)
             .then(() => {
-              callback(undefined, true);
+              callback(undefined);
             });
         }
       );

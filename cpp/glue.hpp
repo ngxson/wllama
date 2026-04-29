@@ -553,32 +553,9 @@ struct glue_msg_load_res
 struct glue_msg_completion_req
 {
   GLUE_HANDLER("cmpl_req")
-  GLUE_FIELD(str, messages)
+  GLUE_FIELD(bool, is_chat)
+  GLUE_FIELD(str, data_json)
   GLUE_FIELD(arr_raw, files)
-
-  // sampling params
-  GLUE_FIELD_NULLABLE(int, mirostat)
-  GLUE_FIELD_NULLABLE(float, mirostat_tau)
-  GLUE_FIELD_NULLABLE(float, mirostat_eta)
-  GLUE_FIELD_NULLABLE(float, temp)
-  GLUE_FIELD_NULLABLE(float, top_p)
-  GLUE_FIELD_NULLABLE(int, top_k)
-  GLUE_FIELD_NULLABLE(int, penalty_last_n)
-  GLUE_FIELD_NULLABLE(float, penalty_repeat)
-  GLUE_FIELD_NULLABLE(float, penalty_freq)
-  GLUE_FIELD_NULLABLE(float, penalty_present)
-  GLUE_FIELD_NULLABLE(float, dynatemp_range)
-  GLUE_FIELD_NULLABLE(float, dynatemp_exponent)
-  GLUE_FIELD_NULLABLE(arr_str, samplers_sequence)
-  // GLUE_FIELD_NULLABLE(str, grammar)
-  GLUE_FIELD_NULLABLE(int, n_prev)
-  GLUE_FIELD_NULLABLE(int, n_probs)
-  GLUE_FIELD_NULLABLE(float, min_p)
-  GLUE_FIELD_NULLABLE(float, typical_p)
-  GLUE_FIELD_NULLABLE(float, typ_p)
-  // GLUE_FIELD_NULLABLE(arr_int, logit_bias_toks)
-  // GLUE_FIELD_NULLABLE(arr_float, logit_bias_vals)
-  // GLUE_FIELD_NULLABLE(arr_int, tokens)
 };
 
 struct glue_msg_completion_res
@@ -599,5 +576,6 @@ struct glue_msg_get_result_res
   GLUE_HANDLER("gres_res")
   GLUE_FIELD(bool, success)
   GLUE_FIELD(bool, has_more)
-  GLUE_FIELD(str, data)
+  GLUE_FIELD(bool, is_error)
+  GLUE_FIELD(str, data_json)
 };

@@ -97,31 +97,17 @@
 
       elemBtnCompletions.onclick = async () => {
         setCmplDisable(true);
-        /*await wllama.createCompletion(elemInput.value, {
-          nPredict: parseInt(elemNPredict.value),
-          sampling: {
-            temp: 0.5,
-            top_k: 40,
-            top_p: 0.9,
-          },
-          onNewToken: (token, piece, currentText) => {
-            elemOutputCmpl.textContent = currentText;
-          },
-        });*/
-        await wllama.createChatCompletion([
-          {
-            role: "user",
-            content: elemInput.value,
-          }
-        ], {
-          nPredict: parseInt(elemNPredict.value),
-          sampling: {
-            temp: 0.5,
-            top_k: 40,
-            top_p: 0.9,
-          },
-          onNewToken: (token, piece, currentText) => {
-            elemOutputCmpl.textContent = currentText;
+        elemOutputCmpl.textContent = '';
+        await wllama.createCompletion({
+          prompt: elemInput.value,
+          max_tokens: parseInt(elemNPredict.value),
+          temperature: 0.5,
+          top_k: 40,
+          top_p: 0.9,
+          stream: true,
+          onData: (chunk) => {
+            const txt = chunk.choices[0].text;
+            elemOutputCmpl.textContent += txt;
           },
         });
         setCmplDisable(false);

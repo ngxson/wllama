@@ -263,104 +263,19 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
     "className": "GlueMsgCompletionReq",
     "fields": [
       {
+        "type": "bool",
+        "name": "is_chat",
+        "isNullable": false
+      },
+      {
         "type": "str",
-        "name": "messages",
+        "name": "data_json",
         "isNullable": false
       },
       {
         "type": "arr_raw",
         "name": "files",
         "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "mirostat",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "mirostat_tau",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "mirostat_eta",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "temp",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "top_p",
-        "isNullable": true
-      },
-      {
-        "type": "int",
-        "name": "top_k",
-        "isNullable": true
-      },
-      {
-        "type": "int",
-        "name": "penalty_last_n",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "penalty_repeat",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "penalty_freq",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "penalty_present",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "dynatemp_range",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "dynatemp_exponent",
-        "isNullable": true
-      },
-      {
-        "type": "arr_str",
-        "name": "samplers_sequence",
-        "isNullable": true
-      },
-      {
-        "type": "int",
-        "name": "n_prev",
-        "isNullable": true
-      },
-      {
-        "type": "int",
-        "name": "n_probs",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "min_p",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "typical_p",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "typ_p",
-        "isNullable": true
       }
     ]
   },
@@ -398,8 +313,13 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "bool",
+        "name": "is_error",
+        "isNullable": false
+      },
+      {
         "type": "str",
-        "name": "data",
+        "name": "data_json",
         "isNullable": false
       }
     ]
@@ -470,26 +390,9 @@ export interface GlueMsgLoadRes {
 // struct glue_msg_completion_req
 export interface GlueMsgCompletionReq {
   _name: "cmpl_req";
-  messages: string;
+  is_chat: boolean;
+  data_json: string;
   files: Uint8Array[];
-  mirostat?: number | undefined;
-  mirostat_tau?: number | undefined;
-  mirostat_eta?: number | undefined;
-  temp?: number | undefined;
-  top_p?: number | undefined;
-  top_k?: number | undefined;
-  penalty_last_n?: number | undefined;
-  penalty_repeat?: number | undefined;
-  penalty_freq?: number | undefined;
-  penalty_present?: number | undefined;
-  dynatemp_range?: number | undefined;
-  dynatemp_exponent?: number | undefined;
-  samplers_sequence?: string[] | undefined;
-  n_prev?: number | undefined;
-  n_probs?: number | undefined;
-  min_p?: number | undefined;
-  typical_p?: number | undefined;
-  typ_p?: number | undefined;
 }
 
 // struct glue_msg_completion_res
@@ -508,7 +411,8 @@ export interface GlueMsgGetResultRes {
   _name: "gres_res";
   success: boolean;
   has_more: boolean;
-  data: string;
+  is_error: boolean;
+  data_json: string;
 }
 
 

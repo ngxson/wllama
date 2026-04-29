@@ -14,6 +14,7 @@
 #include "chat.h"
 #include "fit.h"
 #include "log.h"
+#include "download.h"
 #include "wllama.h"
 
 #include "server-context.h"
@@ -118,14 +119,14 @@ struct wllama_context
   llama_context *ctx = nullptr;
   const llama_model *model = nullptr;
   const llama_vocab *vocab = nullptr;
-  json messages = json::array();
-  std::vector<raw_buffer> input_files;
-  task_params defaults;
+  common_params params;
 
   std::function<bool()> should_stop = []()
   { return false; };
   std::string last_error;
+  // using unique_ptr to allow late initialization
   std::unique_ptr<server_response_reader> rd;
+  std::unique_ptr<const server_context_meta> meta;
 
   struct console
   {
@@ -139,111 +140,52 @@ struct wllama_context
   } console;
 
   explicit wllama_context() {};
-  explicit wllama_context(const common_params &params)
-  {
-    defaults.sampling = params.sampling;
-    defaults.speculative = params.speculative;
-    defaults.n_keep = params.n_keep;
-    defaults.n_predict = params.n_predict;
-    defaults.antiprompt = params.antiprompt;
-    defaults.stream = true;
-  }
 
-  void create_completion_task()
+  void create_completion_task(std::string &req_raw, std::vector<raw_buffer> &files, bool is_chat)
   {
-    auto chat_params = format_chat();
+    json body = json::parse(req_raw);
+    task_response_type res_type = TASK_RESPONSE_TYPE_OAI_CMPL;
+
+    if (is_chat)
     {
+      std::vector<raw_buffer> dummy_files; // unused
+      json body_parsed = oaicompat_chat_params_parse(
+          body,
+          meta->chat_params,
+          dummy_files);
+      body = std::move(body_parsed);
+      res_type = TASK_RESPONSE_TYPE_OAI_CHAT;
+    }
+
+    {
+      const auto &prompt = body.at("prompt");
+
       // TODO: reduce some copies here in the future
       server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
       task.id = rd->get_new_id();
       task.index = 0;
-      task.params = defaults;               // copy
-      task.cli_prompt = chat_params.prompt; // copy
-      task.cli_files = input_files;         // copy
+      task.params = server_task::params_from_json_cmpl(
+          vocab,
+          params,
+          meta->slot_n_ctx,
+          meta->logit_bias_eog,
+          body);
+      task.params.res_type = res_type;
+      task.cli_prompt = prompt;
+      task.cli_files = files;
       task.cli = true;
-
-      // chat template settings
-      task.params.chat_parser_params = common_chat_parser_params(chat_params);
-      task.params.chat_parser_params.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
-      if (!chat_params.parser.empty())
-      {
-        task.params.chat_parser_params.parser.load(chat_params.parser);
-      }
-
-      // reasoning budget sampler
-      if (!chat_params.thinking_end_tag.empty())
-      {
-        const llama_vocab *vocab = llama_model_get_vocab(
-            llama_get_model(ctx_server.get_llama_context()));
-
-        task.params.sampling.reasoning_budget_tokens = defaults.sampling.reasoning_budget_tokens;
-        task.params.sampling.generation_prompt = chat_params.generation_prompt;
-
-        if (!chat_params.thinking_start_tag.empty())
-        {
-          task.params.sampling.reasoning_budget_start =
-              common_tokenize(vocab, chat_params.thinking_start_tag, false, true);
-        }
-        task.params.sampling.reasoning_budget_end =
-            common_tokenize(vocab, chat_params.thinking_end_tag, false, true);
-        task.params.sampling.reasoning_budget_forced =
-            common_tokenize(vocab, defaults.sampling.reasoning_budget_message + chat_params.thinking_end_tag, false, true);
-      }
 
       rd->post_task({std::move(task)});
     }
   }
 
-  std::string get_next_result()
+  std::pair<std::string, bool> get_next_result()
   {
     server_task_result_ptr result = rd->next(should_stop);
-    return result ? result->to_json().dump() : "";
-  }
-
-  // TODO: support remote files in the future (http, https, etc)
-  std::string load_input_file(const std::string &fname, bool is_media)
-  {
-    std::ifstream file(fname, std::ios::binary);
-    if (!file)
-    {
-      return "";
-    }
-    if (is_media)
-    {
-      raw_buffer buf;
-      buf.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-      input_files.push_back(std::move(buf));
-      return get_media_marker();
-    }
+    if (result)
+      return {result->to_json().dump(), result->is_error()};
     else
-    {
-      std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-      return content;
-    }
-  }
-
-  common_chat_params format_chat()
-  {
-    auto meta = ctx_server.get_meta();
-    auto &chat_params = meta.chat_params;
-
-    auto caps = common_chat_templates_get_caps(chat_params.tmpls.get());
-
-    common_chat_templates_inputs inputs;
-    inputs.messages = common_chat_msgs_parse_oaicompat(messages);
-    inputs.tools = {}; // TODO
-    inputs.tool_choice = COMMON_CHAT_TOOL_CHOICE_NONE;
-    inputs.json_schema = ""; // TODO
-    inputs.grammar = "";     // TODO
-    inputs.use_jinja = chat_params.use_jinja;
-    inputs.parallel_tool_calls = caps["supports_parallel_tool_calls"];
-    inputs.add_generation_prompt = true;
-    inputs.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
-    inputs.force_pure_content = chat_params.force_pure_content;
-    inputs.enable_thinking = chat_params.enable_thinking ? common_chat_templates_support_enable_thinking(chat_params.tmpls.get()) : false;
-
-    // Apply chat template to the list of messages
-    return common_chat_templates_apply(chat_params.tmpls.get(), inputs);
+      return {"", false};
   }
 
   kv_dump dump_metadata()
@@ -297,8 +239,6 @@ struct wllama_context
     assert(ctx == nullptr);
     std::vector<std::string> &model_paths = req.model_paths.arr;
     bool n_ctx_auto = req.n_ctx_auto.value;
-
-    common_params params;
 
     assert(model_paths.size() > 0);
     params.model.path = model_paths[0];
@@ -372,6 +312,7 @@ struct wllama_context
     ctx = ctx_server.get_llama_context();
     model = llama_get_model(ctx);
     vocab = llama_model_get_vocab(model);
+    meta = std::make_unique<server_context_meta>(ctx_server.get_meta());
     auto metadata = dump_metadata();
 
     // get EOG tokens
@@ -417,15 +358,14 @@ struct wllama_context
     // prepare
     rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
     last_error = "";
-    messages = json::parse(req.messages.value);
-    input_files.clear();
+    std::vector<raw_buffer> input_files;
     for (const auto &file : req.files.arr)
     {
       input_files.push_back(file);
     }
 
     // create completion task and post to the queue
-    create_completion_task();
+    create_completion_task(req.data_json.value, input_files, req.is_chat.value);
 
     res.success.value = true;
     return res;
@@ -437,11 +377,12 @@ struct wllama_context
     glue_msg_get_result_res res;
 
     bool has_more = run_loop();
-    auto result = get_next_result();
+    auto [data_json, is_error] = get_next_result();
 
     res.success.value = true;
     res.has_more.value = has_more;
-    res.data.value = result;
+    res.data_json.value = data_json;
+    res.is_error.value = is_error;
     return res;
   }
 };
@@ -536,6 +477,14 @@ void server_response::add_waiting_task_id(int id)
   // no-op
 }
 
+void server_response::remove_waiting_task_ids(const std::unordered_set<int> &id_tasks)
+{
+  for (const auto &id_task : id_tasks)
+  {
+    waiting_task_ids.erase(id_task);
+  }
+}
+
 server_task_result_ptr server_response::recv(const std::unordered_set<int> &)
 {
   for (size_t i = 0; i < queue_results.size(); i++)
@@ -624,7 +573,7 @@ server_task_result_ptr server_response_reader::next(const std::function<bool()> 
 {
   LOG_DBG("%s\n", __func__);
   auto result = queue_results.recv(id_tasks);
-  if (!states.empty())
+  if (result && !states.empty())
   {
     // update the generation state if needed
     LOG_DBG("%s: update result\n", __func__);
@@ -632,12 +581,29 @@ server_task_result_ptr server_response_reader::next(const std::function<bool()> 
     GGML_ASSERT(idx < states.size());
     result->update(states[idx]);
   }
+  if (result && result->is_error())
+  {
+    LOG_DBG("%s: received error result, stop further processing\n", __func__);
+    stop();
+  }
   return result;
 }
 
 void server_response_reader::stop()
 {
-  // no-op
+  queue_results.remove_waiting_task_ids(id_tasks);
+  cancelled = true;
+  std::vector<server_task> cancel_tasks;
+  cancel_tasks.reserve(id_tasks.size());
+  for (const auto &id_task : id_tasks)
+  {
+    LOG_DBG("cancel task, id_task = %d\n", id_task);
+    server_task task(SERVER_TASK_TYPE_CANCEL);
+    task.id_target = id_task;
+    cancel_tasks.push_back(std::move(task));
+  }
+  // push to beginning of the queue, so it has highest priority
+  queue_tasks.post(std::move(cancel_tasks), true);
 }
 
 ////////////////////////////
@@ -734,4 +700,10 @@ enum common_params_fit_status common_fit_params(
     ggml_log_level log_level)
 {
   return COMMON_PARAMS_FIT_STATUS_FAILURE;
+}
+
+std::pair<long, std::vector<char>> common_remote_get_content(const std::string &url,
+                                                             const common_remote_params &params)
+{
+  throw std::runtime_error("common_remote_get_content is not implemented in wllama");
 }

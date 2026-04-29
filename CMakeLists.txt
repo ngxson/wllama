@@ -28,6 +28,7 @@ list(REMOVE_ITEM LLAMA_COMMON_SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/hf-cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/log.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/preset.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/download.cpp
 )
 
 set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
