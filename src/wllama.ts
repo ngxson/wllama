@@ -13,23 +13,9 @@ import {
 import CacheManager, { type DownloadOptions } from './cache-manager';
 import { ModelManager, Model } from './model-manager';
 import type {
-  GlueMsgChatFormatRes,
-  GlueMsgDecodeRes,
-  GlueMsgDetokenizeRes,
-  GlueMsgGetEmbeddingsRes,
-  GlueMsgGetKvClearRes,
-  GlueMsgGetKvRemoveRes,
-  GlueMsgGetLogitsRes,
-  GlueMsgGetVocabRes,
+  GlueMsgCompletionRes,
+  GlueMsgGetResultRes,
   GlueMsgLoadRes,
-  GlueMsgLookupTokenRes,
-  GlueMsgSamplingAcceptRes,
-  GlueMsgSamplingSampleRes,
-  GlueMsgSetOptionsRes,
-  GlueMsgStatusRes,
-  GlueMsgTestBenchmarkRes,
-  GlueMsgTestPerplexityRes,
-  GlueMsgTokenizeRes,
 } from './glue/messages';
 import { LIBLLAMA_VERSION } from './workers-code/generated';
 
@@ -165,6 +151,16 @@ export interface CompletionOptions {
    */
   stream?: boolean;
 }
+
+export interface ChatCompletionInput {
+  messages: WllamaChatMessage[];
+}
+
+export interface RawCompletionInput {
+  prompt: string;
+}
+
+export type CompletionInput = ChatCompletionInput | RawCompletionInput;
 
 export interface ChatCompletionOptions {
   nPredict?: number;
@@ -629,7 +625,9 @@ export class Wllama {
       cache_type_v: config.cache_type_v as string,
       n_seq_max: 1, // only support single sequence for now
       flash_attn: config.flash_attn,
-      swa_full: true, // TODO: properly support SWA
+      swa_full: false, // TEST
+      chat_template: "chatml", // TEST
+      jinja: false, // TEST
     });
     const loadedCtxInfo: LoadedContextInfo = {
       ...loadResult,
@@ -687,23 +685,24 @@ export class Wllama {
       skipEOS?: boolean;
     } = {}
   ): Promise<number[]> {
-    this.checkModelLoaded();
-    const opt = {
-      skipBOS: false,
-      skipEOS: false,
-      ...options,
-    };
-    await this.samplingInit(this.samplingConfig);
-    await this.kvClear();
-    const tokens = await this.tokenize(text);
-    if (this.bosToken && !opt.skipBOS) {
-      tokens.unshift(this.bosToken);
-    }
-    if (this.eosToken && !opt.skipEOS) {
-      tokens.push(this.eosToken);
-    }
-    const result = await this.embeddings(tokens);
-    return result;
+    throw new WllamaError('createEmbedding is not yet implemented', 'inference_error');
+    // this.checkModelLoaded();
+    // const opt = {
+    //   skipBOS: false,
+    //   skipEOS: false,
+    //   ...options,
+    // };
+    // await this.samplingInit(this.samplingConfig);
+    // await this.kvClear();
+    // const tokens = await this.tokenize(text);
+    // if (this.bosToken && !opt.skipBOS) {
+    //   tokens.unshift(this.bosToken);
+    // }
+    // if (this.eosToken && !opt.skipEOS) {
+    //   tokens.push(this.eosToken);
+    // }
+    // const result = await this.embeddings(tokens);
+    // return result;
   }
 
   /**
@@ -727,10 +726,9 @@ export class Wllama {
     messages: WllamaChatMessage[],
     options: ChatCompletionOptions
   ): Promise<string | AsyncIterable<CompletionChunk>> {
-    const prompt = await this.formatChat(messages, true);
     return options.stream
-      ? await this.createCompletionGenerator(prompt, options)
-      : await this.createCompletion(prompt, { ...options, stream: false });
+      ? await this.createCompletionGenerator({ messages }, options)
+      : await this.createCompletionImpl({ messages }, { ...options, stream: false });
   }
 
   /**
@@ -752,81 +750,70 @@ export class Wllama {
     options: ChatCompletionOptions
   ): Promise<string | AsyncIterable<CompletionChunk>> {
     return options.stream
-      ? await this.createCompletionGenerator(prompt, options)
-      : await this.createCompletionImpl(prompt, { ...options, stream: false });
+      ? await this.createCompletionGenerator({ prompt }, options)
+      : await this.createCompletionImpl({ prompt }, { ...options, stream: false });
   }
 
   /**
    * Private implementation of createCompletion
    */
   private async createCompletionImpl(
-    prompt: string,
+    input: CompletionInput,
     options: ChatCompletionOptions
   ): Promise<string> {
     this.checkModelLoaded();
-    this.samplingConfig = options.sampling ?? {};
-    await this.samplingInit(this.samplingConfig);
-    const stopTokens = new Set(options.stopTokens ?? []);
-    // process prompt
-    let tokens = await this.tokenize(prompt, true);
-    if (this.addBosToken && tokens[0] !== this.bosToken) {
-      tokens.unshift(this.bosToken);
-    }
-    // maybe reuse KV cache
-    if (options.useCache) {
-      tokens = await this.computeNonCachedTokens(tokens);
-    } else {
-      await this.kvClear();
-    }
-    // decode/encode tokens
-    await this.samplingAccept(tokens);
-    if (this.isEncoderDecoderArchitecture()) {
-      await this.encode(tokens);
-      await this.decode([this.getDecoderStartToken()], {});
-    } else {
-      await this.decode(tokens, {});
-    }
-    let outBuf = new Uint8Array();
-    // abort signal
-    let abort = false;
-    // abortSignalFn is a legacy function, use options.abortSignal instead
-    const abortSignalFn = () => {
-      abort = true;
+
+    const getMessagesJson = (input: CompletionInput): string | undefined => {
+      if ('messages' in input) {
+        return JSON.stringify(input.messages);
+      }
+      return undefined;
     };
-    // predict next tokens
-    for (let i = 0; i < (options.nPredict ?? Infinity); i++) {
-      const sampled = await this.samplingSample();
-      if (this.isTokenEOG(sampled.token) || stopTokens.has(sampled.token)) {
-        break; // stop token
-      }
-      // @ts-ignore Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'Uint8Array<ArrayBuffer>'
-      outBuf = joinBuffers([outBuf, sampled.piece]);
-      if (options.onNewToken) {
-        options.onNewToken(sampled.token, sampled.piece, bufToText(outBuf), {
-          abortSignal: abortSignalFn, // legacy
-        });
-      }
-      if (abort || options.abortSignal?.aborted) {
-        break; // abort signal is set
-      }
-      // decode next token
-      await this.samplingAccept([sampled.token]);
-      await this.decode([sampled.token], {});
+
+    if ('prompt' in input) {
+      throw new WllamaError('Raw prompt input is not yet supported', 'inference_error');
     }
-    return bufToText(outBuf);
+
+    const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
+      'completion',
+      {
+        _name: 'cmpl_req',
+        messages: getMessagesJson(input) ?? '',
+        files: [], // TODO: support file input
+      }
+    );
+
+    console.log({ result });
+
+    while (true) {
+      const result2 = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+        'get_result',
+        {
+          _name: 'gres_req',
+        }
+      );
+
+      console.log({ result2 });
+
+      if (!result2.has_more) {
+        break;
+      }
+    }
+
+    return "TODO";
   }
 
   /**
    * Same with `createCompletion`, but returns an async iterator instead.
    */
   private createCompletionGenerator(
-    prompt: string,
+    input: CompletionInput,
     options: Exclude<ChatCompletionOptions, 'onNewToken'>
   ): Promise<AsyncIterable<CompletionChunk>> {
     return new Promise((resolve, reject) => {
       const createGenerator = cbToAsyncIter(
         (callback: (val?: CompletionChunk, done?: boolean) => void) => {
-          this.createCompletionImpl(prompt, {
+          this.createCompletionImpl(input, {
             ...options,
             onNewToken: (token, piece, currentText) => {
               callback({ token, piece, currentText }, false);
@@ -845,477 +832,7 @@ export class Wllama {
   //////////////////////////////////////////////
   // Low level API
 
-  /**
-   * Create or reset the ctx_sampling
-   * @param config
-   * @param pastTokens In case re-initializing the ctx_sampling, you can re-import past tokens into the new context
-   */
-  async samplingInit(
-    config: SamplingConfig,
-    pastTokens: number[] = []
-  ): Promise<void> {
-    this.checkModelLoaded();
-    this.samplingConfig = config;
-    const logitBias = config.logit_bias ?? [];
-    const logitBiasTok = logitBias.map((b) => b.token);
-    const logitBiasVal = logitBias.map((b) => b.bias);
-    const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>(
-      'sampling_init',
-      {
-        _name: 'sint_req',
-        ...config,
-        logit_bias_toks: logitBiasTok,
-        logit_bias_vals: logitBiasVal,
-        tokens: pastTokens,
-      }
-    );
-    if (!result.success) {
-      throw new WllamaError('Failed to initialize sampling');
-    }
-  }
-
-  /**
-   * Get a list of pieces in vocab.
-   * NOTE: This function is slow, should only be used once.
-   * @returns A list of Uint8Array. The nth element in the list associated to nth token in vocab
-   */
-  async getVocab(): Promise<Uint8Array[]> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgGetVocabRes>(
-      'get_vocab',
-      {
-        _name: 'gvoc_req',
-      }
-    );
-    return result.vocab;
-  }
-
-  /**
-   * Lookup to see if a token exist in vocab or not. Useful for searching special tokens like "<|im_start|>"
-   * NOTE: It will match the whole token, so do not use it as a replacement for tokenize()
-   * @param piece
-   * @returns Token ID associated to the given piece. Returns -1 if cannot find the token.
-   */
-  async lookupToken(piece: string): Promise<number> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgLookupTokenRes>(
-      'lookup_token',
-      {
-        _name: 'lkup_req',
-        piece,
-      }
-    );
-    if (!result.success) {
-      return -1;
-    } else {
-      return result.token as number;
-    }
-  }
-
-  /**
-   * Convert a given text to list of tokens
-   * @param text
-   * @param special Should split special tokens?
-   * @returns List of token ID
-   */
-  async tokenize(text: string, special: boolean = true): Promise<number[]> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgTokenizeRes>(
-      'tokenize',
-      {
-        _name: 'tokn_req',
-        text,
-        special: !!special,
-      }
-    );
-    return result.tokens;
-  }
-
-  /**
-   * Convert a list of tokens to text
-   * @param tokens
-   * @param returnString Return a string instead of Uint8Array
-   * @returns Uint8Array, which maybe an unfinished unicode
-   */
-  async detokenize(tokens: number[], returnString?: false): Promise<Uint8Array>;
-  async detokenize(tokens: number[], returnString: true): Promise<string>;
-  async detokenize(
-    tokens: number[],
-    returnString: true | false = false
-  ): Promise<Uint8Array | string> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgDetokenizeRes>(
-      'detokenize',
-      {
-        _name: 'dtkn_req',
-        tokens,
-      }
-    );
-    return returnString ? bufToText(result.buffer) : result.buffer;
-  }
-
-  /**
-   * Run llama_decode()
-   * @param tokens A list of tokens to be decoded
-   * @param options Additional options
-   * @returns n_past (number of tokens so far in the sequence)
-   */
-  async decode(
-    tokens: number[],
-    options: CompletionOptions
-  ): Promise<{ nPast: number }> {
-    this.checkModelLoaded();
-    if (this.useEmbeddings) {
-      throw new WllamaError(
-        'embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.'
-      );
-    }
-    if (tokens.length === 0) {
-      // do not call llama_decode if list of tokens is empty
-      return {
-        nPast: this.nCachedTokens,
-      };
-    }
-    if (this.nCachedTokens + tokens.length > this.loadedContextInfo.n_ctx) {
-      throw new WllamaError(
-        'Running out of context cache. Please increase n_ctx when loading the model',
-        'kv_cache_full'
-      );
-    }
-    const batches = this.breakTokensIntoBatches(
-      tokens,
-      this.loadedContextInfo.n_batch
-    );
-    let result: any;
-    for (let i = 0; i < batches.length; i++) {
-      if (options?.abortSignal?.aborted) {
-        throw new WllamaAbortError();
-      }
-      const isNotLast = batches.length > 1 && i < batches.length - 1;
-      result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('decode', {
-        _name: 'deco_req',
-        tokens: batches[i],
-        skip_logits: options.skipLogits || isNotLast,
-      });
-      if (result.error) {
-        throw new WllamaError(result.error);
-      } else if (!result.success) {
-        throw new WllamaError('Cannot encode, unknown error');
-      }
-    }
-    this.nCachedTokens = result.n_past;
-    return { nPast: result.n_past };
-  }
-
-  /**
-   * Run llama_encode()
-   * @param tokens A list of tokens to be encoded
-   * @param options Additional options
-   * @returns n_past (number of tokens so far in the sequence)
-   */
-  async encode(
-    tokens: number[],
-    options?: CompletionOptions
-  ): Promise<{ nPast: number }> {
-    this.checkModelLoaded();
-    if (!this.hasEncoder) {
-      throw new WllamaError(
-        'This model does not use encoder-decoder architecture.',
-        'inference_error'
-      );
-    }
-    if (this.useEmbeddings) {
-      throw new WllamaError(
-        'embeddings is enabled. Use wllama.setOptions({ embeddings: false }) to disable it.',
-        'inference_error'
-      );
-    }
-    if (tokens.length === 0) {
-      // do not call llama_encode if list of tokens is empty
-      return {
-        nPast: this.nCachedTokens,
-      };
-    }
-    if (this.nCachedTokens + tokens.length > this.loadedContextInfo.n_ctx) {
-      throw new WllamaError(
-        'Running out of context cache. Please increase n_ctx when loading the model',
-        'kv_cache_full'
-      );
-    }
-    const batches = this.breakTokensIntoBatches(
-      tokens,
-      this.loadedContextInfo.n_batch
-    );
-    let result: any;
-    for (let i = 0; i < batches.length; i++) {
-      if (options?.abortSignal?.aborted) {
-        throw new WllamaAbortError();
-      }
-      result = await this.proxy.wllamaAction<GlueMsgDecodeRes>('encode', {
-        _name: 'enco_req',
-        tokens: batches[i],
-      });
-      if (result.error) {
-        throw new WllamaError(result.error);
-      } else if (!result.success) {
-        throw new WllamaError('Cannot encode, unknown error');
-      }
-    }
-    this.nCachedTokens = result.n_past;
-    return { nPast: result.n_past };
-  }
-
-  private breakTokensIntoBatches(
-    tokens: number[],
-    maxBatchSize: number
-  ): number[][] {
-    const batches: number[][] = [];
-    for (let i = 0; i < tokens.length; i += maxBatchSize) {
-      batches.push(tokens.slice(i, i + maxBatchSize));
-    }
-    return batches;
-  }
-
-  /**
-   * Sample a new token (remember to samplingInit() at least once before calling this function)
-   * @returns the token ID and its detokenized value (which maybe an unfinished unicode)
-   */
-  async samplingSample(): Promise<{ piece: Uint8Array; token: number }> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgSamplingSampleRes>(
-      'sampling_sample',
-      {
-        _name: 'ssam_req',
-      }
-    );
-    return {
-      piece: result.piece,
-      token: result.token,
-    };
-  }
-
-  /**
-   * Accept and save a new token to ctx_sampling
-   * @param tokens
-   */
-  async samplingAccept(tokens: number[]): Promise<void> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgSamplingAcceptRes>(
-      'sampling_accept',
-      {
-        _name: 'sacc_req',
-        tokens,
-      }
-    );
-    if (!result.success) {
-      throw new WllamaError('samplingAccept unknown error');
-    }
-  }
-
-  /**
-   * Get softmax-ed probability of logits, can be used for custom sampling
-   * @param topK Get top K tokens having highest logits value. If topK == -1, we return all n_vocab logits, but this is not recommended because it's slow.
-   */
-  async getLogits(topK: number = 40): Promise<{ token: number; p: number }[]> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgGetLogitsRes>(
-      'get_logits',
-      {
-        _name: 'glog_req',
-        top_k: topK,
-      }
-    );
-    const logits: { token: number; p: number }[] = [];
-    for (let i = 0; i < result.tokens.length; i++) {
-      logits.push({
-        token: result.tokens[i],
-        p: result.probs[i],
-      });
-    }
-    return logits;
-  }
-
-  /**
-   * Calculate embeddings for a given list of tokens. Output vector is always normalized
-   * @param tokens
-   * @returns A list of number represents an embedding vector of N dimensions
-   */
-  async embeddings(tokens: number[]): Promise<number[]> {
-    this.checkModelLoaded();
-    if (!this.useEmbeddings) {
-      throw new WllamaError(
-        'embeddings is disabled. Use wllama.setOptions({ embeddings: true }) to enable it.',
-        'inference_error'
-      );
-    }
-    if (this.nCachedTokens > 0) {
-      this.logger().warn(
-        'Embeddings: KV cache is not empty, this may produce incorrect results'
-      );
-    }
-    if (this.nCachedTokens + tokens.length > this.loadedContextInfo.n_ctx) {
-      throw new WllamaError(
-        'Running out of context cache. Please increase n_ctx when loading the model',
-        'kv_cache_full'
-      );
-    }
-    if (tokens.length > this.loadedContextInfo.n_batch) {
-      throw new WllamaError(
-        'Embedding tokens does not fit into batch. Please increase n_batch when loading the model',
-        'inference_error'
-      );
-    }
-    if (tokens.length > this.loadedContextInfo.n_ubatch) {
-      throw new WllamaError(
-        'Embedding tokens does not fit into physical batch. Please increase n_ubatch when loading the model',
-        'inference_error'
-      );
-    }
-    const result = await this.proxy.wllamaAction<GlueMsgGetEmbeddingsRes>(
-      'embeddings',
-      {
-        _name: 'gemb_req',
-        tokens,
-      }
-    );
-    if (!result.success) {
-      throw new WllamaError('embeddings unknown error');
-    } else {
-      return result.embeddings;
-    }
-  }
-
-  /**
-   * Remove and shift some tokens from KV cache.
-   * Keep n_keep, remove n_discard then shift the rest
-   * @param nKeep
-   * @param nDiscard
-   */
-  async kvRemove(nKeep: number, nDiscard: number): Promise<void> {
-    this.checkModelLoaded();
-    if (nDiscard === 0) return;
-    const result = await this.proxy.wllamaAction<GlueMsgGetKvRemoveRes>(
-      'kv_remove',
-      {
-        _name: 'kvcr_req',
-        n_keep: nKeep,
-        n_discard: nDiscard,
-      }
-    );
-    if (!result.success) {
-      throw new WllamaError('kvRemove unknown error');
-    }
-    // When nDiscard is negative (-1), it means remove everything after nKeep
-    if (nDiscard < 0) {
-      this.nCachedTokens = nKeep;
-    } else {
-      this.nCachedTokens -= nDiscard;
-    }
-  }
-
-  /**
-   * Clear all tokens in KV cache
-   */
-  async kvClear(): Promise<void> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgGetKvClearRes>(
-      'kv_clear',
-      {
-        _name: 'kvcc_req',
-      }
-    );
-    if (!result.success) {
-      throw new WllamaError('kvClear unknown error');
-    }
-    this.nCachedTokens = 0;
-  }
-
-  /**
-   * Save session to file (virtual file system)
-   * TODO: add ability to download the file
-   * @param filePath
-   * @returns List of tokens saved to the file
-   */
-  // async sessionSave(filePath: string): Promise<{ tokens: number[] }> {
-  //   this.checkModelLoaded();
-  //   const result = await this.proxy.wllamaAction('session_save', {
-  //     session_path: filePath,
-  //   });
-  //   return result;
-  // }
-
-  /**
-   * Load session from file (virtual file system)
-   * TODO: add ability to download the file
-   * @param filePath
-   */
-  // async sessionLoad(filePath: string): Promise<void> {
-  //   this.checkModelLoaded();
-  //   const result = await this.proxy.wllamaAction('session_load', {
-  //     session_path: filePath,
-  //   });
-  //   if (result.error) {
-  //     throw new WllamaError(result.error);
-  //   } else if (!result.success) {
-  //     throw new WllamaError('sessionLoad unknown error');
-  //   }
-  //   const cachedTokens = await this.getCachedTokens();
-  //   this.nCachedTokens = cachedTokens.length;
-  // }
-
-  /**
-   * Apply chat template to a list of messages
-   *
-   * @param messages list of messages
-   * @param addAssistant whether to add assistant prompt at the end
-   * @param template (optional) custom template, see llama-server --chat-template argument for more details
-   * @returns formatted chat
-   */
-  async formatChat(
-    messages: WllamaChatMessage[],
-    addAssistant: boolean,
-    template?: string
-  ): Promise<string> {
-    this.checkModelLoaded();
-    const roles = messages.map((m) => m.role);
-    const contents = messages.map((m) => m.content);
-    const result = await this.proxy.wllamaAction<GlueMsgChatFormatRes>(
-      'chat_format',
-      {
-        _name: 'cfmt_req',
-        roles,
-        contents,
-        tmpl: template,
-        add_ass: addAssistant,
-      }
-    );
-    if (!result.success) {
-      throw new WllamaError('formatChat unknown error');
-    }
-    return result.formatted_chat;
-  }
-
-  /**
-   * Set options for underlaying llama_context
-   */
-  async setOptions(opt: ContextOptions): Promise<void> {
-    this.checkModelLoaded();
-    await this.proxy.wllamaAction<GlueMsgSetOptionsRes>('set_options', {
-      _name: 'opti_req',
-      ...opt,
-    });
-    this.useEmbeddings = opt.embeddings;
-  }
-
-  /**
-   * Unload the model and free all memory.
-   *
-   * Note: This function will NOT crash if model is not yet loaded
-   */
-  async exit(): Promise<void> {
-    await this.proxy?.wllamaExit();
-    this.proxy = null as any;
-  }
+  // TODO: add back
 
   /**
    * get debug info
@@ -1324,73 +841,4 @@ export class Wllama {
     this.checkModelLoaded();
     return await this.proxy.wllamaDebug();
   }
-
-  /**
-   * benchmark function, only used internally
-   */
-  async _testBenchmark(
-    type: 'tg' | 'pp',
-    nSamples: number
-  ): Promise<{ t_ms: number }> {
-    this.checkModelLoaded();
-    return await this.proxy.wllamaAction<GlueMsgTestBenchmarkRes>(
-      'test_benchmark',
-      {
-        _name: 'tben_req',
-        type,
-        n_samples: nSamples,
-      }
-    );
-  }
-
-  /**
-   * perplexity function, only used internally
-   */
-  async _testPerplexity(tokens: number[]): Promise<{ ppl: number }> {
-    this.checkModelLoaded();
-    return await this.proxy.wllamaAction<GlueMsgTestPerplexityRes>(
-      'test_perplexity',
-      {
-        _name: 'tper_req',
-        tokens,
-      }
-    );
-  }
-
-  ///// Prompt cache utils /////
-  private async getCachedTokens(): Promise<number[]> {
-    this.checkModelLoaded();
-    const result = await this.proxy.wllamaAction<GlueMsgStatusRes>(
-      'current_status',
-      {
-        _name: 'stat_req',
-      }
-    );
-    return result.tokens;
-  }
-
-  /**
-   * Compare the input sequence and cachedToken, then return the part that is not in cache.
-   * This function also remove mismatch part in cache (via kvRemove)
-   */
-  private async computeNonCachedTokens(seq: number[]): Promise<number[]> {
-    const cachedTokens = await this.getCachedTokens();
-    let nKeep = 0;
-    for (; nKeep < Math.min(cachedTokens.length, seq.length); nKeep++) {
-      if (cachedTokens[nKeep] !== seq[nKeep]) {
-        break;
-      }
-    }
-    this.logger().debug(`Cache nKeep=${nKeep}`);
-    try {
-      await this.kvRemove(nKeep, -1);
-      return seq.slice(nKeep, seq.length);
-    } catch (e) {
-      this.logger().warn('Failed to rollback KV cache, clearing it instead');
-      await this.kvClear();
-      return seq;
-    }
-  }
-
-  // TODO: add current_status
 }

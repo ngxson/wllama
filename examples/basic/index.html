@@ -97,7 +97,23 @@
 
       elemBtnCompletions.onclick = async () => {
         setCmplDisable(true);
-        await wllama.createCompletion(elemInput.value, {
+        /*await wllama.createCompletion(elemInput.value, {
+          nPredict: parseInt(elemNPredict.value),
+          sampling: {
+            temp: 0.5,
+            top_k: 40,
+            top_p: 0.9,
+          },
+          onNewToken: (token, piece, currentText) => {
+            elemOutputCmpl.textContent = currentText;
+          },
+        });*/
+        await wllama.createChatCompletion([
+          {
+            role: "user",
+            content: elemInput.value,
+          }
+        ], {
           nPredict: parseInt(elemNPredict.value),
           sampling: {
             temp: 0.5,

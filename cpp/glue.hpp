@@ -521,6 +521,8 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(str, cache_type_v)
   GLUE_FIELD_NULLABLE(bool, flash_attn)
   GLUE_FIELD_NULLABLE(bool, swa_full)
+  GLUE_FIELD_NULLABLE(str, chat_template)
+  GLUE_FIELD_NULLABLE(bool, jinja)
 };
 
 struct glue_msg_load_res

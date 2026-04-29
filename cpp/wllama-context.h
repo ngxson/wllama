@@ -12,6 +12,8 @@
 #include "common.h"
 #include "sampling.h"
 #include "chat.h"
+#include "fit.h"
+#include "log.h"
 #include "wllama.h"
 
 #include "server-context.h"
@@ -114,8 +116,8 @@ struct wllama_context
 {
   server_context ctx_server;
   llama_context *ctx = nullptr;
-  llama_model *model = nullptr;
-  llama_vocab *vocab = nullptr;
+  const llama_model *model = nullptr;
+  const llama_vocab *vocab = nullptr;
   json messages = json::array();
   std::vector<raw_buffer> input_files;
   task_params defaults;
@@ -347,8 +349,10 @@ struct wllama_context
       params.cache_type_v = kv_cache_type_from_str(req.cache_type_v.value);
     if (req.swa_full.not_null())
       params.swa_full = req.swa_full.value;
-    if (req.flash_attn.not_null())
-      params.flash_attn_type = req.flash_attn.value ? LLAMA_FLASH_ATTN_TYPE_AUTO : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    if (req.chat_template.not_null())
+      params.chat_template = req.chat_template.value;
+    if (req.jinja.not_null())
+      params.use_jinja = req.jinja.value;
 
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);
@@ -363,6 +367,11 @@ struct wllama_context
       return res;
     }
 
+    LOG_INF("%s", "Model loaded successfully\n");
+
+    ctx = ctx_server.get_llama_context();
+    model = llama_get_model(ctx);
+    vocab = llama_model_get_vocab(model);
     auto metadata = dump_metadata();
 
     // get EOG tokens
@@ -518,6 +527,7 @@ void server_queue::pop_deferred_task(int id_slot)
 
 void server_response::send(server_task_result_ptr &&result)
 {
+  LOG_DBG("%s\n", __func__);
   queue_results.push_back(std::move(result));
 }
 
@@ -548,11 +558,11 @@ void server_queue::start_loop(int64_t idle_sleep_ms)
     server_task task = std::move(queue_tasks.front());
     queue_tasks.pop_front();
 
-    printf("processing task, id = %d\n", task.id);
+    LOG_DBG("processing task, id = %d\n", task.id);
     callback_new_task(std::move(task));
   }
   // all tasks in the current loop is processed, slots data is now ready
-  printf("%s", "update slots\n");
+  LOG_DBG("%s", "update slots\n");
 
   // this will run the main inference process for all slots
   callback_update_slots();
@@ -570,6 +580,7 @@ const char *llama_build_info()
 
 void server_response_reader::post_task(server_task &&task, bool front)
 {
+  LOG_DBG("%s\n", __func__);
   GGML_ASSERT(id_tasks.empty() && "post_task() can only be called once per reader");
   GGML_ASSERT(!task.is_parent() && "not supported, use post_tasks() instead");
   task.index = 0;
@@ -581,6 +592,7 @@ void server_response_reader::post_task(server_task &&task, bool front)
 
 void server_response_reader::post_tasks(std::vector<server_task> &&tasks, bool front)
 {
+  LOG_DBG("%s\n", __func__);
   GGML_ASSERT(id_tasks.empty() && "post_tasks() can only be called once per reader");
   id_tasks = server_task::get_list_id(tasks);
   states.reserve(tasks.size());
@@ -610,10 +622,116 @@ bool server_response_reader::has_next() const
 // note: if one error is received, it will stop further processing and return error result
 server_task_result_ptr server_response_reader::next(const std::function<bool()> &should_stop)
 {
-  return queue_results.recv(id_tasks);
+  LOG_DBG("%s\n", __func__);
+  auto result = queue_results.recv(id_tasks);
+  if (!states.empty())
+  {
+    // update the generation state if needed
+    LOG_DBG("%s: update result\n", __func__);
+    const size_t idx = result->index;
+    GGML_ASSERT(idx < states.size());
+    result->update(states[idx]);
+  }
+  return result;
 }
 
 void server_response_reader::stop()
 {
   // no-op
+}
+
+////////////////////////////
+// common_log
+
+int common_log_verbosity_thold = LOG_LEVEL_INFO;
+
+int common_log_get_verbosity_thold(void)
+{
+  return common_log_verbosity_thold;
+}
+
+void common_log_set_verbosity_thold(int verbosity)
+{
+  common_log_verbosity_thold = verbosity;
+}
+
+struct common_log
+{
+  void add(enum ggml_log_level level, const char *fmt, va_list args)
+  {
+    static std::vector<char> msg;
+
+    const size_t n = vsnprintf(msg.data(), msg.size(), fmt, args);
+    if (n >= msg.size())
+    {
+      msg.resize(n + 1);
+      // cannot use args twice, so make a copy in case we need to expand the buffer
+      va_list args_copy;
+      va_copy(args_copy, args);
+      vsnprintf(msg.data(), msg.size(), fmt, args_copy);
+    }
+
+    printf("%s", msg.data());
+  }
+};
+
+struct common_log *common_log_init()
+{
+  return new common_log;
+}
+
+struct common_log *common_log_main()
+{
+  static struct common_log log;
+  return &log;
+}
+
+void common_log_add(struct common_log *log, enum ggml_log_level level, const char *fmt, ...)
+{
+  va_list args;
+  va_start(args, fmt);
+  log->add(level, fmt, args);
+  va_end(args);
+}
+
+static int common_get_verbosity(enum ggml_log_level level)
+{
+  switch (level)
+  {
+  case GGML_LOG_LEVEL_DEBUG:
+    return LOG_LEVEL_DEBUG;
+  case GGML_LOG_LEVEL_INFO:
+    return LOG_LEVEL_INFO;
+  case GGML_LOG_LEVEL_WARN:
+    return LOG_LEVEL_WARN;
+  case GGML_LOG_LEVEL_ERROR:
+    return LOG_LEVEL_ERROR;
+  case GGML_LOG_LEVEL_CONT:
+    return LOG_LEVEL_INFO; // same as INFO
+  case GGML_LOG_LEVEL_NONE:
+  default:
+    return LOG_LEVEL_OUTPUT;
+  }
+}
+
+void common_log_default_callback(enum ggml_log_level level, const char *text, void * /*user_data*/)
+{
+  auto verbosity = common_get_verbosity(level);
+  if (verbosity <= common_log_verbosity_thold)
+  {
+    common_log_add(common_log_main(), level, "%s", text);
+  }
+}
+
+enum common_params_fit_status common_fit_params(
+    const char *path_model,
+    llama_model_params *mparams,
+    llama_context_params *cparams,
+    float *tensor_split,
+    llama_model_tensor_buft_override *tensor_buft_overrides,
+    size_t *margins,
+    uint32_t n_ctx_min,
+    ggml_log_level log_level)
+{
+  return COMMON_PARAMS_FIT_STATUS_FAILURE;
 }
