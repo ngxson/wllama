@@ -1,3 +1,6 @@
+import { WllamaError } from './wllama';
+import type { WllamaLogger } from './wllama';
+
 export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
   const output = new Uint8Array(totalSize);

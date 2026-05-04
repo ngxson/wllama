@@ -501,9 +501,9 @@ struct glue_msg_load_req
   GLUE_FIELD(bool, use_mmap)
   GLUE_FIELD(bool, use_mlock)
   GLUE_FIELD(int, n_gpu_layers)
-  GLUE_FIELD(int, seed)
   GLUE_FIELD(int, n_ctx)
   GLUE_FIELD(int, n_threads)
+  GLUE_FIELD_NULLABLE(int, log_level)
   GLUE_FIELD_NULLABLE(bool, embeddings)
   GLUE_FIELD_NULLABLE(bool, offload_kqv)
   GLUE_FIELD_NULLABLE(int, n_batch)
@@ -561,6 +561,21 @@ struct glue_msg_completion_req
 struct glue_msg_completion_res
 {
   GLUE_HANDLER("cmpl_res")
+  GLUE_FIELD(bool, success)
+};
+
+/////////
+
+struct glue_msg_embedding_req
+{
+  GLUE_HANDLER("embd_req")
+  GLUE_FIELD(str, data_json)
+  GLUE_FIELD(arr_raw, files)
+};
+
+struct glue_msg_embedding_res
+{
+  GLUE_HANDLER("embd_res")
   GLUE_FIELD(bool, success)
 };
 

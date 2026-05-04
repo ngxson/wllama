@@ -1,4 +1,6 @@
+// Note: snake_case is used to match llama.cpp's naming convention
 export interface LoadModelParams {
+  log_level?: LogLevel;
   seed?: number;
   n_ctx?: number;
   n_batch?: number;
@@ -34,6 +36,7 @@ export interface LoadModelParams {
   jinja?: boolean;
 }
 
+// Note: snake_case is used to match llama.cpp's naming convention
 export interface LoadedContextInfo {
   n_vocab: number;
   n_ctx: number;
@@ -53,6 +56,7 @@ export interface LoadedContextInfo {
   add_eos_token: boolean;
 }
 
+// Note: snake_case is used to match llama.cpp's naming convention
 export interface SamplingParams {
   // See sampling.h for more details
   seed?: number;
@@ -76,10 +80,17 @@ export interface SamplingParams {
   typ_p?: number | undefined;
   typical_p?: number | undefined;
   logit_bias?: { token: number; bias: number }[] | undefined;
-};
+}
 
 export interface StreamParams<T> {
   stream: true;
   onData: (data: T) => void;
   abortSignal?: AbortSignal;
-};
+}
+
+export enum LogLevel {
+  DEBUG = 1,
+  INFO = 2,
+  WARN = 3,
+  ERROR = 4,
+}

@@ -58,7 +58,7 @@ export interface CacheEntryMetadata {
  *
  * This class is also responsible for downloading files from the internet.
  */
-class CacheManager {
+export class CacheManager {
   /**
    * Convert a given URL into file name in cache.
    *

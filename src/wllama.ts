@@ -1,12 +1,10 @@
 import { ProxyToWorker } from './worker';
 import {
   absoluteUrl,
-  bufToText,
   cbToAsyncIter,
   checkEnvironmentCompatible,
   isString,
   isSupportMultiThread,
-  joinBuffers,
   sortFileByShard,
   isValidGgufFile,
 } from './utils';
@@ -18,8 +16,22 @@ import type {
   GlueMsgLoadRes,
 } from './glue/messages';
 import { LIBLLAMA_VERSION } from './workers-code/generated';
-import type { LoadedContextInfo, LoadModelParams, StreamParams } from './types/types';
-import type { ChatCompletionChunk, ChatCompletionParams, ChatCompletionResponse, RawCompletionChunk, RawCompletionParams, RawCompletionResponse } from './types/oai-compat';
+import type {
+  LoadedContextInfo,
+  LoadModelParams,
+  StreamParams,
+} from './types/types';
+import type {
+  ChatCompletionChunk,
+  ChatCompletionParams,
+  ChatCompletionResponse,
+  CreateEmbeddingResponse,
+  EmbeddingCreateParams,
+  RawCompletionChunk,
+  RawCompletionParams,
+  RawCompletionResponse,
+} from './types/oai-compat';
+import { LogLevel } from './types/types';
 
 const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
 const HF_MODEL_ID_REGEX_EXPLAIN =
@@ -132,6 +144,7 @@ export class Wllama {
   private useEmbeddings: boolean = false;
   // available when loaded
   private loadedContextInfo: LoadedContextInfo = null as any;
+  private seed: number | undefined = undefined;
   private bosToken: number = -1;
   private eosToken: number = -1;
   private eotToken: number = -1;
@@ -429,17 +442,25 @@ export class Wllama {
             this.pathConfig['single-thread/wllama.wasm']
           ),
         };
+
+    // initialize the worker
     this.proxy = new ProxyToWorker(
       mPathConfig,
       this.useMultiThread ? nbThreads : 1,
       this.config.suppressNativeLog ?? false,
       this.logger()
     );
+    let logLevel = params.log_level ?? LogLevel.INFO;
+    if (this.config.suppressNativeLog) {
+      logLevel = 9999 as any;
+    }
+
     const modelFiles = blobs.map((blob, i) => ({
       name: `model-${i}.gguf`,
       blob,
     }));
     await this.proxy.moduleInit(modelFiles);
+
     // run it
     this.logger().debug('Calling wllamaStart...');
     const startResult: any = await this.proxy.wllamaStart();
@@ -448,14 +469,15 @@ export class Wllama {
         `Error while calling start function, result = ${startResult}`
       );
     }
+
     // load the model
     this.logger().debug('Loading model...');
     const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
       _name: 'load_req',
+      log_level: logLevel,
       use_mmap: true,
       use_mlock: true,
       n_gpu_layers: 0, // not supported for now
-      seed: params.seed || Math.floor(Math.random() * 100000),
       n_ctx: params.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       n_ctx_auto: false, // not supported for now
@@ -477,7 +499,7 @@ export class Wllama {
       n_seq_max: 1, // only support single sequence for now
       flash_attn: params.flash_attn,
       swa_full: false, // TEST
-      chat_template: "chatml", // TEST
+      chat_template: 'chatml', // TEST
       jinja: false, // TEST
     });
     const loadedCtxInfo: LoadedContextInfo = {
@@ -488,6 +510,7 @@ export class Wllama {
       loadedCtxInfo.metadata[loadResult.metadata_key[i]] =
         loadResult.metadata_val[i];
     }
+    this.seed = params.seed;
     this.bosToken = loadedCtxInfo.token_bos;
     this.eosToken = loadedCtxInfo.token_eos;
     this.eotToken = loadedCtxInfo.token_eot;
@@ -526,41 +549,37 @@ export class Wllama {
   /**
    * Calculate embedding vector for a given text.
    * By default, BOS and EOS tokens will be added automatically. You can use the "skipBOS" and "skipEOS" option to disable it.
-   * @param text Input text
-   * @returns An embedding vector
+   * @param options OAI-compatible embedding creation options
+   * @returns OAI-compatible embedding response
    */
   async createEmbedding(
-    text: string,
-    options: {
-      skipBOS?: boolean;
-      skipEOS?: boolean;
-    } = {}
-  ): Promise<number[]> {
-    throw new WllamaError('createEmbedding is not yet implemented', 'inference_error');
-    // this.checkModelLoaded();
-    // const opt = {
-    //   skipBOS: false,
-    //   skipEOS: false,
-    //   ...options,
-    // };
-    // await this.samplingInit(this.samplingConfig);
-    // await this.kvClear();
-    // const tokens = await this.tokenize(text);
-    // if (this.bosToken && !opt.skipBOS) {
-    //   tokens.unshift(this.bosToken);
-    // }
-    // if (this.eosToken && !opt.skipEOS) {
-    //   tokens.push(this.eosToken);
-    // }
-    // const result = await this.embeddings(tokens);
-    // return result;
+    options: EmbeddingCreateParams
+  ): Promise<CreateEmbeddingResponse> {
+    this.checkModelLoaded();
+
+    const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
+      'embedding',
+      {
+        _name: 'embd_req',
+        data_json: JSON.stringify(options),
+        files: [], // TODO: support file input
+      }
+    );
+
+    if (!result.success) {
+      throw new WllamaError(
+        'Model failed to start inference',
+        'inference_error'
+      );
+    }
+
+    return await this.getRespose(options as any, false);
   }
 
   /**
-   * Make completion for a given chat messages.
-   * @param messages Chat messages
-   * @param options
-   * @returns Output completion text (only the completion part)
+   * Make chat completion for a given chat messages.
+   * @param options OAI-compatible chat completion options
+   * @returns OAI-compatible chat completion response (only the final result when stream=false) or an async iterator of completion chunks (when stream=true)
    */
   async createChatCompletion(
     options: ChatCompletionParams & { stream?: false }
@@ -577,10 +596,9 @@ export class Wllama {
   }
 
   /**
-   * Make completion for a given text.
-   * @param prompt Input text
-   * @param options
-   * @returns Output completion text (only the completion part)
+   * Make (raw) completion for a given text.
+   * @param options OAI-compatible completion options
+   * @returns OAI-compatible completion response (only the final result when stream=false) or an async iterator of completion chunks (when stream=true)
    */
   async createCompletion(
     options: RawCompletionParams & { stream?: false }
@@ -603,72 +621,30 @@ export class Wllama {
     options: TOpt
   ): Promise<TChunk> {
     this.checkModelLoaded();
-    
+
     const isStream = !!(options as any).stream;
+    const customOpt: any = {};
+    if (this.seed !== undefined) {
+      customOpt.seed = this.seed;
+    }
     const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
       'completion',
       {
         _name: 'cmpl_req',
         is_chat: !!(options as any).messages,
-        data_json: JSON.stringify(options),
+        data_json: JSON.stringify({ ...options, ...customOpt }),
         files: [], // TODO: support file input
       }
     );
 
-    let finalResult: any = null;
-    const jsonDecode = (data_json: string) => {
-      try {
-        return JSON.parse(data_json);
-      } catch (e) {
-        this.logger().error('Failed to parse JSON:', data_json);
-        throw new WllamaError('Failed to parse model output', 'inference_error');
-      }
-    }
-
-    while (true) {
-      const result_chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
-        'get_result',
-        {
-          _name: 'gres_req',
-        }
+    if (!result.success) {
+      throw new WllamaError(
+        'Model failed to start inference',
+        'inference_error'
       );
-
-      const jsonString = result_chunk.data_json;
-      if (!jsonString || jsonString.length === 0) {
-        if (!result_chunk.has_more) {
-          break;
-        } else {
-          continue;
-        }
-      }
-
-      let jsonData = jsonDecode(jsonString);
-      finalResult = jsonData;
-      if (result_chunk.is_error) {
-        this.logger().error('Model returned an error:', jsonData);
-        throw new WllamaError(
-          jsonData.message || 'Unknown inference error',
-          'inference_error'
-        );
-      }
-
-      if (isStream) {
-        if (!Array.isArray(jsonData)) {
-          jsonData = [jsonData];
-        }
-
-        for (const chunk of jsonData) {
-          (options as StreamParams<any>).onData?.(chunk);
-          finalResult = chunk;
-        }
-      }
-
-      if (!result_chunk.has_more) {
-        break;
-      }
     }
 
-    return finalResult;
+    return await this.getRespose(options as StreamParams<TChunk>, isStream);
   }
 
   /**
@@ -709,5 +685,66 @@ export class Wllama {
   async _getDebugInfo(): Promise<any> {
     this.checkModelLoaded();
     return await this.proxy.wllamaDebug();
+  }
+
+  //////////////////////////////////////////////
+  // Utils
+
+  private jsonDecode(data_json: string) {
+    try {
+      return JSON.parse(data_json);
+    } catch (e) {
+      this.logger().error('Failed to parse JSON:', data_json);
+      throw new WllamaError('Failed to parse model output', 'inference_error');
+    }
+  }
+
+  private async getRespose(options: StreamParams<any>, isStream: boolean) {
+    let finalResult: any = null;
+
+    while (true) {
+      const result_chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+        'get_result',
+        {
+          _name: 'gres_req',
+        }
+      );
+
+      const jsonString = result_chunk.data_json;
+      if (!jsonString || jsonString.length === 0) {
+        if (!result_chunk.has_more) {
+          break;
+        } else {
+          continue;
+        }
+      }
+
+      let jsonData = this.jsonDecode(jsonString);
+      finalResult = jsonData;
+      if (result_chunk.is_error) {
+        this.logger().error('Model returned an error:', jsonData);
+        throw new WllamaError(
+          jsonData.message || 'Unknown inference error',
+          'inference_error'
+        );
+      }
+
+      if (isStream) {
+        if (!Array.isArray(jsonData)) {
+          jsonData = [jsonData];
+        }
+
+        for (const chunk of jsonData) {
+          options.onData?.(chunk);
+          finalResult = chunk;
+        }
+      }
+
+      if (!result_chunk.has_more) {
+        break;
+      }
+    }
+
+    return finalResult;
   }
 }

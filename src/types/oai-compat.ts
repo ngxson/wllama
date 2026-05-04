@@ -1,4 +1,4 @@
-import type { SamplingParams } from "./types";
+import type { SamplingParams } from './types';
 
 // Message content types
 
@@ -26,12 +26,15 @@ export type ChatCompletionMessageContent =
 
 export interface ChatCompletionToolFunctionParameters {
   type: 'object';
-  properties: Record<string, {
-    type: string;
-    description?: string;
-    enum?: string[];
-    [key: string]: unknown;
-  }>;
+  properties: Record<
+    string,
+    {
+      type: string;
+      description?: string;
+      enum?: string[];
+      [key: string]: unknown;
+    }
+  >;
   required?: string[];
   additionalProperties?: boolean;
 }
@@ -115,7 +118,10 @@ export type ChatCompletionParams = {
   tool_choice?: ChatCompletionToolChoice;
   // parallel_tool_calls?: boolean;
   // response format
-  response_format?: { type: 'text' | 'json_object' | 'json_schema'; json_schema?: { name: string; schema: unknown; strict?: boolean } };
+  response_format?: {
+    type: 'text' | 'json_object' | 'json_schema';
+    json_schema?: { name: string; schema: unknown; strict?: boolean };
+  };
   // user-facing
   user?: string;
 } & SamplingParams;
@@ -149,7 +155,12 @@ export interface ChatCompletionUsage {
   completion_tokens: number;
   total_tokens: number;
   prompt_tokens_details?: { cached_tokens: number; audio_tokens: number };
-  completion_tokens_details?: { reasoning_tokens: number; audio_tokens: number; accepted_prediction_tokens: number; rejected_prediction_tokens: number };
+  completion_tokens_details?: {
+    reasoning_tokens: number;
+    audio_tokens: number;
+    accepted_prediction_tokens: number;
+    rejected_prediction_tokens: number;
+  };
 }
 
 /** Response when stream=false (or omitted) */
@@ -253,4 +264,32 @@ export interface RawCompletionChunk {
     logprobs: null;
   }>;
   usage?: ChatCompletionUsage | null;
+}
+
+// Embeddings
+
+export interface EmbeddingCreateParams {
+  input: string | string[] | number[] | number[][];
+  model?: string;
+  encoding_format?: 'float' | 'base64';
+  // dimensions?: number; // unsupported by llama.cpp
+  // user?: string;
+}
+
+export interface Embedding {
+  object: 'embedding';
+  index: number;
+  embedding: number[] | string; // float array or base64 string depending on encoding_format
+}
+
+export interface EmbeddingUsage {
+  prompt_tokens: number;
+  total_tokens: number;
+}
+
+export interface CreateEmbeddingResponse {
+  object: 'list';
+  data: Embedding[];
+  model: string;
+  usage: EmbeddingUsage;
 }

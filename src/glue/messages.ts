@@ -50,11 +50,6 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "int",
-        "name": "seed",
-        "isNullable": false
-      },
-      {
-        "type": "int",
         "name": "n_ctx",
         "isNullable": false
       },
@@ -62,6 +57,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "int",
         "name": "n_threads",
         "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "log_level",
+        "isNullable": true
       },
       {
         "type": "bool",
@@ -291,6 +291,35 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       }
     ]
   },
+  "embd_req": {
+    "name": "embd_req",
+    "structName": "glue_msg_embedding_req",
+    "className": "GlueMsgEmbeddingReq",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      },
+      {
+        "type": "arr_raw",
+        "name": "files",
+        "isNullable": false
+      }
+    ]
+  },
+  "embd_res": {
+    "name": "embd_res",
+    "structName": "glue_msg_embedding_res",
+    "className": "GlueMsgEmbeddingRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
+  },
   "gres_req": {
     "name": "gres_req",
     "structName": "glue_msg_get_result_req",
@@ -340,9 +369,9 @@ export interface GlueMsgLoadReq {
   use_mmap: boolean;
   use_mlock: boolean;
   n_gpu_layers: number;
-  seed: number;
   n_ctx: number;
   n_threads: number;
+  log_level?: number | undefined;
   embeddings?: boolean | undefined;
   offload_kqv?: boolean | undefined;
   n_batch?: number | undefined;
@@ -401,6 +430,19 @@ export interface GlueMsgCompletionRes {
   success: boolean;
 }
 
+// struct glue_msg_embedding_req
+export interface GlueMsgEmbeddingReq {
+  _name: "embd_req";
+  data_json: string;
+  files: Uint8Array[];
+}
+
+// struct glue_msg_embedding_res
+export interface GlueMsgEmbeddingRes {
+  _name: "embd_res";
+  success: boolean;
+}
+
 // struct glue_msg_get_result_req
 export interface GlueMsgGetResultReq {
   _name: "gres_req";
@@ -416,4 +458,4 @@ export interface GlueMsgGetResultRes {
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgGetResultReq | GlueMsgGetResultRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgGetResultReq | GlueMsgGetResultRes;

@@ -112,6 +112,7 @@ enum display_type
 };
 
 static bool has_more_tasks = false;
+static ggml_log_level log_level = GGML_LOG_LEVEL_INFO;
 
 struct wllama_context
 {
@@ -236,12 +237,18 @@ struct wllama_context
   glue_msg_load_res action_load(const char *req_raw)
   {
     PARSE_REQ(glue_msg_load_req);
+
+    llama_log_set(common_log_default_callback, nullptr);
+
     assert(ctx == nullptr);
     std::vector<std::string> &model_paths = req.model_paths.arr;
     bool n_ctx_auto = req.n_ctx_auto.value;
 
     assert(model_paths.size() > 0);
     params.model.path = model_paths[0];
+
+    if (req.log_level.not_null())
+      log_level = static_cast<ggml_log_level>(req.log_level.value);
 
     // model params
     if (req.use_mmap.not_null())
@@ -251,7 +258,6 @@ struct wllama_context
     if (req.n_gpu_layers.not_null())
       params.n_gpu_layers = req.n_gpu_layers.value;
 
-    params.sampling.seed = req.seed.value;
     params.n_ctx = req.n_ctx.value;
     params.cpuparams.n_threads = req.n_threads.value;
     params.cpuparams_batch.n_threads = req.n_threads.value;
@@ -371,6 +377,57 @@ struct wllama_context
     return res;
   }
 
+  void create_embedding_tasks(std::string &req_raw)
+  {
+    json body = json::parse(req_raw);
+
+    json prompt;
+    if (body.count("input") != 0) {
+      prompt = body.at("input");
+    } else if (body.contains("content")) {
+      prompt = body.at("content");
+    } else {
+      throw app_exception("\"input\" or \"content\" must be provided");
+    }
+
+    int embd_normalize = 2;
+    if (body.count("embd_normalize") != 0) {
+      embd_normalize = body.at("embd_normalize");
+    }
+
+    auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true);
+    for (const auto &tokens : tokenized_prompts) {
+      if (tokens.empty()) {
+        throw app_exception("Input content cannot be empty");
+      }
+    }
+
+    std::vector<server_task> tasks;
+    for (size_t i = 0; i < tokenized_prompts.size(); i++) {
+      server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
+      task.id = rd->get_new_id();
+      task.tokens = std::move(tokenized_prompts[i]);
+      task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
+      task.params.embd_normalize = embd_normalize;
+      tasks.push_back(std::move(task));
+    }
+    rd->post_tasks(std::move(tasks));
+  }
+
+  glue_msg_embedding_res action_embedding(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_embedding_req);
+    glue_msg_embedding_res res;
+
+    rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
+    last_error = "";
+
+    create_embedding_tasks(req.data_json.value);
+
+    res.success.value = true;
+    return res;
+  }
+
   glue_msg_get_result_res action_get_result(const char *req_raw)
   {
     PARSE_REQ(glue_msg_get_result_req);
@@ -477,12 +534,14 @@ void server_response::add_waiting_task_id(int id)
   // no-op
 }
 
+void server_response::add_waiting_task_ids(const std::unordered_set<int> &id_tasks)
+{
+  // no-op
+}
+
 void server_response::remove_waiting_task_ids(const std::unordered_set<int> &id_tasks)
 {
-  for (const auto &id_task : id_tasks)
-  {
-    waiting_task_ids.erase(id_task);
-  }
+  // no-op
 }
 
 server_task_result_ptr server_response::recv(const std::unordered_set<int> &)
@@ -609,16 +668,14 @@ void server_response_reader::stop()
 ////////////////////////////
 // common_log
 
-int common_log_verbosity_thold = LOG_LEVEL_INFO;
-
 int common_log_get_verbosity_thold(void)
 {
-  return common_log_verbosity_thold;
+  return log_level;
 }
 
 void common_log_set_verbosity_thold(int verbosity)
 {
-  common_log_verbosity_thold = verbosity;
+  log_level = static_cast<ggml_log_level>(verbosity);
 }
 
 struct common_log
@@ -637,7 +694,27 @@ struct common_log
       vsnprintf(msg.data(), msg.size(), fmt, args_copy);
     }
 
-    printf("%s", msg.data());
+    const char *lvl = "@@DEBUG";
+    const char *text = msg.data();
+    size_t len = strlen(text);
+    if (len == 0 || text[len - 1] != '\n')
+    {
+      // do not print if the line does not terminate with \n
+      return;
+    }
+    if (level == GGML_LOG_LEVEL_ERROR)
+    {
+      lvl = "@@ERROR";
+    }
+    else if (level == GGML_LOG_LEVEL_WARN)
+    {
+      lvl = "@@WARN";
+    }
+    else if (level == GGML_LOG_LEVEL_INFO)
+    {
+      lvl = "@@INFO";
+    }
+    fprintf(stderr, "%s@@%s", lvl, text);
   }
 };
 
@@ -683,7 +760,7 @@ static int common_get_verbosity(enum ggml_log_level level)
 void common_log_default_callback(enum ggml_log_level level, const char *text, void * /*user_data*/)
 {
   auto verbosity = common_get_verbosity(level);
-  if (verbosity <= common_log_verbosity_thold)
+  if (verbosity <= static_cast<int>(log_level))
   {
     common_log_add(common_log_main(), level, "%s", text);
   }
