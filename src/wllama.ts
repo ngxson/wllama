@@ -34,10 +34,7 @@ import type {
   RawCompletionResponse,
 } from './types/oai-compat';
 import { LogLevel } from './types/types';
-
-const HF_MODEL_ID_REGEX = /^([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+)$/;
-const HF_MODEL_ID_REGEX_EXPLAIN =
-  "Hugging Face model ID is incorrect. Only regular alphanumeric characters, '-', '.' and '_' supported";
+import { getHFModelSource, type HuggingFaceParams } from './huggingface';
 
 export interface WllamaLogger {
   debug: typeof console.debug;
@@ -376,20 +373,11 @@ export class Wllama {
    * @param params
    */
   async loadModelFromHF(
-    modelId: string,
-    filePath: string,
+    hfOptions: HuggingFaceParams,
     params: LoadModelParams & DownloadOptions & { useCache?: boolean } = {}
   ) {
-    if (!modelId.match(HF_MODEL_ID_REGEX)) {
-      throw new WllamaError(HF_MODEL_ID_REGEX_EXPLAIN, 'download_error');
-    }
-    if (!isValidGgufFile(filePath)) {
-      throw new WllamaError('Only GGUF file is supported', 'download_error');
-    }
-    return await this.loadModelFromUrl(
-      { url: `https://huggingface.co/${modelId}/resolve/main/${filePath}` },
-      params
-    );
+    const source = await getHFModelSource(hfOptions);
+    return await this.loadModelFromUrl(source, params);
   }
 
   /**

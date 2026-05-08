@@ -37,8 +37,7 @@ test.sequential('loads single model file from HF', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
   await wllama.loadModelFromHF(
-    'ggml-org/models',
-    'tinyllamas/stories15M-q4_0.gguf',
+    { repo: 'ggml-org/models', file: 'tinyllamas/stories15M-q4_0.gguf' },
     {
       n_ctx: 1024,
       n_threads: 2,

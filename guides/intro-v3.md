@@ -125,7 +125,14 @@ if (choice.finish_reason === 'tool_calls') {
 Models with a vision projector (mmproj) can now process image and audio inputs.
 
 ```typescript
-// Load the model + mmproj together
+// Load the model + mmproj from Hugging Face
+await wllama.loadModelFromHF({
+  repo: 'user/model-GGUF',
+  quant: 'Q4_K_M',
+  mmprojQuant: 'Q8_0',
+});
+
+// Or load from explicit URLs
 await wllama.loadModelFromUrl({
   url: 'https://example.com/model.gguf',
   mmprojUrl: 'https://example.com/mmproj.gguf',

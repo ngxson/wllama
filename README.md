@@ -94,11 +94,8 @@ import { Wllama } from './esm/index.js';
   // Load GGUF from Hugging Face hub
   // (alternatively, you can use loadModelFromUrl if the model is not from HF hub)
   await wllama.loadModelFromHF(
-    'ggml-org/models',
-    'tinyllamas/stories260K.gguf',
-    {
-      progressCallback,
-    }
+    { repo: 'ggml-org/models', file: 'tinyllamas/stories260K.gguf' },
+    { progressCallback }
   );
   const response = await wllama.createChatCompletion({
     messages: [{ role: 'user', content: elemInput.value }],
@@ -140,10 +137,10 @@ You can then pass to `loadModelFromUrl` or `loadModelFromHF` the URL of the firs
 const wllama = new Wllama(CONFIG_PATHS, {
   parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
 });
-await wllama.loadModelFromHF(
-  'ngxson/tinyllama_split_test',
-  'stories15M-q8_0-00001-of-00003.gguf'
-);
+await wllama.loadModelFromHF({
+  repo: 'ngxson/tinyllama_split_test',
+  file: 'stories15M-q8_0-00001-of-00003.gguf',
+});
 ```
 
 ### Custom logger (suppress debug messages)

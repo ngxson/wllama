@@ -101,10 +101,11 @@
         'multi-thread/wllama.wasm': '../../esm/multi-thread/wllama.wasm',
       };
 
-      const MODEL_URL =
-        'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/LFM2.5-VL-450M-Q4_0.gguf';
-      const MMPROJ_URL =
-        'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/mmproj-LFM2.5-VL-450m-Q8_0.gguf';
+      const MODEL_HF = {
+        repo: 'LiquidAI/LFM2.5-VL-450M-GGUF',
+        quant: 'Q4_0',
+        mmprojQuant: 'Q8_0',
+      };
 
       let wllama = null;
       let imageData = null; // ArrayBuffer of the selected image
@@ -172,15 +173,9 @@
           };
 
         try {
-          await wllama.loadModelFromUrl(
-            {
-              url: MODEL_URL,
-              mmprojUrl: MMPROJ_URL,
-            },
-            {
-              progressCallback: makeProgressCallback('model'),
-            }
-          );
+          await wllama.loadModelFromHF(MODEL_HF, {
+            progressCallback: makeProgressCallback('model'),
+          });
           setProgressBar(100);
 
           showProgressBar(false);

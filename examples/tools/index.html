@@ -266,8 +266,7 @@
         'multi-thread/wllama.wasm': '../../esm/multi-thread/wllama.wasm',
       };
 
-      const MODEL_URL =
-        'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf';
+      const MODEL_HF = { repo: 'unsloth/Qwen3.5-0.8B-GGUF', quant: 'Q4_K_M' };
 
       // ── Lamp state ────────────────────────────────────────────────────────
 
@@ -614,7 +613,7 @@
         showProgressBar(true);
         wllama = new Wllama(CONFIG_PATHS);
         try {
-          await wllama.loadModelFromUrl(MODEL_URL, {
+          await wllama.loadModelFromHF(MODEL_HF, {
             progressCallback: ({ loaded, total }) => {
               const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
               setStatus(`Downloading… ${pct}%`);

@@ -40,7 +40,7 @@ interface WllamaContextValue {
   unloadModel(): Promise<void>;
 
   // function for managing custom user model
-  addCustomModel(url: string): Promise<void>;
+  addCustomModel(url: string, mmprojUrl?: string): Promise<void>;
   removeCustomModel(model: DisplayedModel): Promise<void>;
 
   // functions for chat completion
@@ -258,7 +258,7 @@ export const WllamaProvider = ({ children }: any) => {
   };
 
   // function for managing custom user model
-  const addCustomModel = async (url: string) => {
+  const addCustomModel = async (url: string, mmprojUrl?: string) => {
     setBusy(true);
     try {
       const custom = await verifyCustomModel(url);
@@ -268,7 +268,7 @@ export const WllamaProvider = ({ children }: any) => {
       const userAddedModels = getUserAddedModels(cachedModels);
       updateUserAddedModels([
         ...userAddedModels,
-        new DisplayedModel(custom.url, custom.size, true, undefined),
+        new DisplayedModel(custom.url, custom.size, true, undefined, mmprojUrl),
       ]);
       await refreshCachedModels();
     } catch (e) {

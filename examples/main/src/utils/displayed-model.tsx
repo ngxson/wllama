@@ -63,6 +63,7 @@ export class DisplayedModel {
 interface UserAddedModel {
   url: string;
   size: number;
+  mmprojUrl?: string;
 }
 
 export function getUserAddedModels(cachedModels: Model[]): DisplayedModel[] {
@@ -72,14 +73,14 @@ export function getUserAddedModels(cachedModels: Model[]): DisplayedModel[] {
   );
   return userAddedModels.map((m: any) => {
     const cachedModel = cachedModels.find((cm) => cm.url === m.url);
-    return new DisplayedModel(m.url, m.size, true, cachedModel);
+    return new DisplayedModel(m.url, m.size, true, cachedModel, m.mmprojUrl);
   });
 }
 
 export function updateUserAddedModels(models: DisplayedModel[]) {
   const userAddedModels: UserAddedModel[] = models
     .filter((m) => m.isUserAdded)
-    .map((m) => ({ url: m.url, size: m.size }));
+    .map((m) => ({ url: m.url, size: m.size, mmprojUrl: m.mmprojUrl }));
   WllamaStorage.save('custom_models', userAddedModels);
 }
 
