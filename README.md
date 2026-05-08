@@ -11,17 +11,18 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
 > [!IMPORTANT]  
+> **🔥🔥 V3 is out, with multimodal and tool calling support. Read more [here](./guides/intro-v3.md)**  
 > Memory64 is now a requirement, which drops support for Safari. Please follow [this issue](https://github.com/ngxson/wllama/issues/210) for more info.
 
 ![](./assets/screenshot_0.png)
 
 ## Features
 
-- Typescript support
+- OpenAI-compatible API (fully-typed built-in)
+- 🔥 Multimodal support (image and audio file input)
+- 🔥 Tool calling support
 - Can run inference directly on browser (using [WebAssembly SIMD](https://emscripten.org/docs/porting/simd.html)), no backend or GPU is needed!
 - No runtime dependency (see [package.json](./package.json))
-- High-level API: completions, embeddings
-- Low-level API: (de)tokenize, KV cache control, sampling control,...
 - Ability to split the model into smaller files and load them in parallel (same as `split` and `cat`)
 - Auto switch between single-thread and multi-thread build based on browser support
 - Inference is done inside a worker, does not block UI render
@@ -34,12 +35,11 @@ Limitations:
 
 ## Code demo and documentation
 
-📄 [Documentation](https://github.ngxson.com/wllama/docs/)
-
 Demo:
-- Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/
-- Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/
-- For more advanced example using low-level API, have a look at test file: [wllama.test.ts](./src/wllama.test.ts)
+- Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/ ([source code](./examples/basic/index.html))
+- Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/ ([source code](./examples/embeddings/index.html))
+- Multimodal (vision) completion: https://github.ngxson.com/wllama/examples/multimodal/ ([source code](./examples/multimodal/index.html))
+- Tool calling: https://github.ngxson.com/wllama/examples/tools/ ([source code](./examples/tools/index.html))
 
 ## How to use
 
@@ -100,15 +100,14 @@ import { Wllama } from './esm/index.js';
       progressCallback,
     }
   );
-  const outputText = await wllama.createCompletion(elemInput.value, {
-    nPredict: 50,
-    sampling: {
-      temp: 0.5,
-      top_k: 40,
-      top_p: 0.9,
-    },
+  const response = await wllama.createChatCompletion({
+    messages: [{ role: 'user', content: elemInput.value }],
+    max_tokens: 50,
+    temperature: 0.5,
+    top_k: 40,
+    top_p: 0.9,
   });
-  console.log(outputText);
+  console.log(response.choices[0].message.content);
 })();
 ```
 
@@ -205,6 +204,5 @@ npm run build
 ## TODO
 
 - Add support for LoRA adapter
-- Support GPU inference via WebGL
+- Support GPU inference via WebGPU
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
-- Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp
