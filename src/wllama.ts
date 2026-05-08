@@ -5,7 +5,6 @@ import {
   checkEnvironmentCompatible,
   isString,
   isSupportMultiThread,
-  isValidGgufFile,
   MMPROJ_FILE_NAME,
   prepareBlobs,
 } from './utils';
