@@ -15,24 +15,18 @@ const testFunc = async (wllama: WllamaMJS) => {
     n_ctx: 1024,
   });
 
-  const config = {
-    seed: 42,
-    temp: 0.0,
+  const res = await wllama.createCompletion({
+    prompt: 'Once upon a time',
+    max_tokens: 10,
+    temperature: 0.0,
     top_p: 0.95,
     top_k: 40,
-  };
-
-  await wllama.samplingInit(config);
-
-  const prompt = 'Once upon a time';
-  const completion = await wllama.createCompletion(prompt, {
-    nPredict: 10,
-    sampling: config,
+    seed: 42,
   });
 
-  expect(completion).toBeDefined();
-  expect(completion).toMatch(/(there|little|girl|Lily)+/);
-  expect(completion.length).toBeGreaterThan(10);
+  expect(res).toBeDefined();
+  expect(res.choices[0].text).toMatch(/(there|little|girl|Lily)+/);
+  expect(res.choices[0].text.length).toBeGreaterThan(10);
 
   await wllama.exit();
 };

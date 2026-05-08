@@ -1,261 +1,279 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>wllama.cpp multimodal demo</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wllama.cpp multimodal demo</title>
 
-  <style>
-    body {
-      background-color: rgb(55, 55, 55);
-      color: rgb(222, 222, 222);
-      font-family: 'Courier New', Courier, monospace;
-      padding: 1em;
-    }
+    <style>
+      body {
+        background-color: rgb(55, 55, 55);
+        color: rgb(222, 222, 222);
+        font-family: 'Courier New', Courier, monospace;
+        padding: 1em;
+      }
 
-    #output_cmpl {
-      border: 1px solid #aaa;
-      border-radius: 5px;
-      padding: 0.7em;
-      min-height: 3em;
-      white-space: pre-wrap;
-    }
+      #output_cmpl {
+        border: 1px solid #aaa;
+        border-radius: 5px;
+        padding: 0.7em;
+        min-height: 3em;
+        white-space: pre-wrap;
+      }
 
-    #preview_image {
-      max-width: 300px;
-      max-height: 300px;
-      border: 1px solid #aaa;
-      border-radius: 5px;
-      display: none;
-      margin-top: 0.5em;
-    }
+      #preview_image {
+        max-width: 300px;
+        max-height: 300px;
+        border: 1px solid #aaa;
+        border-radius: 5px;
+        display: none;
+        margin-top: 0.5em;
+      }
 
-    #progress_bar_wrap {
-      width: 100%;
-      background: #333;
-      border-radius: 4px;
-      height: 18px;
-      margin: 0.5em 0;
-      display: none;
-    }
+      #progress_bar_wrap {
+        width: 100%;
+        background: #333;
+        border-radius: 4px;
+        height: 18px;
+        margin: 0.5em 0;
+        display: none;
+      }
 
-    #progress_bar {
-      height: 18px;
-      border-radius: 4px;
-      background: #5a9;
-      width: 0%;
-      transition: width 0.2s;
-    }
+      #progress_bar {
+        height: 18px;
+        border-radius: 4px;
+        background: #5a9;
+        width: 0%;
+        transition: width 0.2s;
+      }
 
-    label {
-      display: inline-block;
-      min-width: 12em;
-    }
-  </style>
-</head>
-<body>
+      label {
+        display: inline-block;
+        min-width: 12em;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Multimodal (Vision) Completion</h2>
 
-  <h2>Multimodal (Vision) Completion</h2>
+    <b>Step 1: Load model</b><br /><br />
 
-  <b>Step 1: Load model</b><br/><br/>
+    <button id="btn_load_remote">Load remote model (LFM2.5-VL-450M)</button
+    ><br />
+    <small>Downloads ~540MB from Hugging Face</small><br /><br />
 
-  <button id="btn_load_remote">Load remote model (LFM2.5-VL-450M)</button><br/>
-  <small>Downloads ~540MB from Hugging Face</small><br/><br/>
+    Or pick local GGUF files (select both the LLM and mmproj file):<br />
+    <input
+      type="file"
+      id="btn_pick_files"
+      accept=".gguf"
+      multiple
+    /><br /><br />
 
-  Or pick local GGUF files (select both the LLM and mmproj file):<br/>
-  <input type="file" id="btn_pick_files" accept=".gguf" multiple><br/><br/>
+    <div id="progress_bar_wrap"><div id="progress_bar"></div></div>
+    <span id="status_text"></span><br /><br />
 
-  <div id="progress_bar_wrap"><div id="progress_bar"></div></div>
-  <span id="status_text"></span><br/><br/>
+    <b>Step 2: Run completion</b><br /><br />
 
-  <b>Step 2: Run completion</b><br/><br/>
+    <label for="input_prompt">Prompt:</label>
+    <input
+      id="input_prompt"
+      value="Describe this image in detail."
+      style="width: 40em"
+    /><br /><br />
 
-  <label for="input_prompt">Prompt:</label>
-  <input id="input_prompt" value="Describe this image in detail." style="width: 40em;" /><br/><br/>
+    <label for="btn_pick_image">Image:</label>
+    <input type="file" id="btn_pick_image" accept="image/*" />
+    <button id="btn_example_image">Use example image</button><br />
+    <img id="preview_image" alt="preview" /><br /><br />
 
-  <label for="btn_pick_image">Image:</label>
-  <input type="file" id="btn_pick_image" accept="image/*">
-  <button id="btn_example_image">Use example image</button><br/>
-  <img id="preview_image" alt="preview" /><br/><br/>
+    <button id="btn_run_cmpl" disabled>Run completion</button>
+    <br /><br />
 
-  <button id="btn_run_cmpl" disabled>Run completion</button>
-  <br/><br/>
+    Output:<br />
+    <div id="output_cmpl"></div>
 
-  Output:<br/>
-  <div id="output_cmpl"></div>
+    <script type="module">
+      import { Wllama } from '../../esm/index.js';
 
-  <script type="module">
-    import { Wllama } from '../../esm/index.js';
-
-    const CONFIG_PATHS = {
-      'single-thread/wllama.wasm': '../../esm/single-thread/wllama.wasm',
-      'multi-thread/wllama.wasm' : '../../esm/multi-thread/wllama.wasm',
-    };
-
-    const MODEL_URL    = 'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/LFM2.5-VL-450M-Q4_0.gguf';
-    const MMPROJ_URL   = 'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/mmproj-LFM2.5-VL-450m-Q8_0.gguf';
-
-    let wllama = null;
-    let imageData = null; // ArrayBuffer of the selected image
-
-    async function main() {
-      setRunDisabled(true);
-
-      elemBtnLoadRemote.onclick = async () => {
-        elemBtnLoadRemote.disabled = true;
-        elemBtnPickFiles.disabled = true;
-        await loadRemoteModel();
+      const CONFIG_PATHS = {
+        'single-thread/wllama.wasm': '../../esm/single-thread/wllama.wasm',
+        'multi-thread/wllama.wasm': '../../esm/multi-thread/wllama.wasm',
       };
 
-      elemBtnPickFiles.onchange = async (event) => {
-        const { files } = event.target;
-        if (files.length === 0) return;
-        elemBtnLoadRemote.disabled = true;
-        elemBtnPickFiles.disabled = true;
-        await loadLocalFiles(files);
-      };
+      const MODEL_URL =
+        'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/LFM2.5-VL-450M-Q4_0.gguf';
+      const MMPROJ_URL =
+        'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/mmproj-LFM2.5-VL-450m-Q8_0.gguf';
 
-      elemBtnPickImage.onchange = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          imageData = e.target.result; // ArrayBuffer
-          elemPreviewImage.src = URL.createObjectURL(file);
+      let wllama = null;
+      let imageData = null; // ArrayBuffer of the selected image
+
+      async function main() {
+        setRunDisabled(true);
+
+        elemBtnLoadRemote.onclick = async () => {
+          elemBtnLoadRemote.disabled = true;
+          elemBtnPickFiles.disabled = true;
+          await loadRemoteModel();
+        };
+
+        elemBtnPickFiles.onchange = async (event) => {
+          const { files } = event.target;
+          if (files.length === 0) return;
+          elemBtnLoadRemote.disabled = true;
+          elemBtnPickFiles.disabled = true;
+          await loadLocalFiles(files);
+        };
+
+        elemBtnPickImage.onchange = (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            imageData = e.target.result; // ArrayBuffer
+            elemPreviewImage.src = URL.createObjectURL(file);
+            elemPreviewImage.style.display = 'block';
+          };
+          reader.readAsArrayBuffer(file);
+        };
+
+        elemBtnExampleImage.onclick = async () => {
+          const response = await fetch('./bliss.png');
+          imageData = await response.arrayBuffer();
+          elemPreviewImage.src = './bliss.png';
           elemPreviewImage.style.display = 'block';
         };
-        reader.readAsArrayBuffer(file);
-      };
 
-      elemBtnExampleImage.onclick = async () => {
-        const response = await fetch('./bliss.png');
-        imageData = await response.arrayBuffer();
-        elemPreviewImage.src = './bliss.png';
-        elemPreviewImage.style.display = 'block';
-      };
+        elemBtnRunCmpl.onclick = async () => {
+          if (!wllama) return;
+          setRunDisabled(true);
+          elemOutputCmpl.textContent = '';
+          try {
+            await runCompletion();
+          } catch (err) {
+            elemOutputCmpl.textContent = `Error: ${err.message}`;
+            console.error(err);
+          }
+          setRunDisabled(false);
+        };
+      }
 
-      elemBtnRunCmpl.onclick = async () => {
-        if (!wllama) return;
-        setRunDisabled(true);
-        elemOutputCmpl.textContent = '';
+      async function loadRemoteModel() {
+        showProgressBar(true);
+        wllama = new Wllama(CONFIG_PATHS);
+
+        const makeProgressCallback =
+          (label) =>
+          ({ loaded, total }) => {
+            const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+            setStatus(`Downloading ${label}... ${pct}%`);
+            setProgressBar(pct);
+          };
+
         try {
-          await runCompletion();
+          await wllama.loadModelFromUrl(
+            {
+              url: MODEL_URL,
+              mmprojUrl: MMPROJ_URL,
+            },
+            {
+              progressCallback: makeProgressCallback('model'),
+            }
+          );
+          setProgressBar(100);
+
+          showProgressBar(false);
+          setStatus('Model loaded!');
+          setRunDisabled(false);
         } catch (err) {
-          elemOutputCmpl.textContent = `Error: ${err.message}`;
+          showProgressBar(false);
+          setStatus(`Error: ${err.message}`);
           console.error(err);
+          elemBtnLoadRemote.disabled = false;
+          elemBtnPickFiles.disabled = false;
         }
-        setRunDisabled(false);
-      };
-    }
+      }
 
-    async function loadRemoteModel() {
-      showProgressBar(true);
-      wllama = new Wllama(CONFIG_PATHS);
+      async function loadLocalFiles(files) {
+        setStatus('Loading local files...');
+        wllama = new Wllama(CONFIG_PATHS);
+        try {
+          await wllama.loadModel(Array.from(files));
+          setStatus('Model loaded!');
+          setRunDisabled(false);
+        } catch (err) {
+          setStatus(`Error: ${err.message}`);
+          console.error(err);
+          elemBtnLoadRemote.disabled = false;
+          elemBtnPickFiles.disabled = false;
+        }
+      }
 
-      const makeProgressCallback = (label) => ({ loaded, total }) => {
-        const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
-        setStatus(`Downloading ${label}... ${pct}%`);
-        setProgressBar(pct);
-      };
+      async function runCompletion() {
+        const prompt = elemInputPrompt.value.trim();
 
-      try {
-        await wllama.loadModelFromUrl({
-          url: MODEL_URL,
-          mmprojUrl: MMPROJ_URL,
-        }, {
-          progressCallback: makeProgressCallback('model'),
+        /** @type {import('../../esm/index.js').ChatCompletionMessageContent[]} */
+        const content = [];
+
+        if (imageData) {
+          content.push({ type: 'image', data: imageData });
+        }
+        content.push({ type: 'text', text: prompt });
+
+        await wllama.createCompletion({
+          messages: [
+            {
+              role: 'user',
+              content: content.length === 1 ? prompt : content,
+            },
+          ],
+          max_tokens: 512,
+          temperature: 0.2,
+          stream: true,
+          onData: (chunk) => {
+            const delta = chunk.choices[0]?.delta?.content;
+            if (delta) elemOutputCmpl.textContent += delta;
+          },
         });
-        setProgressBar(100);
-
-        showProgressBar(false);
-        setStatus('Model loaded!');
-        setRunDisabled(false);
-      } catch (err) {
-        showProgressBar(false);
-        setStatus(`Error: ${err.message}`);
-        console.error(err);
-        elemBtnLoadRemote.disabled = false;
-        elemBtnPickFiles.disabled = false;
       }
-    }
 
-    async function loadLocalFiles(files) {
-      setStatus('Loading local files...');
-      wllama = new Wllama(CONFIG_PATHS);
-      try {
-        await wllama.loadModel(Array.from(files));
-        setStatus('Model loaded!');
-        setRunDisabled(false);
-      } catch (err) {
-        setStatus(`Error: ${err.message}`);
-        console.error(err);
-        elemBtnLoadRemote.disabled = false;
-        elemBtnPickFiles.disabled = false;
+      /////////////////////////////////////////////////////////////////////
+
+      function setStatus(text) {
+        elemStatusText.textContent = text;
       }
-    }
 
-    async function runCompletion() {
-      const prompt = elemInputPrompt.value.trim();
-
-      /** @type {import('../../esm/index.js').ChatCompletionMessageContent[]} */
-      const content = [];
-
-      if (imageData) {
-        content.push({ type: 'image', data: imageData });
+      function showProgressBar(show) {
+        elemProgressBarWrap.style.display = show ? 'block' : 'none';
       }
-      content.push({ type: 'text', text: prompt });
 
-      await wllama.createCompletion({
-        messages: [{
-          role: 'user',
-          content: content.length === 1 ? prompt : content,
-        }],
-        max_tokens: 512,
-        temperature: 0.2,
-        stream: true,
-        onData: (chunk) => {
-          const delta = chunk.choices[0]?.delta?.content;
-          if (delta) elemOutputCmpl.textContent += delta;
-        },
-      });
-    }
+      function setProgressBar(pct) {
+        elemProgressBar.style.width = `${Math.min(100, pct)}%`;
+      }
 
-    /////////////////////////////////////////////////////////////////////
+      function setRunDisabled(disabled) {
+        elemInputPrompt.disabled = disabled;
+        elemBtnPickImage.disabled = disabled;
+        elemBtnExampleImage.disabled = disabled;
+        elemBtnRunCmpl.disabled = disabled;
+      }
 
-    function setStatus(text) {
-      elemStatusText.textContent = text;
-    }
+      /////////////////////////////////////////////////////////////////////
 
-    function showProgressBar(show) {
-      elemProgressBarWrap.style.display = show ? 'block' : 'none';
-    }
+      const elemBtnLoadRemote = document.getElementById('btn_load_remote');
+      const elemBtnPickFiles = document.getElementById('btn_pick_files');
+      const elemProgressBarWrap = document.getElementById('progress_bar_wrap');
+      const elemProgressBar = document.getElementById('progress_bar');
+      const elemStatusText = document.getElementById('status_text');
+      const elemInputPrompt = document.getElementById('input_prompt');
+      const elemBtnPickImage = document.getElementById('btn_pick_image');
+      const elemBtnExampleImage = document.getElementById('btn_example_image');
+      const elemPreviewImage = document.getElementById('preview_image');
+      const elemBtnRunCmpl = document.getElementById('btn_run_cmpl');
+      const elemOutputCmpl = document.getElementById('output_cmpl');
 
-    function setProgressBar(pct) {
-      elemProgressBar.style.width = `${Math.min(100, pct)}%`;
-    }
-
-    function setRunDisabled(disabled) {
-      elemInputPrompt.disabled = disabled;
-      elemBtnPickImage.disabled = disabled;
-      elemBtnExampleImage.disabled = disabled;
-      elemBtnRunCmpl.disabled = disabled;
-    }
-
-    /////////////////////////////////////////////////////////////////////
-
-    const elemBtnLoadRemote   = document.getElementById('btn_load_remote');
-    const elemBtnPickFiles    = document.getElementById('btn_pick_files');
-    const elemProgressBarWrap = document.getElementById('progress_bar_wrap');
-    const elemProgressBar     = document.getElementById('progress_bar');
-    const elemStatusText      = document.getElementById('status_text');
-    const elemInputPrompt     = document.getElementById('input_prompt');
-    const elemBtnPickImage    = document.getElementById('btn_pick_image');
-    const elemBtnExampleImage = document.getElementById('btn_example_image');
-    const elemPreviewImage    = document.getElementById('preview_image');
-    const elemBtnRunCmpl      = document.getElementById('btn_run_cmpl');
-    const elemOutputCmpl      = document.getElementById('output_cmpl');
-
-    main();
-  </script>
-</body>
+      main();
+    </script>
+  </body>
 </html>

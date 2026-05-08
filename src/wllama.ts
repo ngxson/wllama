@@ -358,7 +358,7 @@ export class Wllama {
     params: LoadModelParams & DownloadOptions & { useCache?: boolean } = {}
   ): Promise<void> {
     const source: ModelSource = isString(modelSourceOrURL)
-      ? { url: modelSourceOrURL } as ModelSource
+      ? ({ url: modelSourceOrURL } as ModelSource)
       : (modelSourceOrURL as ModelSource);
     const useCache = params.useCache ?? true;
     const model = useCache
@@ -688,6 +688,16 @@ export class Wllama {
       );
       resolve(createGenerator());
     });
+  }
+
+  /**
+   * Unload the model and free all memory.
+   *
+   * Note: This function will NOT crash if model is not yet loaded
+   */
+  async exit(): Promise<void> {
+    await this.proxy?.wllamaExit();
+    this.proxy = null as any;
   }
 
   //////////////////////////////////////////////

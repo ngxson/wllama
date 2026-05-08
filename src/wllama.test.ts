@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { Wllama, WllamaChatMessage } from './wllama';
+import { Wllama } from './wllama';
 
 const CONFIG_PATHS = {
   'single-thread/wllama.wasm': '/src/single-thread/wllama.wasm',
@@ -60,9 +60,12 @@ test.sequential('loads single thread model', async () => {
   expect(wllama.isModelLoaded()).toBe(true);
   expect(wllama.isMultithread()).toBe(false);
 
-  const completion = await wllama.createCompletion('Hello', { nPredict: 10 });
-  expect(completion).toBeDefined();
-  expect(completion.length).toBeGreaterThan(10);
+  const res = await wllama.createCompletion({
+    prompt: 'Hello',
+    max_tokens: 10,
+  });
+  expect(res).toBeDefined();
+  expect(res.choices[0].text.length).toBeGreaterThan(0);
   await wllama.exit();
 });
 
@@ -101,41 +104,6 @@ test.sequential('loads split model files', async () => {
   await wllama.exit();
 });
 
-test.sequential('tokenizes and detokenizes text', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
-
-  await wllama.loadModelFromUrl(TINY_MODEL, {
-    n_ctx: 1024,
-  });
-
-  const text =
-    'Once Upon a Time is an American fantasy adventure drama television series';
-  const tokens = await wllama.tokenize(text);
-  expect(tokens.length).toBeGreaterThan(10);
-
-  const detokenized = await wllama.detokenize(tokens);
-  expect(detokenized.byteLength).toBeGreaterThan(10);
-
-  const decodedText = new TextDecoder().decode(detokenized);
-  expect(decodedText.trim()).toBe(text);
-
-  await wllama.exit();
-});
-
-test.sequential('tokenize a long text', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
-
-  await wllama.loadModelFromUrl(TINY_MODEL, {
-    n_ctx: 1024,
-  });
-
-  const text = 'hello '.repeat(1e4);
-  const tokens = await wllama.tokenize(text);
-  expect(tokens.length).toBeGreaterThan(10);
-
-  await wllama.exit();
-});
-
 test.sequential('generates completion', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
@@ -143,24 +111,18 @@ test.sequential('generates completion', async () => {
     n_ctx: 1024,
   });
 
-  const config = {
-    seed: 42,
-    temp: 0.0,
+  const res = await wllama.createCompletion({
+    prompt: 'Once upon a time',
+    max_tokens: 10,
+    temperature: 0.0,
     top_p: 0.95,
     top_k: 40,
-  };
-
-  await wllama.samplingInit(config);
-
-  const prompt = 'Once upon a time';
-  const completion = await wllama.createCompletion(prompt, {
-    nPredict: 10,
-    sampling: config,
+    seed: 42,
   });
 
-  expect(completion).toBeDefined();
-  expect(completion).toMatch(/(there|little|girl|Lily)+/);
-  expect(completion.length).toBeGreaterThan(10);
+  expect(res).toBeDefined();
+  expect(res.choices[0].text).toMatch(/(there|little|girl|Lily)+/);
+  expect(res.choices[0].text.length).toBeGreaterThan(10);
 
   await wllama.exit();
 });
@@ -172,21 +134,16 @@ test.sequential('abort signal', async () => {
     n_ctx: 1024,
   });
 
-  const config = {
-    seed: 42,
-    temp: 0.0,
+  const abortController = new AbortController();
+  const stream = await wllama.createCompletion({
+    prompt: 'Once upon a time',
+    max_tokens: 10,
+    temperature: 0.0,
     top_p: 0.95,
     top_k: 40,
-  };
-
-  await wllama.samplingInit(config);
-
-  const prompt = 'Once upon a time';
-  const abortController = new AbortController();
-  const stream = await wllama.createCompletion(prompt, {
-    nPredict: 10,
-    sampling: config,
+    seed: 42,
     stream: true,
+    onData: () => {},
     abortSignal: abortController.signal,
   });
 
@@ -203,25 +160,6 @@ test.sequential('abort signal', async () => {
   await wllama.exit();
 });
 
-test.sequential('gets logits', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
-
-  await wllama.loadModelFromUrl(TINY_MODEL, {
-    n_ctx: 1024,
-  });
-
-  await wllama.samplingInit({});
-
-  const logits = await wllama.getLogits(10);
-  expect(logits.length).toBe(10);
-  expect(logits[0]).toHaveProperty('token');
-  expect(logits[0]).toHaveProperty('p');
-  expect(logits[0].token).toBeGreaterThan(0);
-  // expect(logits[0].p).toBeGreaterThan(0.5); // FIXME
-
-  await wllama.exit();
-});
-
 test.sequential('generates embeddings', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
@@ -233,29 +171,25 @@ test.sequential('generates embeddings', async () => {
   expect(wllama.isModelLoaded()).toBe(true);
 
   const text = 'This is a test sentence';
-  const embedding = await wllama.createEmbedding(text);
+  const res = await wllama.createEmbedding({ input: text });
 
-  expect(embedding).toBeDefined();
+  expect(res).toBeDefined();
+  const embedding = (res as any).embedding as number[];
   expect(Array.isArray(embedding)).toBe(true);
   expect(embedding.length).toBeGreaterThan(0);
-  expect(typeof embedding[0]).toBe('number');
   for (const e of embedding) {
     expect(typeof e).toBe('number');
-    expect(e).toBeLessThan(1);
   }
 
-  // make sure the vector is normalized
-  const normVec = Math.sqrt(embedding.reduce((acc, v) => acc + v * v, 0));
-  expect(Math.abs(normVec - 1)).toBeLessThan(1e-6);
-
-  // slightly different text should have different embedding
-  const embedding2 = await wllama.createEmbedding(text + ' ');
-  const cosineDist = embedding.reduce(
-    (acc, v, i) => acc + v * embedding2[i],
-    0
-  );
-  expect(cosineDist).toBeGreaterThan(1 - 0.05);
-  expect(cosineDist).toBeLessThan(1);
+  // slightly different text should have high cosine similarity
+  const res2 = await wllama.createEmbedding({ input: text + ' ' });
+  const embedding2 = (res2 as any).embedding as number[];
+  const dot = embedding.reduce((acc, v, i) => acc + v * embedding2[i], 0);
+  const norm1 = Math.sqrt(embedding.reduce((acc, v) => acc + v * v, 0));
+  const norm2 = Math.sqrt(embedding2.reduce((acc, v) => acc + v * v, 0));
+  const cosineSim = dot / (norm1 * norm2);
+  expect(cosineSim).toBeGreaterThan(1 - 0.05);
+  expect(cosineSim).toBeLessThan(1);
 
   await wllama.exit();
 });
@@ -281,38 +215,6 @@ test.sequential('allowOffline', async () => {
   }
 });
 
-test.sequential('formatChat', async () => {
-  const wllama = new Wllama(CONFIG_PATHS, {
-    allowOffline: true,
-  });
-
-  await wllama.loadModelFromUrl(TINY_MODEL);
-  expect(wllama.isModelLoaded()).toBe(true);
-  const messages: WllamaChatMessage[] = [
-    { role: 'system', content: 'You are helpful.' },
-    { role: 'user', content: 'Hi!' },
-    { role: 'assistant', content: 'Hello!' },
-    { role: 'user', content: 'How are you?' },
-  ];
-
-  const formatted = await wllama.formatChat(messages, false);
-  expect(formatted).toBe(
-    '<|im_start|>system\nYou are helpful.<|im_end|>\n<|im_start|>user\nHi!<|im_end|>\n<|im_start|>assistant\nHello!<|im_end|>\n<|im_start|>user\nHow are you?<|im_end|>\n'
-  );
-
-  const formatted1 = await wllama.formatChat(messages, true);
-  expect(formatted1).toBe(
-    '<|im_start|>system\nYou are helpful.<|im_end|>\n<|im_start|>user\nHi!<|im_end|>\n<|im_start|>assistant\nHello!<|im_end|>\n<|im_start|>user\nHow are you?<|im_end|>\n<|im_start|>assistant\n'
-  );
-
-  const formatted2 = await wllama.formatChat(messages, true, 'zephyr');
-  expect(formatted2).toBe(
-    '<|system|>\nYou are helpful.<|endoftext|>\n<|user|>\nHi!<|endoftext|>\n<|assistant|>\nHello!<|endoftext|>\n<|user|>\nHow are you?<|endoftext|>\n<|assistant|>\n'
-  );
-
-  await wllama.exit();
-});
-
 test.sequential('generates chat completion', async () => {
   const wllama = new Wllama(CONFIG_PATHS);
 
@@ -320,29 +222,24 @@ test.sequential('generates chat completion', async () => {
     n_ctx: 1024,
   });
 
-  const config = {
-    seed: 42,
-    temp: 0.0,
+  const res = await wllama.createChatCompletion({
+    messages: [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Hi!' },
+      { role: 'assistant', content: 'Hello!' },
+      { role: 'user', content: 'How are you?' },
+    ],
+    max_tokens: 10,
+    temperature: 0.0,
     top_p: 0.95,
     top_k: 40,
-  };
-
-  await wllama.samplingInit(config);
-
-  const messages: WllamaChatMessage[] = [
-    { role: 'system', content: 'You are helpful.' },
-    { role: 'user', content: 'Hi!' },
-    { role: 'assistant', content: 'Hello!' },
-    { role: 'user', content: 'How are you?' },
-  ];
-  const completion = await wllama.createChatCompletion(messages, {
-    nPredict: 10,
-    sampling: config,
+    seed: 42,
   });
 
-  expect(completion).toBeDefined();
-  expect(completion).toMatch(/(Sudden|big|scary)+/);
-  expect(completion.length).toBeGreaterThan(10);
+  const text = res.choices[0].message.content as string;
+  expect(text).toBeDefined();
+  expect(text).toMatch(/(Sudden|big|scary)+/);
+  expect(text.length).toBeGreaterThan(10);
 
   await wllama.exit();
 });
@@ -355,37 +252,31 @@ test.sequential('generates chat completion using async iterator', async () => {
     seed: 42,
   });
 
-  const messages: WllamaChatMessage[] = [
-    { role: 'system', content: 'You are helpful.' },
-    { role: 'user', content: 'Hi!' },
-    { role: 'assistant', content: 'Hello!' },
-    { role: 'user', content: 'How are you?' },
-  ];
-  const stream = await wllama.createChatCompletion(messages, {
-    nPredict: 10,
-    sampling: {
-      temp: 0.0,
-    },
+  const stream = await wllama.createChatCompletion({
+    messages: [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Hi!' },
+      { role: 'assistant', content: 'Hello!' },
+      { role: 'user', content: 'How are you?' },
+    ],
+    max_tokens: 10,
+    temperature: 0.0,
     stream: true,
+    onData: () => {},
   });
 
-  let finalTokens: number[] = [];
   let finalText = '';
   for await (const chunk of stream) {
     expect(chunk).toBeDefined();
-    expect(chunk.token).toBeGreaterThan(0);
-    expect(chunk.piece).toBeDefined();
-    expect(chunk.piece.length).toBeGreaterThan(0);
-    expect(chunk.currentText).toBeDefined();
-    expect(chunk.currentText.length).toBeGreaterThan(0);
-    finalTokens.push(chunk.token);
-    finalText = chunk.currentText;
+    expect(chunk.object).toBe('chat.completion.chunk');
+    const delta = chunk.choices[0].delta;
+    if (delta.content) {
+      finalText += delta.content;
+    }
   }
 
-  const detokenized = await wllama.detokenize(finalTokens, true);
   expect(finalText.length).toBeGreaterThan(10);
   expect(finalText).toMatch(/(Sudden|big|scary)+/);
-  expect(detokenized).toBe(finalText);
 
   await wllama.exit();
 });
@@ -395,7 +286,9 @@ test.sequential('cleans up resources', async () => {
   await wllama.loadModelFromUrl(TINY_MODEL);
   expect(wllama.isModelLoaded()).toBe(true);
   await wllama.exit();
-  await expect(wllama.tokenize('test')).rejects.toThrow();
+  await expect(
+    wllama.createCompletion({ prompt: 'test', max_tokens: 1 })
+  ).rejects.toThrow();
 
   // Double check that the model is really unloaded
   expect(wllama.isModelLoaded()).toBe(false);

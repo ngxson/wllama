@@ -11,7 +11,7 @@ const DEFAULT_PARALLEL_DOWNLOADS = 3;
 export interface ModelSource {
   url: string;
   mmprojUrl?: string;
-};
+}
 
 /**
  * Callback function to track download progress
@@ -292,7 +292,9 @@ export class ModelManager {
       const isFirstShard =
         shards.length === 1 || shards[0] === file.metadata.originalURL;
       if (isFirstShard) {
-        models.push(new Model(this, file.metadata.originalURL, mmprojUrl, cachedFiles));
+        models.push(
+          new Model(this, file.metadata.originalURL, mmprojUrl, cachedFiles)
+        );
       }
     }
     if (!opts.includeInvalid) {
@@ -309,9 +311,12 @@ export class ModelManager {
    * The URL must end with `.gguf`
    */
   async downloadModel(
-    source: ModelSource,
+    sourceOrURL: ModelSource | string,
     options: DownloadOptions = {}
   ): Promise<Model> {
+    const source: ModelSource = isString(sourceOrURL)
+      ? { url: sourceOrURL as string }
+      : (sourceOrURL as ModelSource);
     if (!isValidGgufFile(source.url)) {
       throw new WllamaError(
         `Invalid model URL: ${source.url}; URL must ends with ".gguf"`,

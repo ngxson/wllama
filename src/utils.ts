@@ -104,7 +104,7 @@ export const parseModelUrl = (modelUrl: string): string[] => {
 /**
  * Check if the given blobs are files or not, then sort them by shard number
  */
-const sortFileByShard = (blobs: Blob[]): void => {
+export const sortFileByShard = (blobs: Blob[]): void => {
   const isFiles = blobs.every((b) => !!(b as File).name);
   if (isFiles && blobs.length > 1) {
     const files = blobs as File[];
