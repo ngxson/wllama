@@ -5,8 +5,10 @@ import { LIST_MODELS } from '../config';
 
 export class DisplayedModel {
   url: string;
+  mmprojUrl?: string;
   size: number;
   isUserAdded: boolean;
+  modalities?: ('image' | 'audio')[];
   cachedModel?: Model;
 
   state: ModelState = ModelState.NOT_DOWNLOADED;
@@ -16,11 +18,15 @@ export class DisplayedModel {
     url: string,
     size: number,
     isUserAdded: boolean,
-    cachedModel?: Model
+    cachedModel?: Model,
+    mmprojUrl?: string,
+    modalities?: ('image' | 'audio')[]
   ) {
     this.url = url;
+    this.mmprojUrl = mmprojUrl;
     this.size = size;
     this.isUserAdded = isUserAdded;
+    this.modalities = modalities;
     this.state = !!cachedModel ? ModelState.READY : ModelState.NOT_DOWNLOADED;
     this.cachedModel = cachedModel;
   }
@@ -44,7 +50,9 @@ export class DisplayedModel {
       this.url,
       this.size,
       this.isUserAdded,
-      this.cachedModel
+      this.cachedModel,
+      this.mmprojUrl,
+      this.modalities
     );
     obj.state = overwrite.state ?? this.state;
     obj.downloadPercent = overwrite.downloadPercent ?? this.downloadPercent;
@@ -78,7 +86,14 @@ export function updateUserAddedModels(models: DisplayedModel[]) {
 export function getPresetModels(cachedModels: Model[]): DisplayedModel[] {
   return LIST_MODELS.map((m) => {
     const cachedModel = cachedModels.find((cm) => cm.url === m.url);
-    return new DisplayedModel(m.url, m.size, false, cachedModel);
+    return new DisplayedModel(
+      m.url,
+      m.size,
+      false,
+      cachedModel,
+      m.mmprojUrl,
+      m.modalities
+    );
   });
 }
 

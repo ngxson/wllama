@@ -558,6 +558,8 @@ struct glue_msg_load_res
   GLUE_FIELD(bool, has_encoder)
   GLUE_FIELD(int, token_decoder_start)
   GLUE_FIELD(str, media_marker)
+  GLUE_FIELD(bool, has_image_input)
+  GLUE_FIELD(bool, has_audio_input)
 };
 
 /////////

@@ -54,6 +54,8 @@ export interface LoadedContextInfo {
   token_decoder_start: number;
   add_bos_token: boolean;
   add_eos_token: boolean;
+  has_image_input: boolean;
+  has_audio_input: boolean;
 }
 
 // Note: snake_case is used to match llama.cpp's naming convention

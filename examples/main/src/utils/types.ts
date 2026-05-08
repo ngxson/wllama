@@ -16,6 +16,8 @@ export enum ModelState {
 export interface RuntimeInfo {
   isMultithread: boolean;
   hasChatTemplate: boolean;
+  supportsImage: boolean;
+  supportsAudio: boolean;
 }
 
 export interface InferenceParams {
@@ -26,10 +28,17 @@ export interface InferenceParams {
   nPredict: number;
 }
 
+export interface MediaData {
+  type: 'image' | 'audio';
+  data: ArrayBuffer;
+  dataUrl: string;
+}
+
 export interface Message {
   id: number;
   content: string;
   role: 'system' | 'user' | 'assistant';
+  mediaData?: MediaData;
 }
 
 export interface Conversation {

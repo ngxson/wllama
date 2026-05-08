@@ -314,6 +314,16 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "str",
         "name": "media_marker",
         "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "has_image_input",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "has_audio_input",
+        "isNullable": false
       }
     ]
   },
@@ -486,6 +496,8 @@ export interface GlueMsgLoadRes {
   has_encoder: boolean;
   token_decoder_start: number;
   media_marker: string;
+  has_image_input: boolean;
+  has_audio_input: boolean;
 }
 
 // struct glue_msg_completion_req

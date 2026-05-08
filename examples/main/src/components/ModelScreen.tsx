@@ -319,6 +319,16 @@ function ModelCard({
             {m.state == ModelState.DOWNLOADING
               ? ` - Downloaded: ${percent}%`
               : ''}
+            {m.modalities && m.modalities.length > 0 && (
+              <>
+                {' '}
+                {m.modalities.map((mod) => (
+                  <span key={mod} className="badge badge-sm badge-accent ml-1">
+                    {mod}
+                  </span>
+                ))}
+              </>
+            )}
           </small>
 
           {m.state === ModelState.LOADED && currRuntimeInfo && (

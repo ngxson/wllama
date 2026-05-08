@@ -368,6 +368,9 @@ struct wllama_context
       }
     }
 
+    // multimodal
+    auto server_meta = ctx_server.get_meta();
+
     glue_msg_load_res res;
     res.success.value = true;
     res.n_ctx.value = params.n_ctx;
@@ -388,6 +391,8 @@ struct wllama_context
     res.has_encoder.value = llama_model_has_encoder(model);
     res.token_decoder_start.value = llama_model_decoder_start_token(model);
     res.media_marker.value = get_media_marker();
+    res.has_image_input.value = server_meta.chat_params.allow_image;
+    res.has_audio_input.value = server_meta.chat_params.allow_audio;
     return res;
   }
 

@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMessages } from '../utils/messages.context';
 import { useWllama } from '../utils/wllama.context';
-import { Message, Screen } from '../utils/types';
-import { formatChat } from '../utils/utils';
+import { MediaData, Message, Screen } from '../utils/types';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faStop } from '@fortawesome/free-solid-svg-icons';
 import ScreenWrapper from './ScreenWrapper';
@@ -11,14 +10,17 @@ import { MarkdownMessage } from './MarkdownMessage';
 
 export default function ChatScreen() {
   const [input, setInput] = useState('');
+  const [pendingMedia, setPendingMedia] = useState<MediaData | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   const {
     currentConvId,
     isGenerating,
     createCompletion,
     navigateTo,
     loadedModel,
-    getWllamaInstance,
     stopCompletion,
+    currRuntimeInfo,
   } = useWllama();
   const {
     getConversationById,
@@ -30,18 +32,38 @@ export default function ChatScreen() {
   useIntervalWhen(chatScrollToBottom, 500, isGenerating, true);
 
   const currConv = getConversationById(currentConvId);
+  const supportsMedia =
+    currRuntimeInfo?.supportsImage || currRuntimeInfo?.supportsAudio;
+
+  const onPickFile =
+    (type: 'image' | 'audio') => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setPendingMedia({
+          type,
+          data: ev.target!.result as ArrayBuffer,
+          dataUrl: URL.createObjectURL(file),
+        });
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = '';
+    };
 
   const onSubmit = async () => {
     if (isGenerating) return;
 
-    // copy input and create messages
     const currHistory = currConv?.messages ?? [];
     const userInput = input;
+    const media = pendingMedia;
     setInput('');
+    setPendingMedia(null);
     const userMsg: Message = {
       id: Date.now(),
       content: userInput,
       role: 'user',
+      mediaData: media ?? undefined,
     };
     const assistantMsg: Message = {
       id: Date.now() + 1,
@@ -49,36 +71,18 @@ export default function ChatScreen() {
       role: 'assistant',
     };
 
-    // process conversation
     let convId = currConv?.id;
     if (!convId) {
-      // need to create new conversation
       const newConv = newConversation(userMsg);
       convId = newConv.id;
       navigateTo(Screen.CHAT, convId);
       addMessageToConversation(convId, assistantMsg);
     } else {
-      // append to current conversation
       addMessageToConversation(convId, userMsg);
       addMessageToConversation(convId, assistantMsg);
     }
 
-    // generate response
-    if (!loadedModel) {
-      throw new Error('loadedModel is null');
-    }
-    let formattedChat: string;
-    try {
-      formattedChat = await formatChat(getWllamaInstance(), [
-        ...currHistory,
-        userMsg,
-      ]);
-    } catch (e) {
-      alert(`Error while formatting chat: ${(e as any)?.message ?? 'unknown'}`);
-      throw e;
-    }
-    console.log({ formattedChat });
-    await createCompletion(formattedChat, (newContent) => {
+    await createCompletion([...currHistory, userMsg], (newContent) => {
       editMessageInConversation(convId, assistantMsg.id, newContent);
     });
   };
@@ -94,6 +98,19 @@ export default function ChatScreen() {
               msg.role === 'user' ? (
                 <div className="chat chat-end" key={msg.id}>
                   <div className="chat-bubble">
+                    {msg.mediaData?.type === 'image' && (
+                      <img
+                        src={msg.mediaData.dataUrl}
+                        className="max-w-48 rounded mb-1"
+                      />
+                    )}
+                    {msg.mediaData?.type === 'audio' && (
+                      <audio
+                        controls
+                        src={msg.mediaData.dataUrl}
+                        className="mb-1"
+                      />
+                    )}
                     {msg.content.length > 0 && (
                       <MarkdownMessage content={msg.content} />
                     )}
@@ -131,19 +148,94 @@ export default function ChatScreen() {
         )}
 
         {loadedModel && (
-          <textarea
-            className="textarea textarea-bordered w-full"
-            placeholder="Your message..."
-            disabled={isGenerating}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.keyCode == 13 && e.shiftKey == false) {
-                e.preventDefault();
-                onSubmit();
-              }
-            }}
-          />
+          <>
+            {pendingMedia && (
+              <div className="flex items-center gap-2 mb-2">
+                {pendingMedia.type === 'image' ? (
+                  <img
+                    src={pendingMedia.dataUrl}
+                    className="h-16 w-16 object-cover rounded"
+                  />
+                ) : (
+                  <audio controls src={pendingMedia.dataUrl} />
+                )}
+                <button
+                  className="btn btn-xs btn-circle btn-outline"
+                  onClick={() => setPendingMedia(null)}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              {supportsMedia && (
+                <>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={onPickFile('image')}
+                  />
+                  <input
+                    ref={audioInputRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={onPickFile('audio')}
+                  />
+                  <div className="dropdown dropdown-top">
+                    <button
+                      tabIndex={0}
+                      className="btn btn-sm btn-ghost h-full border border-base-content/20"
+                      disabled={isGenerating}
+                    >
+                      +
+                    </button>
+                    <ul className="dropdown-content menu bg-base-100 rounded-box z-[1] w-36 p-2 shadow mb-1">
+                      {currRuntimeInfo?.supportsImage && (
+                        <li>
+                          <a
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              imageInputRef.current?.click();
+                            }}
+                          >
+                            Image
+                          </a>
+                        </li>
+                      )}
+                      {currRuntimeInfo?.supportsAudio && (
+                        <li>
+                          <a
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              audioInputRef.current?.click();
+                            }}
+                          >
+                            Audio
+                          </a>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </>
+              )}
+              <textarea
+                className="textarea textarea-bordered grow"
+                placeholder="Your message..."
+                disabled={isGenerating}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.keyCode == 13 && e.shiftKey == false) {
+                    e.preventDefault();
+                    onSubmit();
+                  }
+                }}
+              />
+            </div>
+          </>
         )}
 
         {!loadedModel && <WarnNoModel />}

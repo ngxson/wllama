@@ -1,8 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { Template } from '@huggingface/jinja';
-import { Message, Screen } from './types';
-import { Wllama } from '@wllama/wllama';
-import { DEFAULT_CHAT_TEMPLATE } from '../config';
+import { Screen } from './types';
 
 export const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -30,46 +27,6 @@ export const WllamaStorage = {
 export const getDefaultScreen = (): Screen => {
   const welcome: boolean = WllamaStorage.load('welcome', true);
   return welcome ? Screen.GUIDE : Screen.MODEL;
-};
-
-export const formatChat = async (
-  modelWllama: Wllama,
-  messages: Message[]
-): Promise<string> => {
-  const templateStr = modelWllama.getChatTemplate() ?? DEFAULT_CHAT_TEMPLATE;
-  // dirty patch for DeepSeek model (crash on @huggingface/jinja)
-  const isDeepSeekR1 =
-    templateStr.match(/<｜Assistant｜>/) &&
-    templateStr.match(/<｜User｜>/) &&
-    templateStr.match(/<\/think>/);
-  if (isDeepSeekR1) {
-    let result = '';
-    for (const message of messages) {
-      if (message.role === 'system') {
-        result += `${message.content}\n\n`;
-      } else if (message.role === 'user') {
-        result += `<｜User｜>${message.content}`;
-      } else {
-        result += `<｜Assistant｜>${message.content.split('</think>').pop()}<｜end▁of▁sentence｜>`;
-      }
-    }
-    return result + '<｜Assistant｜>';
-  }
-  const template = new Template(templateStr);
-  const bos_token: string = await modelWllama.detokenize(
-    [modelWllama.getBOS()],
-    true
-  );
-  const eos_token: string = await modelWllama.detokenize(
-    [modelWllama.getEOS()],
-    true
-  );
-  return template.render({
-    messages,
-    bos_token,
-    eos_token,
-    add_generation_prompt: true,
-  });
 };
 
 export const toHumanReadableSize = (bytes: number): string => {

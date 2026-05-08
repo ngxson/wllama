@@ -143,7 +143,7 @@ export class Wllama {
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
   private nbThreads: number = 1;
-  private useEmbeddings: boolean = false;
+  // private useEmbeddings: boolean = false;
   // available when loaded
   private loadedContextInfo: LoadedContextInfo = null as any;
   private seed: number | undefined = undefined;
@@ -520,7 +520,7 @@ export class Wllama {
     this.bosToken = loadedCtxInfo.token_bos;
     this.eosToken = loadedCtxInfo.token_eos;
     this.eotToken = loadedCtxInfo.token_eot;
-    this.useEmbeddings = !!params.embeddings;
+    // this.useEmbeddings = !!params.embeddings;
     this.metadata = {
       hparams: {
         nVocab: loadedCtxInfo.n_vocab,
@@ -688,6 +688,25 @@ export class Wllama {
       );
       resolve(createGenerator());
     });
+  }
+
+  /**
+   * Whether the currently loaded model supports a specific input modality (e.g. image or audio).
+   * @param modality
+   * @returns
+   */
+  supportInputModality(modality: 'image' | 'audio'): boolean {
+    this.checkModelLoaded();
+    if (modality === 'image') {
+      return !!this.loadedContextInfo.has_image_input;
+    } else if (modality === 'audio') {
+      return !!this.loadedContextInfo.has_audio_input;
+    } else {
+      throw new WllamaError(
+        'Unsupported modality: ' + modality,
+        'unknown_error'
+      );
+    }
   }
 
   /**

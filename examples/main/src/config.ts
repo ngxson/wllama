@@ -13,10 +13,18 @@ export const WLLAMA_CONFIG_PATHS = {
 
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
-export const LIST_MODELS = [
+export const LIST_MODELS: {
+  url: string;
+  mmprojUrl?: string;
+  size: number;
+  modalities?: ('image' | 'audio')[];
+}[] = [
   {
-    url: 'https://huggingface.co/LiquidAI/LFM2-350M-GGUF/resolve/main/LFM2-350M-Q4_K_M.gguf',
-    size: 229309376,
+    url: 'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/LFM2.5-VL-450M-Q4_0.gguf',
+    mmprojUrl:
+      'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/mmproj-LFM2.5-VL-450m-Q8_0.gguf',
+    size: 566231040,
+    modalities: ['image'],
   },
   {
     url: 'https://huggingface.co/LiquidAI/LFM2-700M-GGUF/resolve/main/LFM2-700M-Q4_K_M.gguf',
@@ -91,6 +99,3 @@ export const DEFAULT_INFERENCE_PARAMS: InferenceParams = {
   nBatch: 128,
   temperature: 0.2,
 };
-
-export const DEFAULT_CHAT_TEMPLATE =
-  "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
