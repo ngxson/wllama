@@ -130,6 +130,7 @@ export class ProxyToWorker {
     name: string,
     body: GlueMsg
   ): Promise<T> {
+    // console.debug(`wllamaAction: ${name}`, body);
     const encodedMsg = glueSerialize(body);
     const result = await this.pushTask({
       verb: 'wllama.action',

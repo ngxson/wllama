@@ -15,15 +15,15 @@
 // #define GLUE_DEBUG(...) fprintf(stderr, "@@ERROR@@" __VA_ARGS__)
 
 #include "llama.h"
-#include "helpers/wcommon.h"
-#include "actions.hpp"
+#include "wllama-context.h"
+#include "wllama.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 #define WLLAMA_ACTION(name)                 \
   else if (action == #name)                 \
   {                                         \
-    auto res = action_##name(app, req_raw); \
+    auto res = app.action_##name(req_raw);  \
     res.handler.serialize(output_buffer);   \
   }
 
@@ -59,7 +59,7 @@ static void printStr(ggml_log_level level, const char *text)
 }
 
 static glue_outbuf output_buffer;
-static app_t app;
+static wllama_context app;
 
 static std::vector<char> input_buffer;
 // second argument is dummy
@@ -102,26 +102,9 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
     }
 
     WLLAMA_ACTION(load)
-    WLLAMA_ACTION(set_options)
-    WLLAMA_ACTION(sampling_init)
-    WLLAMA_ACTION(sampling_sample)
-    WLLAMA_ACTION(sampling_accept)
-    WLLAMA_ACTION(get_vocab)
-    WLLAMA_ACTION(lookup_token)
-    WLLAMA_ACTION(tokenize)
-    WLLAMA_ACTION(detokenize)
-    WLLAMA_ACTION(decode)
-    WLLAMA_ACTION(encode)
-    WLLAMA_ACTION(get_logits)
-    WLLAMA_ACTION(embeddings)
-    WLLAMA_ACTION(chat_format)
-    WLLAMA_ACTION(kv_remove)
-    WLLAMA_ACTION(kv_clear)
-    WLLAMA_ACTION(current_status)
-    // WLLAMA_ACTION(session_save)
-    // WLLAMA_ACTION(session_load)
-    WLLAMA_ACTION(test_benchmark)
-    WLLAMA_ACTION(test_perplexity)
+    WLLAMA_ACTION(completion)
+    WLLAMA_ACTION(embedding)
+    WLLAMA_ACTION(get_result)
 
     else
     {
@@ -145,7 +128,7 @@ extern "C" const char *wllama_exit()
 {
   try
   {
-    free_all(app);
+    // app.unload();
     llama_backend_free();
     return "{\"success\":true}";
   }

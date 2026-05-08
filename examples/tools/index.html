@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wllama.cpp tool calling demo</title>
+
+    <style>
+      body {
+        background-color: rgb(55, 55, 55);
+        color: rgb(222, 222, 222);
+        font-family: 'Courier New', Courier, monospace;
+        padding: 1em 1em 4em 1em;
+        max-width: 900px;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      #progress_bar_wrap {
+        width: 100%;
+        background: #333;
+        border-radius: 4px;
+        height: 18px;
+        margin: 0.5em 0;
+        display: none;
+      }
+
+      #progress_bar {
+        height: 18px;
+        border-radius: 4px;
+        background: #5a9;
+        width: 0%;
+        transition: width 0.2s;
+      }
+
+      label {
+        display: inline-block;
+        min-width: 12em;
+      }
+
+      .demo-prompts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5em;
+        margin-bottom: 1em;
+      }
+
+      .demo-btn {
+        background: #3a5a7a;
+        border: 1px solid #5a8ab0;
+        color: #ddd;
+        padding: 0.4em 0.8em;
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 0.9em;
+      }
+
+      .demo-btn:hover:not(:disabled) {
+        background: #4a6a8a;
+      }
+
+      #input_prompt {
+        width: 100%;
+        box-sizing: border-box;
+        background: #333;
+        border: 1px solid #666;
+        color: #ddd;
+        padding: 0.5em;
+        font-family: inherit;
+        font-size: 1em;
+        border-radius: 4px;
+        margin-bottom: 0.5em;
+      }
+
+      #btn_run {
+        background: #3a7a5a;
+        border: 1px solid #5ab08a;
+        color: #ddd;
+        padding: 0.5em 1.2em;
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 1em;
+      }
+
+      #btn_run:hover:not(:disabled) {
+        background: #4a8a6a;
+      }
+
+      #conversation {
+        margin-top: 1.5em;
+      }
+
+      .msg {
+        border-radius: 6px;
+        padding: 0.7em 1em;
+        margin-bottom: 0.8em;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .msg-user {
+        background: #2a4a6a;
+        border-left: 3px solid #5a9ad0;
+      }
+
+      .msg-assistant {
+        background: #2a5a3a;
+        border-left: 3px solid #5ab07a;
+      }
+
+      .msg-tool-call {
+        background: #4a3a1a;
+        border-left: 3px solid #c09030;
+      }
+
+      .msg-tool-result {
+        background: #3a1a4a;
+        border-left: 3px solid #9050c0;
+      }
+
+      .msg-label {
+        font-size: 0.75em;
+        opacity: 0.7;
+        margin-bottom: 0.3em;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .tool-def-block {
+        background: #222;
+        border: 1px solid #555;
+        border-radius: 6px;
+        padding: 0.7em 1em;
+        margin-bottom: 0.5em;
+        font-size: 0.9em;
+      }
+
+      .tool-def-name {
+        color: #f0a030;
+        font-weight: bold;
+      }
+
+      .tool-def-desc {
+        color: #aaa;
+        margin: 0.2em 0 0.4em 0;
+      }
+
+      .tool-def-params {
+        font-size: 0.85em;
+        color: #ccc;
+      }
+
+      .tool-def-params code {
+        background: #333;
+        padding: 0.15em 0.4em;
+        border-radius: 3px;
+        color: #8df;
+      }
+
+      pre.json {
+        background: #1a1a1a;
+        border-radius: 4px;
+        padding: 0.6em;
+        overflow-x: auto;
+        font-size: 0.85em;
+        margin: 0.3em 0 0 0;
+      }
+
+      /* spinner */
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 0.9em;
+        height: 0.9em;
+        border: 2px solid #aaa;
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        vertical-align: middle;
+        margin-right: 0.4em;
+      }
+
+      #spinner_wrap {
+        display: none;
+        margin-top: 0.8em;
+        font-size: 0.95em;
+        color: #bbb;
+      }
+
+      #lamp_status {
+        font-size: 1.4em;
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Tool Calling Demo (OAI-compat API)</h2>
+
+    <b>Step 1: Load model</b><br /><br />
+
+    <button id="btn_load_remote">Load remote model (Qwen3.5-0.8B)</button><br />
+    <small>Downloads ~530MB from Hugging Face</small><br /><br />
+
+    Or pick a local GGUF file:<br />
+    <input type="file" id="btn_pick_files" accept=".gguf" /><br /><br />
+
+    <div id="progress_bar_wrap"><div id="progress_bar"></div></div>
+    <span id="status_text"></span><br /><br />
+
+    <b>Step 2: Available tools</b><br /><br />
+
+    <div id="tool_defs"></div>
+
+    <b>Step 3: Run a prompt</b><br /><br />
+
+    Demo prompts:<br />
+    <div class="demo-prompts">
+      <button class="demo-btn" data-prompt="What is 1234 multiplied by 5678?">
+        Calculator
+      </button>
+      <button
+        class="demo-btn"
+        data-prompt="What is the current weather in Tokyo?"
+      >
+        Weather
+      </button>
+      <button
+        class="demo-btn"
+        data-tool="lamp"
+        data-prompt="Please turn off the lamp."
+      >
+        Control lamp
+      </button>
+    </div>
+
+    <textarea
+      id="input_prompt"
+      rows="3"
+      placeholder="Or type your own prompt…"
+    ></textarea>
+    <button id="btn_run" disabled>Run</button>
+
+    <div id="spinner_wrap">
+      <span class="spinner"></span><span id="spinner_label">Generating…</span>
+    </div>
+
+    <div id="conversation"></div>
+
+    <script type="module">
+      import { Wllama } from '../../esm/index.js';
+
+      const CONFIG_PATHS = {
+        'single-thread/wllama.wasm': '../../esm/single-thread/wllama.wasm',
+        'multi-thread/wllama.wasm': '../../esm/multi-thread/wllama.wasm',
+      };
+
+      const MODEL_HF = { repo: 'unsloth/Qwen3.5-0.8B-GGUF', quant: 'Q4_K_M' };
+
+      // ── Lamp state ────────────────────────────────────────────────────────
+
+      let lampState = 'on'; // default on
+
+      function updateLampDisplay() {
+        const block = document.getElementById('tool_def_control_lamp');
+        if (block) {
+          block.querySelector('.tool-def-lamp-emoji').textContent =
+            lampState === 'on' ? '💡' : '🌑';
+        }
+        const lampBtn = document.querySelector('.demo-btn[data-tool="lamp"]');
+        if (lampBtn) {
+          const nextState = lampState === 'on' ? 'off' : 'on';
+          lampBtn.dataset.prompt = `Please turn ${nextState} the lamp.`;
+        }
+      }
+
+      // ── Tool definitions ──────────────────────────────────────────────────
+
+      const TOOLS = [
+        {
+          type: 'function',
+          function: {
+            name: 'calculator',
+            description:
+              'Perform basic arithmetic: addition, subtraction, multiplication, division.',
+            parameters: {
+              type: 'object',
+              properties: {
+                expression: {
+                  type: 'string',
+                  description:
+                    'A mathematical expression to evaluate, e.g. "1234 * 5678".',
+                },
+              },
+              required: ['expression'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            description:
+              'Get the current weather for a given city. Note: always returns rain at 21°C regardless of city.',
+            parameters: {
+              type: 'object',
+              properties: {
+                city: {
+                  type: 'string',
+                  description: 'Name of the city, e.g. "Tokyo".',
+                },
+              },
+              required: ['city'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'control_lamp',
+            description: 'Turn the lamp on or off.',
+            parameters: {
+              type: 'object',
+              properties: {
+                state: {
+                  type: 'string',
+                  enum: ['on', 'off'],
+                  description: 'The desired state of the lamp.',
+                },
+              },
+              required: ['state'],
+            },
+          },
+        },
+      ];
+
+      // ── Tool executors ────────────────────────────────────────────────────
+
+      function executeTool(name, args) {
+        switch (name) {
+          case 'calculator': {
+            try {
+              const result = Function(
+                '"use strict"; return (' + args.expression + ')'
+              )();
+              return { result: String(result) };
+            } catch (e) {
+              return { error: 'Invalid expression: ' + e.message };
+            }
+          }
+          case 'get_weather': {
+            return {
+              city: args.city,
+              condition: 'rain',
+              temperature_celsius: 21,
+              note: 'This is a simulated result — always returns rain at 21°C.',
+            };
+          }
+          case 'control_lamp': {
+            lampState = args.state;
+            updateLampDisplay();
+            return { status: 'ok', lamp_state: args.state };
+          }
+          default:
+            return { error: 'Unknown tool: ' + name };
+        }
+      }
+
+      // ── UI helpers ────────────────────────────────────────────────────────
+
+      function addMessage(role, content) {
+        const div = document.createElement('div');
+        div.className = 'msg msg-' + role.replace('_', '-');
+        const label = document.createElement('div');
+        label.className = 'msg-label';
+        label.textContent =
+          role === 'tool_call'
+            ? '⚙ Tool Call'
+            : role === 'tool_result'
+              ? '↩ Tool Result'
+              : role === 'user'
+                ? '▶ User'
+                : '◀ Assistant';
+        div.appendChild(label);
+        const body = document.createElement('div');
+        if (typeof content === 'string') {
+          body.textContent = content;
+        } else {
+          const pre = document.createElement('pre');
+          pre.className = 'json';
+          pre.textContent = JSON.stringify(content, null, 2);
+          body.appendChild(pre);
+        }
+        div.appendChild(body);
+        elemConversation.appendChild(div);
+        div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return div;
+      }
+
+      // Returns a msg div whose body text can be appended to incrementally
+      function addStreamingMessage() {
+        const div = document.createElement('div');
+        div.className = 'msg msg-assistant';
+        const label = document.createElement('div');
+        label.className = 'msg-label';
+        label.textContent = '◀ Assistant';
+        div.appendChild(label);
+        const body = document.createElement('div');
+        body.className = 'streaming-body';
+        div.appendChild(body);
+        elemConversation.appendChild(div);
+        return body;
+      }
+
+      function renderToolDefs() {
+        elemToolDefs.innerHTML = '';
+        for (const tool of TOOLS) {
+          const fn = tool.function;
+          const block = document.createElement('div');
+          block.className = 'tool-def-block';
+          if (fn.name === 'control_lamp') {
+            block.id = 'tool_def_control_lamp';
+          }
+
+          const nameEl = document.createElement('div');
+          nameEl.className = 'tool-def-name';
+          if (fn.name === 'control_lamp') {
+            const emoji = document.createElement('span');
+            emoji.className = 'tool-def-lamp-emoji';
+            emoji.textContent = lampState === 'on' ? '💡' : '🌑';
+            emoji.style.marginRight = '0.3em';
+            nameEl.appendChild(emoji);
+          }
+          nameEl.appendChild(document.createTextNode(fn.name));
+          block.appendChild(nameEl);
+
+          const descEl = document.createElement('div');
+          descEl.className = 'tool-def-desc';
+          descEl.textContent = fn.description;
+          block.appendChild(descEl);
+
+          if (fn.parameters?.properties) {
+            const params = document.createElement('div');
+            params.className = 'tool-def-params';
+            const entries = Object.entries(fn.parameters.properties).map(
+              ([k, v]) => {
+                const req = fn.parameters.required?.includes(k) ? '' : '?';
+                const enumHint = v.enum ? ` (${v.enum.join(' | ')})` : '';
+                return `<code>${k}${req}: ${v.type}${enumHint}</code> — ${v.description ?? ''}`;
+              }
+            );
+            params.innerHTML = 'Params: ' + entries.join(' &nbsp;·&nbsp; ');
+            block.appendChild(params);
+          }
+
+          elemToolDefs.appendChild(block);
+        }
+      }
+
+      // ── Main logic ────────────────────────────────────────────────────────
+
+      let wllama = null;
+
+      async function runChat(userPrompt) {
+        setRunDisabled(true);
+        elemConversation.innerHTML = '';
+
+        addMessage('user', userPrompt);
+
+        const messages = [{ role: 'user', content: userPrompt }];
+
+        try {
+          let iterations = 0;
+          const MAX_ITERATIONS = 5;
+
+          while (iterations++ < MAX_ITERATIONS) {
+            setSpinner(true, 'Generating…');
+
+            // Collect full streamed response
+            let fullContent = '';
+            const collectedToolCalls = {}; // index → {id, name, arguments}
+
+            const streamBody = addStreamingMessage();
+
+            const stream = await wllama.createChatCompletion({
+              messages,
+              tools: TOOLS,
+              tool_choice: 'auto',
+              max_tokens: 512,
+              temperature: 0.1,
+              stream: true,
+            });
+
+            let finishReason = null;
+
+            for await (const chunk of stream) {
+              const choice = chunk.choices[0];
+              if (!choice) continue;
+
+              finishReason = choice.finish_reason ?? finishReason;
+
+              const delta = choice.delta;
+
+              if (delta.content) {
+                fullContent += delta.content;
+                streamBody.textContent = fullContent;
+                streamBody.scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'nearest',
+                });
+              }
+
+              if (delta.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                  if (!collectedToolCalls[tc.index]) {
+                    collectedToolCalls[tc.index] = {
+                      id: '',
+                      name: '',
+                      arguments: '',
+                    };
+                  }
+                  const entry = collectedToolCalls[tc.index];
+                  if (tc.id) entry.id = tc.id;
+                  if (tc.function?.name) entry.name += tc.function.name;
+                  if (tc.function?.arguments)
+                    entry.arguments += tc.function.arguments;
+                }
+              }
+            }
+
+            // If nothing streamed as content, remove the empty assistant bubble
+            if (!fullContent) {
+              streamBody.closest('.msg')?.remove();
+            }
+
+            const toolCallsList = Object.values(collectedToolCalls);
+
+            if (finishReason === 'tool_calls' && toolCallsList.length > 0) {
+              // Build assistant message with tool_calls
+              const assistantMsg = {
+                role: 'assistant',
+                content: fullContent || null,
+                tool_calls: toolCallsList.map((tc) => ({
+                  id: tc.id,
+                  type: 'function',
+                  function: { name: tc.name, arguments: tc.arguments },
+                })),
+              };
+              messages.push(assistantMsg);
+
+              for (const tc of toolCallsList) {
+                let fnArgs;
+                try {
+                  fnArgs = JSON.parse(tc.arguments);
+                } catch {
+                  fnArgs = {};
+                }
+
+                addMessage('tool_call', {
+                  id: tc.id,
+                  function: tc.name,
+                  arguments: fnArgs,
+                });
+
+                setSpinner(true, `Executing tool: ${tc.name}…`);
+                const result = executeTool(tc.name, fnArgs);
+
+                addMessage('tool_result', {
+                  tool_call_id: tc.id,
+                  function: tc.name,
+                  result,
+                });
+
+                messages.push({
+                  role: 'tool',
+                  tool_call_id: tc.id,
+                  content: JSON.stringify(result),
+                });
+              }
+              // Loop back for final answer
+            } else {
+              // Final text response already streamed
+              if (!fullContent) {
+                addMessage('assistant', '(no content)');
+              }
+              break;
+            }
+          }
+        } catch (err) {
+          addMessage('assistant', `Error: ${err.message}`);
+          console.error(err);
+        }
+
+        setSpinner(false);
+        setStatus('Done.');
+        setRunDisabled(false);
+      }
+
+      // ── Model loading ─────────────────────────────────────────────────────
+
+      async function loadRemoteModel() {
+        showProgressBar(true);
+        wllama = new Wllama(CONFIG_PATHS);
+        try {
+          await wllama.loadModelFromHF(MODEL_HF, {
+            progressCallback: ({ loaded, total }) => {
+              const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+              setStatus(`Downloading… ${pct}%`);
+              setProgressBar(pct);
+            },
+          });
+          showProgressBar(false);
+          setStatus('Model loaded!');
+          setRunDisabled(false);
+        } catch (err) {
+          showProgressBar(false);
+          setStatus(`Error: ${err.message}`);
+          console.error(err);
+          elemBtnLoadRemote.disabled = false;
+          elemBtnPickFiles.disabled = false;
+        }
+      }
+
+      async function loadLocalFile(file) {
+        setStatus('Loading local file…');
+        wllama = new Wllama(CONFIG_PATHS);
+        try {
+          await wllama.loadModel([file]);
+          setStatus('Model loaded!');
+          setRunDisabled(false);
+        } catch (err) {
+          setStatus(`Error: ${err.message}`);
+          console.error(err);
+          elemBtnLoadRemote.disabled = false;
+          elemBtnPickFiles.disabled = false;
+        }
+      }
+
+      // ── Helpers ───────────────────────────────────────────────────────────
+
+      function setStatus(text) {
+        elemStatusText.textContent = text;
+      }
+      function showProgressBar(show) {
+        elemProgressBarWrap.style.display = show ? 'block' : 'none';
+      }
+      function setProgressBar(pct) {
+        elemProgressBar.style.width = `${Math.min(100, pct)}%`;
+      }
+
+      function setSpinner(show, label = '') {
+        elemSpinnerWrap.style.display = show ? 'block' : 'none';
+        if (label) elemSpinnerLabel.textContent = label;
+      }
+
+      function setRunDisabled(disabled) {
+        elemBtnRun.disabled = disabled;
+        elemInputPrompt.disabled = disabled;
+        document
+          .querySelectorAll('.demo-btn')
+          .forEach((b) => (b.disabled = disabled));
+      }
+
+      // ── Bootstrap ─────────────────────────────────────────────────────────
+
+      const elemBtnLoadRemote = document.getElementById('btn_load_remote');
+      const elemBtnPickFiles = document.getElementById('btn_pick_files');
+      const elemProgressBarWrap = document.getElementById('progress_bar_wrap');
+      const elemProgressBar = document.getElementById('progress_bar');
+      const elemStatusText = document.getElementById('status_text');
+      const elemInputPrompt = document.getElementById('input_prompt');
+      const elemBtnRun = document.getElementById('btn_run');
+      const elemConversation = document.getElementById('conversation');
+      const elemToolDefs = document.getElementById('tool_defs');
+      const elemSpinnerWrap = document.getElementById('spinner_wrap');
+      const elemSpinnerLabel = document.getElementById('spinner_label');
+
+      renderToolDefs();
+      setRunDisabled(true);
+
+      elemBtnLoadRemote.onclick = async () => {
+        elemBtnLoadRemote.disabled = true;
+        elemBtnPickFiles.disabled = true;
+        await loadRemoteModel();
+      };
+
+      elemBtnPickFiles.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        elemBtnLoadRemote.disabled = true;
+        elemBtnPickFiles.disabled = true;
+        await loadLocalFile(file);
+      };
+
+      document.querySelectorAll('.demo-btn').forEach((btn) => {
+        btn.onclick = () => {
+          elemInputPrompt.value = btn.dataset.prompt;
+          if (!elemBtnRun.disabled) runChat(btn.dataset.prompt);
+        };
+      });
+
+      elemBtnRun.onclick = () => {
+        const prompt = elemInputPrompt.value.trim();
+        if (prompt) runChat(prompt);
+      };
+
+      elemInputPrompt.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (!elemBtnRun.disabled) {
+            const prompt = elemInputPrompt.value.trim();
+            if (prompt) runChat(prompt);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

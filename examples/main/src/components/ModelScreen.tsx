@@ -154,7 +154,9 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
   const { isLoadingModel, addCustomModel } = useWllama();
   const [hfRepo, setHfRepo] = useState<string>('');
   const [hfFile, setHfFile] = useState<string>('');
-  const [hfFiles, setHfFiles] = useState<string[]>([]);
+  const [hfMmprojFile, setHfMmprojFile] = useState<string>('');
+  const [hfModelFiles, setHfModelFiles] = useState<string[]>([]);
+  const [hfMmprojFiles, setHfMmprojFiles] = useState<string[]>([]);
   const [abortSignal, setAbortSignal] = useState<AbortController>(
     new AbortController()
   );
@@ -163,7 +165,8 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
   useDebounce(
     async () => {
       if (hfRepo.length < 2) {
-        setHfFiles([]);
+        setHfModelFiles([]);
+        setHfMmprojFiles([]);
         return;
       }
       try {
@@ -172,20 +175,26 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
         });
         const data: { siblings?: { rfilename: string }[] } = await res.json();
         if (data.siblings) {
-          setHfFiles(
-            data.siblings
-              .map((s) => s.rfilename)
-              .filter((f) => isValidGgufFile(f))
+          const ggufFiles = data.siblings
+            .map((s) => s.rfilename)
+            .filter((f) => isValidGgufFile(f));
+          setHfModelFiles(
+            ggufFiles.filter((f) => !f.toLowerCase().includes('mmproj'))
+          );
+          setHfMmprojFiles(
+            ggufFiles.filter((f) => f.toLowerCase().includes('mmproj'))
           );
           setErr('');
         } else {
           setErr('no model found or it is private');
-          setHfFiles([]);
+          setHfModelFiles([]);
+          setHfMmprojFiles([]);
         }
       } catch (e) {
         if ((e as Error).name !== 'AbortError') {
           setErr((e as any)?.message ?? 'unknown error');
-          setHfFiles([]);
+          setHfModelFiles([]);
+          setHfMmprojFiles([]);
         }
       }
     },
@@ -194,15 +203,20 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
   );
 
   useEffect(() => {
-    if (hfFiles.length === 0) {
-      setHfFile('');
-    }
-  }, [hfFiles]);
+    if (hfModelFiles.length === 0) setHfFile('');
+  }, [hfModelFiles]);
+
+  useEffect(() => {
+    if (hfMmprojFiles.length === 0) setHfMmprojFile('');
+  }, [hfMmprojFiles]);
+
+  const hfBase = `https://huggingface.co/${hfRepo}/resolve/main`;
 
   const onSubmit = async () => {
     try {
       await addCustomModel(
-        `https://huggingface.co/${hfRepo}/resolve/main/${hfFile}`
+        `${hfBase}/${hfFile}`,
+        hfMmprojFile ? `${hfBase}/${hfMmprojFile}` : undefined
       );
       onClose();
     } catch (e) {
@@ -242,16 +256,31 @@ function AddCustomModelDialog({ onClose }: { onClose(): void }) {
             />
           </label>
           <select
-            className="select select-bordered w-full"
+            className="select select-bordered w-full mb-2"
+            value={hfFile}
             onChange={(e) => setHfFile(e.target.value)}
           >
             <option value="">Select a model file</option>
-            {hfFiles.map((f) => (
+            {hfModelFiles.map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>
             ))}
           </select>
+          {hfMmprojFiles.length > 0 && (
+            <select
+              className="select select-bordered w-full"
+              value={hfMmprojFile}
+              onChange={(e) => setHfMmprojFile(e.target.value)}
+            >
+              <option value="">Select mmproj file (optional)</option>
+              {hfMmprojFiles.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         {err && <div className="mt-4 text-error">Error: {err}</div>}
         <div className="modal-action">
@@ -319,6 +348,16 @@ function ModelCard({
             {m.state == ModelState.DOWNLOADING
               ? ` - Downloaded: ${percent}%`
               : ''}
+            {m.modalities && m.modalities.length > 0 && (
+              <>
+                {' '}
+                {m.modalities.map((mod) => (
+                  <span key={mod} className="badge badge-sm badge-accent ml-1">
+                    {mod}
+                  </span>
+                ))}
+              </>
+            )}
           </small>
 
           {m.state === ModelState.LOADED && currRuntimeInfo && (

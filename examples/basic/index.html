@@ -97,15 +97,17 @@
 
       elemBtnCompletions.onclick = async () => {
         setCmplDisable(true);
-        await wllama.createCompletion(elemInput.value, {
-          nPredict: parseInt(elemNPredict.value),
-          sampling: {
-            temp: 0.5,
-            top_k: 40,
-            top_p: 0.9,
-          },
-          onNewToken: (token, piece, currentText) => {
-            elemOutputCmpl.textContent = currentText;
+        elemOutputCmpl.textContent = '';
+        await wllama.createCompletion({
+          prompt: elemInput.value,
+          max_tokens: parseInt(elemNPredict.value),
+          temperature: 0.5,
+          top_k: 40,
+          top_p: 0.9,
+          stream: true,
+          onData: (chunk) => {
+            const txt = chunk.choices[0].text;
+            elemOutputCmpl.textContent += txt;
           },
         });
         setCmplDisable(false);
@@ -130,10 +132,12 @@
 
       elemBtnEmbeddings.onclick = async () => {
         setEmbdDisable(true);
-        const embdA = await wllama1.createEmbedding(elemInputA.value);
+        let embdA = await wllama1.createEmbedding({ input: elemInputA.value });
         console.log({embdA});
-        const embdB = await wllama1.createEmbedding(elemInputB.value);
+        embdA = embdA.embedding; // OAI-compat response
+        let embdB = await wllama1.createEmbedding({ input: elemInputB.value });
         console.log({embdB});
+        embdB = embdB.embedding; // OAI-compat response
         // since embeddings are normalized, we don't need to calculate norm
         const dotProd = embdA.reduce((acc, _, i) => acc + embdA[i]*embdB[i], 0);
         elemOutputEmbd.textContent = dotProd;

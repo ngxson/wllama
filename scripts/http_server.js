@@ -33,6 +33,8 @@ app.get("/", (req, res) => {
     Examples:<br/>
     <a href="/examples/basic">Basic</a><br/>
     <a href="/examples/embeddings">Embeddings</a><br/>
+    <a href="/examples/multimodal">Multimodal</a><br/>
+    <a href="/examples/tools">Tools</a><br/>
   `);
 });
 

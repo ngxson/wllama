@@ -113,6 +113,40 @@ export const sortFileByShard = (blobs: Blob[]): void => {
   }
 };
 
+export const isMmproj = async (blob: Blob): Promise<boolean> => {
+  const META_NAME = 'general.architecture';
+  const META_VAL = 'clip';
+  const tmp = blob.slice(0, 128 * 1024);
+  const header = await tmp.arrayBuffer();
+
+  const buf = new Uint8Array(header);
+  const nameBytes = new TextEncoder().encode(META_NAME);
+  const valBytes = new TextEncoder().encode(META_VAL);
+
+  // Find offset of META_NAME in buffer
+  let offset = -1;
+  outer: for (let i = 0; i <= buf.length - nameBytes.length; i++) {
+    for (let j = 0; j < nameBytes.length; j++) {
+      if (buf[i + j] !== nameBytes[j]) continue outer;
+    }
+    offset = i;
+    break;
+  }
+  if (offset === -1) return false;
+
+  // Read valLen as uint64 at offset+8*3 (little-endian, read low 32 bits)
+  if (offset + 8 * 4 + 4 > buf.length) return false;
+  const view = new DataView(header);
+  const valLen = view.getBigUint64(offset + 8 * 3, true);
+  if (valLen !== 4n) return false;
+
+  // Read 4 bytes at offset+8*4, compare with META_VAL bytes
+  for (let i = 0; i < valBytes.length; i++) {
+    if (buf[offset + 8 * 4 + i] !== valBytes[i]) return false;
+  }
+  return true;
+};
+
 export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const absoluteUrl = (relativePath: string) =>
@@ -128,6 +162,49 @@ export const sumArr = (arr: number[]) =>
   arr.reduce((prev, curr) => prev + curr, 0);
 
 export const isString = (value: any): boolean => !!value?.startsWith;
+
+export const MMPROJ_FILE_NAME = 'mmproj.gguf';
+
+type ModelShard = { blob: Blob; name: string };
+export const prepareBlobs = async (
+  blobsInp: Blob[]
+): Promise<{
+  llm: ModelShard[];
+  mmproj: ModelShard | null;
+  all: ModelShard[];
+}> => {
+  const blobs: Blob[] = [];
+  let blobMmproj: Blob | null = null;
+
+  for (const blob of blobsInp) {
+    if (await isMmproj(blob)) {
+      blobMmproj = blob;
+    } else {
+      blobs.push(blob);
+    }
+  }
+
+  // prepare model-XXXXX-of-XXXXX.gguf blobs
+  sortFileByShard(blobs);
+  const result = blobs.map((blob, i) => ({
+    blob,
+    name: `model-${padDigits(i + 1, 5)}-of-${padDigits(blobs.length, 5)}.gguf`,
+  }));
+
+  // prepare mmproj.gguf blob
+  if (blobMmproj) {
+    result.push({
+      blob: blobMmproj,
+      name: MMPROJ_FILE_NAME,
+    });
+  }
+
+  return {
+    llm: result.filter((f) => f.name !== MMPROJ_FILE_NAME),
+    mmproj: blobMmproj ? { blob: blobMmproj, name: MMPROJ_FILE_NAME } : null,
+    all: result,
+  };
+};
 
 /**
  * Browser feature detection

@@ -29,6 +29,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "str",
+        "name": "mmproj_path",
+        "isNullable": true
+      },
+      {
         "type": "bool",
         "name": "n_ctx_auto",
         "isNullable": false
@@ -50,11 +55,6 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "int",
-        "name": "seed",
-        "isNullable": false
-      },
-      {
-        "type": "int",
         "name": "n_ctx",
         "isNullable": false
       },
@@ -62,6 +62,16 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "int",
         "name": "n_threads",
         "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "model_alias",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "log_level",
+        "isNullable": true
       },
       {
         "type": "bool",
@@ -80,7 +90,12 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "int",
-        "name": "n_seq_max",
+        "name": "n_ubatch",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "n_parallel",
         "isNullable": true
       },
       {
@@ -140,12 +155,62 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "bool",
+        "name": "kv_unified",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
         "name": "flash_attn",
         "isNullable": true
       },
       {
         "type": "bool",
         "name": "swa_full",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "n_ctx_checkpoints",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "checkpoint_every_nt",
+        "isNullable": true
+      },
+      {
+        "type": "str",
+        "name": "chat_template",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "jinja",
+        "isNullable": true
+      },
+      {
+        "type": "arr_str",
+        "name": "default_template_kwargs_keys",
+        "isNullable": true
+      },
+      {
+        "type": "arr_str",
+        "name": "default_template_kwargs_vals",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "reasoning",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "image_min_tokens",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "image_max_tokens",
         "isNullable": true
       }
     ]
@@ -244,360 +309,97 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "int",
         "name": "token_decoder_start",
         "isNullable": false
-      }
-    ]
-  },
-  "opti_req": {
-    "name": "opti_req",
-    "structName": "glue_msg_set_options_req",
-    "className": "GlueMsgSetOptionsReq",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "embeddings",
-        "isNullable": false
-      }
-    ]
-  },
-  "opti_res": {
-    "name": "opti_res",
-    "structName": "glue_msg_set_options_res",
-    "className": "GlueMsgSetOptionsRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      }
-    ]
-  },
-  "sint_req": {
-    "name": "sint_req",
-    "structName": "glue_msg_sampling_init_req",
-    "className": "GlueMsgSamplingInitReq",
-    "fields": [
-      {
-        "type": "int",
-        "name": "mirostat",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "mirostat_tau",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "mirostat_eta",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "temp",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "top_p",
-        "isNullable": true
-      },
-      {
-        "type": "int",
-        "name": "top_k",
-        "isNullable": true
-      },
-      {
-        "type": "int",
-        "name": "penalty_last_n",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "penalty_repeat",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "penalty_freq",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "penalty_present",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "dynatemp_range",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "dynatemp_exponent",
-        "isNullable": true
-      },
-      {
-        "type": "arr_str",
-        "name": "samplers_sequence",
-        "isNullable": true
       },
       {
         "type": "str",
-        "name": "grammar",
-        "isNullable": true
+        "name": "media_marker",
+        "isNullable": false
       },
-      {
-        "type": "int",
-        "name": "n_prev",
-        "isNullable": true
-      },
-      {
-        "type": "int",
-        "name": "n_probs",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "min_p",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "typical_p",
-        "isNullable": true
-      },
-      {
-        "type": "float",
-        "name": "typ_p",
-        "isNullable": true
-      },
-      {
-        "type": "arr_int",
-        "name": "logit_bias_toks",
-        "isNullable": true
-      },
-      {
-        "type": "arr_float",
-        "name": "logit_bias_vals",
-        "isNullable": true
-      },
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": true
-      }
-    ]
-  },
-  "sint_res": {
-    "name": "sint_res",
-    "structName": "glue_msg_sampling_init_res",
-    "className": "GlueMsgSamplingInitRes",
-    "fields": [
       {
         "type": "bool",
-        "name": "success",
+        "name": "has_image_input",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "has_audio_input",
         "isNullable": false
       }
     ]
   },
-  "gvoc_req": {
-    "name": "gvoc_req",
-    "structName": "glue_msg_get_vocab_req",
-    "className": "GlueMsgGetVocabReq",
-    "fields": []
-  },
-  "gvoc_res": {
-    "name": "gvoc_res",
-    "structName": "glue_msg_get_vocab_res",
-    "className": "GlueMsgGetVocabRes",
+  "cmpl_req": {
+    "name": "cmpl_req",
+    "structName": "glue_msg_completion_req",
+    "className": "GlueMsgCompletionReq",
     "fields": [
       {
         "type": "bool",
-        "name": "success",
+        "name": "is_chat",
+        "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "data_json",
         "isNullable": false
       },
       {
         "type": "arr_raw",
-        "name": "vocab",
+        "name": "files",
         "isNullable": false
       }
     ]
   },
-  "lkup_req": {
-    "name": "lkup_req",
-    "structName": "glue_msg_lookup_token_req",
-    "className": "GlueMsgLookupTokenReq",
+  "cmpl_res": {
+    "name": "cmpl_res",
+    "structName": "glue_msg_completion_res",
+    "className": "GlueMsgCompletionRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
+  },
+  "embd_req": {
+    "name": "embd_req",
+    "structName": "glue_msg_embedding_req",
+    "className": "GlueMsgEmbeddingReq",
     "fields": [
       {
         "type": "str",
-        "name": "piece",
+        "name": "data_json",
+        "isNullable": false
+      },
+      {
+        "type": "arr_raw",
+        "name": "files",
         "isNullable": false
       }
     ]
   },
-  "lkup_res": {
-    "name": "lkup_res",
-    "structName": "glue_msg_lookup_token_res",
-    "className": "GlueMsgLookupTokenRes",
+  "embd_res": {
+    "name": "embd_res",
+    "structName": "glue_msg_embedding_res",
+    "className": "GlueMsgEmbeddingRes",
     "fields": [
       {
         "type": "bool",
         "name": "success",
         "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "token",
-        "isNullable": false
       }
     ]
   },
-  "tokn_req": {
-    "name": "tokn_req",
-    "structName": "glue_msg_tokenize_req",
-    "className": "GlueMsgTokenizeReq",
-    "fields": [
-      {
-        "type": "str",
-        "name": "text",
-        "isNullable": false
-      },
-      {
-        "type": "bool",
-        "name": "special",
-        "isNullable": false
-      }
-    ]
-  },
-  "tokn_res": {
-    "name": "tokn_res",
-    "structName": "glue_msg_tokenize_res",
-    "className": "GlueMsgTokenizeRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "dtkn_req": {
-    "name": "dtkn_req",
-    "structName": "glue_msg_detokenize_req",
-    "className": "GlueMsgDetokenizeReq",
-    "fields": [
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "dtkn_res": {
-    "name": "dtkn_res",
-    "structName": "glue_msg_detokenize_res",
-    "className": "GlueMsgDetokenizeRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "raw",
-        "name": "buffer",
-        "isNullable": false
-      }
-    ]
-  },
-  "deco_req": {
-    "name": "deco_req",
-    "structName": "glue_msg_decode_req",
-    "className": "GlueMsgDecodeReq",
-    "fields": [
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      },
-      {
-        "type": "bool",
-        "name": "skip_logits",
-        "isNullable": false
-      }
-    ]
-  },
-  "deco_res": {
-    "name": "deco_res",
-    "structName": "glue_msg_decode_res",
-    "className": "GlueMsgDecodeRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "str",
-        "name": "message",
-        "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "n_past",
-        "isNullable": false
-      }
-    ]
-  },
-  "enco_req": {
-    "name": "enco_req",
-    "structName": "glue_msg_encode_req",
-    "className": "GlueMsgEncodeReq",
-    "fields": [
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "enco_res": {
-    "name": "enco_res",
-    "structName": "glue_msg_encode_res",
-    "className": "GlueMsgEncodeRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "str",
-        "name": "message",
-        "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "n_past",
-        "isNullable": false
-      }
-    ]
-  },
-  "ssam_req": {
-    "name": "ssam_req",
-    "structName": "glue_msg_sampling_sample_req",
-    "className": "GlueMsgSamplingSampleReq",
+  "gres_req": {
+    "name": "gres_req",
+    "structName": "glue_msg_get_result_req",
+    "className": "GlueMsgGetResultReq",
     "fields": []
   },
-  "ssam_res": {
-    "name": "ssam_res",
-    "structName": "glue_msg_sampling_sample_res",
-    "className": "GlueMsgSamplingSampleRes",
+  "gres_res": {
+    "name": "gres_res",
+    "structName": "glue_msg_get_result_res",
+    "className": "GlueMsgGetResultRes",
     "fields": [
       {
         "type": "bool",
@@ -605,385 +407,18 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
-        "type": "raw",
-        "name": "piece",
+        "type": "bool",
+        "name": "has_more",
         "isNullable": false
       },
       {
-        "type": "int",
-        "name": "token",
-        "isNullable": false
-      }
-    ]
-  },
-  "sacc_req": {
-    "name": "sacc_req",
-    "structName": "glue_msg_sampling_accept_req",
-    "className": "GlueMsgSamplingAcceptReq",
-    "fields": [
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "sacc_res": {
-    "name": "sacc_res",
-    "structName": "glue_msg_sampling_accept_res",
-    "className": "GlueMsgSamplingAcceptRes",
-    "fields": [
-      {
         "type": "bool",
-        "name": "success",
-        "isNullable": false
-      }
-    ]
-  },
-  "glog_req": {
-    "name": "glog_req",
-    "structName": "glue_msg_get_logits_req",
-    "className": "GlueMsgGetLogitsReq",
-    "fields": [
-      {
-        "type": "int",
-        "name": "top_k",
-        "isNullable": false
-      }
-    ]
-  },
-  "glog_res": {
-    "name": "glog_res",
-    "structName": "glue_msg_get_logits_res",
-    "className": "GlueMsgGetLogitsRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      },
-      {
-        "type": "arr_float",
-        "name": "probs",
-        "isNullable": false
-      }
-    ]
-  },
-  "gemb_req": {
-    "name": "gemb_req",
-    "structName": "glue_msg_get_embeddings_req",
-    "className": "GlueMsgGetEmbeddingsReq",
-    "fields": [
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "gemb_res": {
-    "name": "gemb_res",
-    "structName": "glue_msg_get_embeddings_res",
-    "className": "GlueMsgGetEmbeddingsRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
+        "name": "is_error",
         "isNullable": false
       },
       {
         "type": "str",
-        "name": "message",
-        "isNullable": false
-      },
-      {
-        "type": "arr_float",
-        "name": "embeddings",
-        "isNullable": false
-      }
-    ]
-  },
-  "kvcr_req": {
-    "name": "kvcr_req",
-    "structName": "glue_msg_get_kv_remove_req",
-    "className": "GlueMsgGetKvRemoveReq",
-    "fields": [
-      {
-        "type": "int",
-        "name": "n_keep",
-        "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "n_discard",
-        "isNullable": false
-      }
-    ]
-  },
-  "kvcr_res": {
-    "name": "kvcr_res",
-    "structName": "glue_msg_get_kv_remove_res",
-    "className": "GlueMsgGetKvRemoveRes",
-    "fields": [
-      {
-        "type": "int",
-        "name": "n_past",
-        "isNullable": false
-      },
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      }
-    ]
-  },
-  "kvcc_req": {
-    "name": "kvcc_req",
-    "structName": "glue_msg_get_kv_clear_req",
-    "className": "GlueMsgGetKvClearReq",
-    "fields": []
-  },
-  "kvcc_res": {
-    "name": "kvcc_res",
-    "structName": "glue_msg_get_kv_clear_res",
-    "className": "GlueMsgGetKvClearRes",
-    "fields": [
-      {
-        "type": "int",
-        "name": "n_past",
-        "isNullable": false
-      },
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      }
-    ]
-  },
-  "sesa_req": {
-    "name": "sesa_req",
-    "structName": "glue_msg_session_save_req",
-    "className": "GlueMsgSessionSaveReq",
-    "fields": [
-      {
-        "type": "str",
-        "name": "session_path",
-        "isNullable": false
-      }
-    ]
-  },
-  "sesa_res": {
-    "name": "sesa_res",
-    "structName": "glue_msg_session_save_res",
-    "className": "GlueMsgSessionSaveRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "sesl_req": {
-    "name": "sesl_req",
-    "structName": "glue_msg_session_load_req",
-    "className": "GlueMsgSessionLoadReq",
-    "fields": [
-      {
-        "type": "str",
-        "name": "session_path",
-        "isNullable": false
-      },
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "sesl_res": {
-    "name": "sesl_res",
-    "structName": "glue_msg_session_load_res",
-    "className": "GlueMsgSessionLoadRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      }
-    ]
-  },
-  "stat_req": {
-    "name": "stat_req",
-    "structName": "glue_msg_status_req",
-    "className": "GlueMsgStatusReq",
-    "fields": []
-  },
-  "stat_res": {
-    "name": "stat_res",
-    "structName": "glue_msg_status_res",
-    "className": "GlueMsgStatusRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "tben_req": {
-    "name": "tben_req",
-    "structName": "glue_msg_test_benchmark_req",
-    "className": "GlueMsgTestBenchmarkReq",
-    "fields": [
-      {
-        "type": "str",
-        "name": "type",
-        "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "n_samples",
-        "isNullable": false
-      }
-    ]
-  },
-  "tben_res": {
-    "name": "tben_res",
-    "structName": "glue_msg_test_benchmark_res",
-    "className": "GlueMsgTestBenchmarkRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "str",
-        "name": "message",
-        "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "t_ms",
-        "isNullable": false
-      }
-    ]
-  },
-  "tper_req": {
-    "name": "tper_req",
-    "structName": "glue_msg_test_perplexity_req",
-    "className": "GlueMsgTestPerplexityReq",
-    "fields": [
-      {
-        "type": "arr_int",
-        "name": "tokens",
-        "isNullable": false
-      }
-    ]
-  },
-  "tper_res": {
-    "name": "tper_res",
-    "structName": "glue_msg_test_perplexity_res",
-    "className": "GlueMsgTestPerplexityRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "str",
-        "name": "message",
-        "isNullable": false
-      },
-      {
-        "type": "float",
-        "name": "ppl",
-        "isNullable": false
-      },
-      {
-        "type": "float",
-        "name": "nll",
-        "isNullable": false
-      },
-      {
-        "type": "float",
-        "name": "cross_entropy",
-        "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "n_tokens",
-        "isNullable": false
-      },
-      {
-        "type": "int",
-        "name": "t_ms",
-        "isNullable": false
-      }
-    ]
-  },
-  "cfmt_req": {
-    "name": "cfmt_req",
-    "structName": "glue_msg_chat_format_req",
-    "className": "GlueMsgChatFormatReq",
-    "fields": [
-      {
-        "type": "str",
-        "name": "tmpl",
-        "isNullable": true
-      },
-      {
-        "type": "bool",
-        "name": "add_ass",
-        "isNullable": true
-      },
-      {
-        "type": "arr_str",
-        "name": "roles",
-        "isNullable": false
-      },
-      {
-        "type": "arr_str",
-        "name": "contents",
-        "isNullable": false
-      }
-    ]
-  },
-  "cfmt_res": {
-    "name": "cfmt_res",
-    "structName": "glue_msg_chat_format_res",
-    "className": "GlueMsgChatFormatRes",
-    "fields": [
-      {
-        "type": "bool",
-        "name": "success",
-        "isNullable": false
-      },
-      {
-        "type": "str",
-        "name": "message",
-        "isNullable": false
-      },
-      {
-        "type": "str",
-        "name": "formatted_chat",
+        "name": "data_json",
         "isNullable": false
       }
     ]
@@ -1000,17 +435,20 @@ export interface GlueMsgError {
 export interface GlueMsgLoadReq {
   _name: "load_req";
   model_paths: string[];
+  mmproj_path?: string | undefined;
   n_ctx_auto: boolean;
   use_mmap: boolean;
   use_mlock: boolean;
   n_gpu_layers: number;
-  seed: number;
   n_ctx: number;
   n_threads: number;
+  model_alias?: string | undefined;
+  log_level?: number | undefined;
   embeddings?: boolean | undefined;
   offload_kqv?: boolean | undefined;
   n_batch?: number | undefined;
-  n_seq_max?: number | undefined;
+  n_ubatch?: number | undefined;
+  n_parallel?: number | undefined;
   pooling_type?: string | undefined;
   rope_scaling_type?: string | undefined;
   rope_freq_base?: number | undefined;
@@ -1022,8 +460,18 @@ export interface GlueMsgLoadReq {
   yarn_orig_ctx?: number | undefined;
   cache_type_k?: string | undefined;
   cache_type_v?: string | undefined;
+  kv_unified?: boolean | undefined;
   flash_attn?: boolean | undefined;
   swa_full?: boolean | undefined;
+  n_ctx_checkpoints?: boolean | undefined;
+  checkpoint_every_nt?: number | undefined;
+  chat_template?: string | undefined;
+  jinja?: boolean | undefined;
+  default_template_kwargs_keys?: string[] | undefined;
+  default_template_kwargs_vals?: string[] | undefined;
+  reasoning?: boolean | undefined;
+  image_min_tokens?: number | undefined;
+  image_max_tokens?: number | undefined;
 }
 
 // struct glue_msg_load_res
@@ -1047,300 +495,51 @@ export interface GlueMsgLoadRes {
   add_eos_token: boolean;
   has_encoder: boolean;
   token_decoder_start: number;
+  media_marker: string;
+  has_image_input: boolean;
+  has_audio_input: boolean;
 }
 
-// struct glue_msg_set_options_req
-export interface GlueMsgSetOptionsReq {
-  _name: "opti_req";
-  embeddings: boolean;
+// struct glue_msg_completion_req
+export interface GlueMsgCompletionReq {
+  _name: "cmpl_req";
+  is_chat: boolean;
+  data_json: string;
+  files: Uint8Array[];
 }
 
-// struct glue_msg_set_options_res
-export interface GlueMsgSetOptionsRes {
-  _name: "opti_res";
+// struct glue_msg_completion_res
+export interface GlueMsgCompletionRes {
+  _name: "cmpl_res";
   success: boolean;
 }
 
-// struct glue_msg_sampling_init_req
-export interface GlueMsgSamplingInitReq {
-  _name: "sint_req";
-  mirostat?: number | undefined;
-  mirostat_tau?: number | undefined;
-  mirostat_eta?: number | undefined;
-  temp?: number | undefined;
-  top_p?: number | undefined;
-  top_k?: number | undefined;
-  penalty_last_n?: number | undefined;
-  penalty_repeat?: number | undefined;
-  penalty_freq?: number | undefined;
-  penalty_present?: number | undefined;
-  dynatemp_range?: number | undefined;
-  dynatemp_exponent?: number | undefined;
-  samplers_sequence?: string[] | undefined;
-  grammar?: string | undefined;
-  n_prev?: number | undefined;
-  n_probs?: number | undefined;
-  min_p?: number | undefined;
-  typical_p?: number | undefined;
-  typ_p?: number | undefined;
-  logit_bias_toks?: number[] | undefined;
-  logit_bias_vals?: number[] | undefined;
-  tokens?: number[] | undefined;
+// struct glue_msg_embedding_req
+export interface GlueMsgEmbeddingReq {
+  _name: "embd_req";
+  data_json: string;
+  files: Uint8Array[];
 }
 
-// struct glue_msg_sampling_init_res
-export interface GlueMsgSamplingInitRes {
-  _name: "sint_res";
+// struct glue_msg_embedding_res
+export interface GlueMsgEmbeddingRes {
+  _name: "embd_res";
   success: boolean;
 }
 
-// struct glue_msg_get_vocab_req
-export interface GlueMsgGetVocabReq {
-  _name: "gvoc_req";
+// struct glue_msg_get_result_req
+export interface GlueMsgGetResultReq {
+  _name: "gres_req";
 }
 
-// struct glue_msg_get_vocab_res
-export interface GlueMsgGetVocabRes {
-  _name: "gvoc_res";
+// struct glue_msg_get_result_res
+export interface GlueMsgGetResultRes {
+  _name: "gres_res";
   success: boolean;
-  vocab: Uint8Array[];
-}
-
-// struct glue_msg_lookup_token_req
-export interface GlueMsgLookupTokenReq {
-  _name: "lkup_req";
-  piece: string;
-}
-
-// struct glue_msg_lookup_token_res
-export interface GlueMsgLookupTokenRes {
-  _name: "lkup_res";
-  success: boolean;
-  token: number;
-}
-
-// struct glue_msg_tokenize_req
-export interface GlueMsgTokenizeReq {
-  _name: "tokn_req";
-  text: string;
-  special: boolean;
-}
-
-// struct glue_msg_tokenize_res
-export interface GlueMsgTokenizeRes {
-  _name: "tokn_res";
-  success: boolean;
-  tokens: number[];
-}
-
-// struct glue_msg_detokenize_req
-export interface GlueMsgDetokenizeReq {
-  _name: "dtkn_req";
-  tokens: number[];
-}
-
-// struct glue_msg_detokenize_res
-export interface GlueMsgDetokenizeRes {
-  _name: "dtkn_res";
-  success: boolean;
-  buffer: Uint8Array;
-}
-
-// struct glue_msg_decode_req
-export interface GlueMsgDecodeReq {
-  _name: "deco_req";
-  tokens: number[];
-  skip_logits: boolean;
-}
-
-// struct glue_msg_decode_res
-export interface GlueMsgDecodeRes {
-  _name: "deco_res";
-  success: boolean;
-  message: string;
-  n_past: number;
-}
-
-// struct glue_msg_encode_req
-export interface GlueMsgEncodeReq {
-  _name: "enco_req";
-  tokens: number[];
-}
-
-// struct glue_msg_encode_res
-export interface GlueMsgEncodeRes {
-  _name: "enco_res";
-  success: boolean;
-  message: string;
-  n_past: number;
-}
-
-// struct glue_msg_sampling_sample_req
-export interface GlueMsgSamplingSampleReq {
-  _name: "ssam_req";
-}
-
-// struct glue_msg_sampling_sample_res
-export interface GlueMsgSamplingSampleRes {
-  _name: "ssam_res";
-  success: boolean;
-  piece: Uint8Array;
-  token: number;
-}
-
-// struct glue_msg_sampling_accept_req
-export interface GlueMsgSamplingAcceptReq {
-  _name: "sacc_req";
-  tokens: number[];
-}
-
-// struct glue_msg_sampling_accept_res
-export interface GlueMsgSamplingAcceptRes {
-  _name: "sacc_res";
-  success: boolean;
-}
-
-// struct glue_msg_get_logits_req
-export interface GlueMsgGetLogitsReq {
-  _name: "glog_req";
-  top_k: number;
-}
-
-// struct glue_msg_get_logits_res
-export interface GlueMsgGetLogitsRes {
-  _name: "glog_res";
-  success: boolean;
-  tokens: number[];
-  probs: number[];
-}
-
-// struct glue_msg_get_embeddings_req
-export interface GlueMsgGetEmbeddingsReq {
-  _name: "gemb_req";
-  tokens: number[];
-}
-
-// struct glue_msg_get_embeddings_res
-export interface GlueMsgGetEmbeddingsRes {
-  _name: "gemb_res";
-  success: boolean;
-  message: string;
-  embeddings: number[];
-}
-
-// struct glue_msg_get_kv_remove_req
-export interface GlueMsgGetKvRemoveReq {
-  _name: "kvcr_req";
-  n_keep: number;
-  n_discard: number;
-}
-
-// struct glue_msg_get_kv_remove_res
-export interface GlueMsgGetKvRemoveRes {
-  _name: "kvcr_res";
-  n_past: number;
-  success: boolean;
-}
-
-// struct glue_msg_get_kv_clear_req
-export interface GlueMsgGetKvClearReq {
-  _name: "kvcc_req";
-}
-
-// struct glue_msg_get_kv_clear_res
-export interface GlueMsgGetKvClearRes {
-  _name: "kvcc_res";
-  n_past: number;
-  success: boolean;
-}
-
-// struct glue_msg_session_save_req
-export interface GlueMsgSessionSaveReq {
-  _name: "sesa_req";
-  session_path: string;
-}
-
-// struct glue_msg_session_save_res
-export interface GlueMsgSessionSaveRes {
-  _name: "sesa_res";
-  success: boolean;
-  tokens: number[];
-}
-
-// struct glue_msg_session_load_req
-export interface GlueMsgSessionLoadReq {
-  _name: "sesl_req";
-  session_path: string;
-  tokens: number[];
-}
-
-// struct glue_msg_session_load_res
-export interface GlueMsgSessionLoadRes {
-  _name: "sesl_res";
-  success: boolean;
-}
-
-// struct glue_msg_status_req
-export interface GlueMsgStatusReq {
-  _name: "stat_req";
-}
-
-// struct glue_msg_status_res
-export interface GlueMsgStatusRes {
-  _name: "stat_res";
-  success: boolean;
-  tokens: number[];
-}
-
-// struct glue_msg_test_benchmark_req
-export interface GlueMsgTestBenchmarkReq {
-  _name: "tben_req";
-  type: string;
-  n_samples: number;
-}
-
-// struct glue_msg_test_benchmark_res
-export interface GlueMsgTestBenchmarkRes {
-  _name: "tben_res";
-  success: boolean;
-  message: string;
-  t_ms: number;
-}
-
-// struct glue_msg_test_perplexity_req
-export interface GlueMsgTestPerplexityReq {
-  _name: "tper_req";
-  tokens: number[];
-}
-
-// struct glue_msg_test_perplexity_res
-export interface GlueMsgTestPerplexityRes {
-  _name: "tper_res";
-  success: boolean;
-  message: string;
-  ppl: number;
-  nll: number;
-  cross_entropy: number;
-  n_tokens: number;
-  t_ms: number;
-}
-
-// struct glue_msg_chat_format_req
-export interface GlueMsgChatFormatReq {
-  _name: "cfmt_req";
-  tmpl?: string | undefined;
-  add_ass?: boolean | undefined;
-  roles: string[];
-  contents: string[];
-}
-
-// struct glue_msg_chat_format_res
-export interface GlueMsgChatFormatRes {
-  _name: "cfmt_res";
-  success: boolean;
-  message: string;
-  formatted_chat: string;
+  has_more: boolean;
+  is_error: boolean;
+  data_json: string;
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgSetOptionsReq | GlueMsgSetOptionsRes | GlueMsgSamplingInitReq | GlueMsgSamplingInitRes | GlueMsgGetVocabReq | GlueMsgGetVocabRes | GlueMsgLookupTokenReq | GlueMsgLookupTokenRes | GlueMsgTokenizeReq | GlueMsgTokenizeRes | GlueMsgDetokenizeReq | GlueMsgDetokenizeRes | GlueMsgDecodeReq | GlueMsgDecodeRes | GlueMsgEncodeReq | GlueMsgEncodeRes | GlueMsgSamplingSampleReq | GlueMsgSamplingSampleRes | GlueMsgSamplingAcceptReq | GlueMsgSamplingAcceptRes | GlueMsgGetLogitsReq | GlueMsgGetLogitsRes | GlueMsgGetEmbeddingsReq | GlueMsgGetEmbeddingsRes | GlueMsgGetKvRemoveReq | GlueMsgGetKvRemoveRes | GlueMsgGetKvClearReq | GlueMsgGetKvClearRes | GlueMsgSessionSaveReq | GlueMsgSessionSaveRes | GlueMsgSessionLoadReq | GlueMsgSessionLoadRes | GlueMsgStatusReq | GlueMsgStatusRes | GlueMsgTestBenchmarkReq | GlueMsgTestBenchmarkRes | GlueMsgTestPerplexityReq | GlueMsgTestPerplexityRes | GlueMsgChatFormatReq | GlueMsgChatFormatRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgGetResultReq | GlueMsgGetResultRes;

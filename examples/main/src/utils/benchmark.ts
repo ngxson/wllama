@@ -1,4 +1,4 @@
-import { Wllama } from '@wllama/wllama';
+/*import { Wllama } from '@wllama/wllama';
 import { WLLAMA_CONFIG_PATHS } from '../config';
 import { delay } from './utils';
 
@@ -39,8 +39,11 @@ async function loadModel(modelUrl: string) {
   });
   return { wllama, modelFile };
 }
+*/
 
 async function benchmark() {
+  throw new Error('Benchmark is not ready yet, stay tuned!');
+  /*
   const output: any[][] = [
     ['model', 'threads', 'test', 't/s'],
     ['---', '---', '---', '---'],
@@ -81,9 +84,12 @@ async function benchmark() {
     .map((row) => '| ' + row.join(' | ') + ' |')
     .join('\n');
   console.log(markdown);
+  */
 }
 
 async function perplexity() {
+  throw new Error('Perplexity test is not ready yet, stay tuned!');
+  /*
   const output: any[][] = [
     ['model', 'PPL', 'n_tokens'],
     ['---', '---', '---'],
@@ -110,6 +116,7 @@ async function perplexity() {
     .map((row) => '| ' + row.join(' | ') + ' |')
     .join('\n');
   console.log(markdown);
+  */
 }
 
 (window as any).__benchmark = benchmark;

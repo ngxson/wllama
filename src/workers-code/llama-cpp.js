@@ -25,6 +25,11 @@ const cppLogToJSLog = (line) => {
     : { level: 'log', text: line };
 };
 
+const getHeapU8 = () => {
+  const buffer = Module.wasmMemory.buffer;
+  return new Uint8Array(buffer);
+};
+
 // Get module config that forwards stdout/err to main thread
 const getWModuleConfig = (_argMainScriptBlob) => {
   var pathConfig = RUN_OPTIONS.pathConfig;
@@ -143,7 +148,7 @@ const patchMEMFS = () => {
     const name = stream.node.name;
     if (fsNameToFile[name]) {
       const f = fsNameToFile[name];
-      stream.node.contents = m.HEAPU8.subarray(f.ptr, f.ptr + f.size);
+      stream.node.contents = getHeapU8().subarray(f.ptr, f.ptr + f.size);
       stream.node.usedBytes = f.size;
     }
   };
@@ -217,7 +222,7 @@ const heapfsWrite = (id, buffer, offset) => {
         `File ID ${id} write out of bound, afterWriteByte = ${afterWriteByte} while size = ${size}`
       );
     }
-    m.HEAPU8.set(buffer, ptr + offset);
+    getHeapU8().set(buffer, ptr + offset);
     return buffer.byteLength;
   } else {
     throw new Error(`File ID ${id} not found in heapfs`);
@@ -231,6 +236,7 @@ const heapfsWrite = (id, buffer, offset) => {
 const callWrapper = (name, ret, args) => {
   const fn = Module.cwrap(name, ret, args);
   return async (action, req) => {
+    // console.log(`Calling ${name} with action:`, action, 'and req:', req);
     let result;
     try {
       if (args.length === 2) {
@@ -339,7 +345,7 @@ onmessage = async (e) => {
       const inputPtr = await wllamaMalloc(BigInt(argEncodedMsg.byteLength), 0);
       // copy data to wasm heap
       const inputBuffer = new Uint8Array(
-        Module.HEAPU8.buffer,
+        getHeapU8().buffer,
         Number(inputPtr),
         argEncodedMsg.byteLength
       );
@@ -347,14 +353,14 @@ onmessage = async (e) => {
       const outputPtr = await wllamaAction(argAction, inputPtr);
       // length of output buffer is written at the first 4 bytes of input buffer
       const outputLen = new Uint32Array(
-        Module.HEAPU8.buffer,
+        getHeapU8().buffer,
         Number(inputPtr),
         1
       )[0];
       // copy the output buffer to JS heap
       const outputBuffer = new Uint8Array(outputLen);
       const outputSrcView = new Uint8Array(
-        Module.HEAPU8.buffer,
+        getHeapU8().buffer,
         Number(outputPtr),
         outputLen
       );

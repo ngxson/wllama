@@ -3,6 +3,7 @@ node_modules
 .vscode
 /cache
 /build
+/build-wasm
 /docs
 /dist
 /wasm
@@ -14,3 +15,6 @@ _tmp
 /cpp/test_glue
 /cpp/*.bin
 tmp.patch
+
+a.out.js
+a.out.wasm

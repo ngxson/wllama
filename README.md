@@ -11,17 +11,18 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
 > [!IMPORTANT]  
+> **🔥🔥 V3 is out, with multimodal and tool calling support. Read more [here](./guides/intro-v3.md)**  
 > Memory64 is now a requirement, which drops support for Safari. Please follow [this issue](https://github.com/ngxson/wllama/issues/210) for more info.
 
 ![](./assets/screenshot_0.png)
 
 ## Features
 
-- Typescript support
+- OpenAI-compatible API (fully-typed built-in)
+- 🔥 Multimodal support (image and audio file input)
+- 🔥 Tool calling support
 - Can run inference directly on browser (using [WebAssembly SIMD](https://emscripten.org/docs/porting/simd.html)), no backend or GPU is needed!
 - No runtime dependency (see [package.json](./package.json))
-- High-level API: completions, embeddings
-- Low-level API: (de)tokenize, KV cache control, sampling control,...
 - Ability to split the model into smaller files and load them in parallel (same as `split` and `cat`)
 - Auto switch between single-thread and multi-thread build based on browser support
 - Inference is done inside a worker, does not block UI render
@@ -29,17 +30,16 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- No WebGPU support, but maybe possible in the future
+- No WebGPU support, but support is WIP 😉
 - Max file size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length). If your model is bigger than 2GB, please follow the **Split model** section below.
 
 ## Code demo and documentation
 
-📄 [Documentation](https://github.ngxson.com/wllama/docs/)
-
 Demo:
-- Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/
-- Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/
-- For more advanced example using low-level API, have a look at test file: [wllama.test.ts](./src/wllama.test.ts)
+- Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/ ([source code](./examples/basic/index.html))
+- Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/ ([source code](./examples/embeddings/index.html))
+- Multimodal (vision) completion: https://github.ngxson.com/wllama/examples/multimodal/ ([source code](./examples/multimodal/index.html))
+- Tool calling: https://github.ngxson.com/wllama/examples/tools/ ([source code](./examples/tools/index.html))
 
 ## How to use
 
@@ -94,21 +94,17 @@ import { Wllama } from './esm/index.js';
   // Load GGUF from Hugging Face hub
   // (alternatively, you can use loadModelFromUrl if the model is not from HF hub)
   await wllama.loadModelFromHF(
-    'ggml-org/models',
-    'tinyllamas/stories260K.gguf',
-    {
-      progressCallback,
-    }
+    { repo: 'ggml-org/models', file: 'tinyllamas/stories260K.gguf' },
+    { progressCallback }
   );
-  const outputText = await wllama.createCompletion(elemInput.value, {
-    nPredict: 50,
-    sampling: {
-      temp: 0.5,
-      top_k: 40,
-      top_p: 0.9,
-    },
+  const response = await wllama.createChatCompletion({
+    messages: [{ role: 'user', content: elemInput.value }],
+    max_tokens: 50,
+    temperature: 0.5,
+    top_k: 40,
+    top_p: 0.9,
   });
-  console.log(outputText);
+  console.log(response.choices[0].message.content);
 })();
 ```
 
@@ -141,10 +137,10 @@ You can then pass to `loadModelFromUrl` or `loadModelFromHF` the URL of the firs
 const wllama = new Wllama(CONFIG_PATHS, {
   parallelDownloads: 5, // optional: maximum files to download in parallel (default: 3)
 });
-await wllama.loadModelFromHF(
-  'ngxson/tinyllama_split_test',
-  'stories15M-q8_0-00001-of-00003.gguf'
-);
+await wllama.loadModelFromHF({
+  repo: 'ngxson/tinyllama_split_test',
+  file: 'stories15M-q8_0-00001-of-00003.gguf',
+});
 ```
 
 ### Custom logger (suppress debug messages)
@@ -205,6 +201,5 @@ npm run build
 ## TODO
 
 - Add support for LoRA adapter
-- Support GPU inference via WebGL
+- Support GPU inference via WebGPU
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
-- Multi-modal: Waiting for refactoring LLaVA implementation from llama.cpp

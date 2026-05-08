@@ -7,7 +7,13 @@ import {
 } from './utils';
 import { Model, ModelManager, Wllama } from '@wllama/wllama';
 import { DEFAULT_INFERENCE_PARAMS, WLLAMA_CONFIG_PATHS } from '../config';
-import { InferenceParams, RuntimeInfo, ModelState, Screen } from './types';
+import {
+  InferenceParams,
+  Message,
+  RuntimeInfo,
+  ModelState,
+  Screen,
+} from './types';
 import { verifyCustomModel } from './custom-models';
 import {
   DisplayedModel,
@@ -34,14 +40,13 @@ interface WllamaContextValue {
   unloadModel(): Promise<void>;
 
   // function for managing custom user model
-  addCustomModel(url: string): Promise<void>;
+  addCustomModel(url: string, mmprojUrl?: string): Promise<void>;
   removeCustomModel(model: DisplayedModel): Promise<void>;
 
   // functions for chat completion
-  getWllamaInstance(): Wllama;
   createCompletion(
-    input: string,
-    callback: (piece: string) => void
+    messages: Message[],
+    callback: (currentText: string) => void
   ): Promise<void>;
   stopCompletion(): void;
   isGenerating: boolean;
@@ -124,11 +129,14 @@ export const WllamaProvider = ({ children }: any) => {
     if (isDownloading || loadedModel || isLoadingModel) return;
     updateModelDownloadState(model.url, 0);
     try {
-      await modelManager.downloadModel(model.url, {
-        progressCallback(opts) {
-          updateModelDownloadState(model.url, opts.loaded / opts.total);
-        },
-      });
+      await modelManager.downloadModel(
+        { url: model.url, mmprojUrl: model.mmprojUrl },
+        {
+          progressCallback(opts) {
+            updateModelDownloadState(model.url, opts.loaded / opts.total);
+          },
+        }
+      );
       updateModelDownloadState(model.url, -1);
       await refreshCachedModels();
     } catch (e) {
@@ -167,6 +175,8 @@ export const WllamaProvider = ({ children }: any) => {
       setCurrRuntimeInfo({
         isMultithread: wllamaInstance.isMultithread(),
         hasChatTemplate: !!wllamaInstance.getChatTemplate(),
+        supportsImage: wllamaInstance.supportInputModality('image'),
+        supportsAudio: wllamaInstance.supportInputModality('audio'),
       });
     } catch (e) {
       resetWllamaInstance();
@@ -184,25 +194,47 @@ export const WllamaProvider = ({ children }: any) => {
   };
 
   const createCompletion = async (
-    input: string,
+    messages: Message[],
     callback: (currentText: string) => void
   ) => {
     if (isDownloading || !loadedModel || isLoadingModel) return;
     setGenerating(true);
     stopSignal = false;
-    const result = await wllamaInstance.createCompletion(input, {
-      nPredict: currParams.nPredict,
-      useCache: true,
-      sampling: {
-        temp: currParams.temperature,
-      },
-      // @ts-ignore unused variable
-      onNewToken(token, piece, currentText, optionals) {
-        callback(currentText);
-        if (stopSignal) optionals.abortSignal();
-      },
-    });
-    callback(result);
+    const abortController = new AbortController();
+    let accumulatedText = '';
+    try {
+      const stream = await wllamaInstance.createChatCompletion({
+        messages: messages.map((m) =>
+          m.mediaData
+            ? {
+                role: m.role as 'user',
+                content: [
+                  { type: m.mediaData.type, data: m.mediaData.data },
+                  { type: 'text' as const, text: m.content },
+                ],
+              }
+            : { role: m.role, content: m.content }
+        ),
+        max_tokens: currParams.nPredict,
+        temperature: currParams.temperature,
+        stream: true,
+        abortSignal: abortController.signal,
+        onData: () => {},
+      });
+      for await (const chunk of stream) {
+        if (stopSignal) {
+          abortController.abort();
+          break;
+        }
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) {
+          accumulatedText += delta;
+          callback(accumulatedText);
+        }
+      }
+    } catch (_) {
+      // ignore abort errors
+    }
     stopSignal = false;
     setGenerating(false);
   };
@@ -226,7 +258,7 @@ export const WllamaProvider = ({ children }: any) => {
   };
 
   // function for managing custom user model
-  const addCustomModel = async (url: string) => {
+  const addCustomModel = async (url: string, mmprojUrl?: string) => {
     setBusy(true);
     try {
       const custom = await verifyCustomModel(url);
@@ -236,7 +268,7 @@ export const WllamaProvider = ({ children }: any) => {
       const userAddedModels = getUserAddedModels(cachedModels);
       updateUserAddedModels([
         ...userAddedModels,
-        new DisplayedModel(custom.url, custom.size, true, undefined),
+        new DisplayedModel(custom.url, custom.size, true, undefined, mmprojUrl),
       ]);
       await refreshCachedModels();
     } catch (e) {
@@ -279,7 +311,6 @@ export const WllamaProvider = ({ children }: any) => {
         currentConvId,
         navigateTo,
         currScreen,
-        getWllamaInstance: () => wllamaInstance,
         addCustomModel,
         removeCustomModel,
         currRuntimeInfo,

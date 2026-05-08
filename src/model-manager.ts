@@ -1,11 +1,20 @@
 import CacheManager, {
+  type CacheEntryMetadata,
   type CacheEntry,
   type DownloadOptions,
 } from './cache-manager';
-import { isValidGgufFile, sumArr } from './utils';
+import { isString, isValidGgufFile, sumArr } from './utils';
 import { WllamaError, type WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
+
+export interface ModelSource {
+  /**
+   * URL to the GGUF file. If the model is splitted, pass the URL to the first shard. Mmproj file should also be provided via this array if you want to use multimodal.
+   */
+  url: string;
+  mmprojUrl?: string;
+}
 
 /**
  * Callback function to track download progress
@@ -60,10 +69,12 @@ export class Model {
   constructor(
     modelManager: ModelManager,
     url: string,
+    mmprojUrl?: string,
     savedFiles?: CacheEntry[]
   ) {
     this.modelManager = modelManager;
     this.url = url;
+    this.mmprojUrl = mmprojUrl;
     if (savedFiles) {
       // this file is already in cache
       this.files = this.getAllFiles(savedFiles);
@@ -80,6 +91,10 @@ export class Model {
    * This URL will be used to identify the model in the cache. There can't be 2 models with the same URL.
    */
   url: string;
+  /**
+   * URL to mmproj file, if exists
+   */
+  mmprojUrl?: string | undefined;
   /**
    * Size in bytes (total size of all shards).
    *
@@ -122,7 +137,10 @@ export class Model {
    * - The model files are missing (or the download is interrupted)
    */
   validate(): ModelValidationStatus {
-    const nbShards = ModelManager.parseModelUrl(this.url).length;
+    let nbShards = ModelManager.parseModelUrl(this.url).length;
+    if (this.mmprojUrl) {
+      nbShards += 1;
+    }
     if (this.size === -1) {
       return ModelValidationStatus.DELETED;
     }
@@ -141,6 +159,9 @@ export class Model {
    */
   async refresh(options: DownloadOptions = {}): Promise<void> {
     const urls = ModelManager.parseModelUrl(this.url);
+    if (this.mmprojUrl) {
+      urls.push(this.mmprojUrl);
+    }
     const works = urls.map((url, index) => ({
       url,
       index,
@@ -156,6 +177,10 @@ export class Model {
         if (!w) break;
         await this.modelManager.cacheManager.download(w.url, {
           ...options,
+          metadataAdditional: {
+            originalURL: w.url,
+            mmprojURL: this.mmprojUrl,
+          } satisfies Partial<CacheEntryMetadata>,
           progressCallback: ({ loaded }) => {
             loadedSize[w.index] = loaded;
             options.progressCallback?.({
@@ -188,6 +213,10 @@ export class Model {
 
   private getAllFiles(savedFiles: CacheEntry[]): CacheEntry[] {
     const allUrls = new Set(ModelManager.parseModelUrl(this.url));
+    if (this.mmprojUrl) {
+      allUrls.add(this.mmprojUrl);
+    }
+    // console.log({allUrls, savedFiles});
     const allFiles: CacheEntry[] = [];
     for (const url of allUrls) {
       const file = savedFiles.find((f) => f.metadata.originalURL === url);
@@ -262,10 +291,13 @@ export class ModelManager {
     let models: Model[] = [];
     for (const file of cachedFiles) {
       const shards = ModelManager.parseModelUrl(file.metadata.originalURL);
+      const mmprojUrl = file.metadata.mmprojURL;
       const isFirstShard =
         shards.length === 1 || shards[0] === file.metadata.originalURL;
       if (isFirstShard) {
-        models.push(new Model(this, file.metadata.originalURL, cachedFiles));
+        models.push(
+          new Model(this, file.metadata.originalURL, mmprojUrl, cachedFiles)
+        );
       }
     }
     if (!opts.includeInvalid) {
@@ -282,16 +314,19 @@ export class ModelManager {
    * The URL must end with `.gguf`
    */
   async downloadModel(
-    url: string,
+    sourceOrURL: ModelSource | string,
     options: DownloadOptions = {}
   ): Promise<Model> {
-    if (!isValidGgufFile(url)) {
+    const source: ModelSource = isString(sourceOrURL)
+      ? { url: sourceOrURL as string }
+      : (sourceOrURL as ModelSource);
+    if (!isValidGgufFile(source.url)) {
       throw new WllamaError(
-        `Invalid model URL: ${url}; URL must ends with ".gguf"`,
+        `Invalid model URL: ${source.url}; URL must ends with ".gguf"`,
         'download_error'
       );
     }
-    const model = new Model(this, url, undefined);
+    const model = new Model(this, source.url, source.mmprojUrl);
     const validity = model.validate();
     if (validity !== ModelValidationStatus.VALID) {
       await model.refresh(options);
@@ -303,16 +338,16 @@ export class ModelManager {
    * Get a model from the cache or download it if it's not available.
    */
   async getModelOrDownload(
-    url: string,
+    source: ModelSource,
     options: DownloadOptions = {}
   ): Promise<Model> {
     const models = await this.getModels();
-    const model = models.find((m) => m.url === url);
+    const model = models.find((m) => m.url === source.url);
     if (model) {
       options.progressCallback?.({ loaded: model.size, total: model.size });
       return model;
     }
-    return this.downloadModel(url, options);
+    return this.downloadModel(source, options);
   }
 
   /**
