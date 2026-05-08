@@ -9,6 +9,9 @@ import { WllamaError, type WllamaLogger } from './wllama';
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
 
 export interface ModelSource {
+  /**
+   * URL to the GGUF file. If the model is splitted, pass the URL to the first shard. Mmproj file should also be provided via this array if you want to use multimodal.
+   */
   url: string;
   mmprojUrl?: string;
 }

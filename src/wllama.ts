@@ -347,7 +347,7 @@ export class Wllama {
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * - If the model already been downloaded (via `downloadModel()`), then we will use the cached model
    * - Else, we download the model from internet
-   * @param modelUrl URL to the GGUF file. If the model is splitted, pass the URL to the first shard. Mmproj file should also be provided via this array if you want to use multimodal.
+   * @param modelSourceOrURL
    * @param params
    */
   async loadModelFromUrl(
@@ -368,8 +368,7 @@ export class Wllama {
   /**
    * Load model from a given Hugging Face model ID and file path.
    *
-   * @param modelId The HF model ID, for example: 'ggml-org/models'
-   * @param filePath The GGUF file path, for example: 'tinyllamas/stories15M-q4_0.gguf'
+   * @param hfOptions
    * @param params
    */
   async loadModelFromHF(
