@@ -30,7 +30,7 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- No WebGPU support, but maybe possible in the future
+- No WebGPU support, but support is WIP 😉
 - Max file size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length). If your model is bigger than 2GB, please follow the **Split model** section below.
 
 ## Code demo and documentation
