@@ -66,7 +66,7 @@ onmessage = async (e) => {
      * - { action: 'download', url: 'string', filename: 'string', options: Object, metadataFileName: 'string' }
      * - { action: 'download-abort' }
      */
-    const { action, filename, buf, url, options, metadataFileName } = e.data;
+    const { action, filename, buf, url, options, metadataFileName, metadataAdditional } = e.data;
 
     if (action === 'open') {
       assertNonNull(filename);
@@ -124,6 +124,7 @@ onmessage = async (e) => {
           originalURL: url,
           originalSize: total,
           etag,
+          ...metadataAdditional,
         })
       );
       return resOK();

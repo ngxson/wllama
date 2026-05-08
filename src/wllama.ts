@@ -10,7 +10,7 @@ import {
   prepareBlobs,
 } from './utils';
 import CacheManager, { type DownloadOptions } from './cache-manager';
-import { ModelManager, Model } from './model-manager';
+import { ModelManager, Model, type ModelSource } from './model-manager';
 import type {
   GlueMsgCompletionRes,
   GlueMsgGetResultRes,
@@ -354,14 +354,16 @@ export class Wllama {
    * @param params
    */
   async loadModelFromUrl(
-    modelUrl: string | string[],
+    modelSourceOrURL: ModelSource | string,
     params: LoadModelParams & DownloadOptions & { useCache?: boolean } = {}
   ): Promise<void> {
-    const url: string = isString(modelUrl) ? (modelUrl as string) : modelUrl[0];
+    const source: ModelSource = isString(modelSourceOrURL)
+      ? { url: modelSourceOrURL } as ModelSource
+      : (modelSourceOrURL as ModelSource);
     const useCache = params.useCache ?? true;
     const model = useCache
-      ? await this.modelManager.getModelOrDownload(url, params)
-      : await this.modelManager.downloadModel(url, params);
+      ? await this.modelManager.getModelOrDownload(source, params)
+      : await this.modelManager.downloadModel(source, params);
     const blobs = await model.open();
     return await this.loadModel(blobs, params);
   }
@@ -385,7 +387,7 @@ export class Wllama {
       throw new WllamaError('Only GGUF file is supported', 'download_error');
     }
     return await this.loadModelFromUrl(
-      `https://huggingface.co/${modelId}/resolve/main/${filePath}`,
+      { url: `https://huggingface.co/${modelId}/resolve/main/${filePath}` },
       params
     );
   }
@@ -670,7 +672,7 @@ export class Wllama {
     return new Promise((resolve, reject) => {
       const origOnData = (options as StreamParams<TChunk>).onData;
       const createGenerator = cbToAsyncIter(
-        (callback: (val?: TChunk) => void) => {
+        (callback: (val?: TChunk, done?: boolean) => void) => {
           this.createCompletionImpl<TOpt, TChunk>({
             ...options,
             onData: (chunk: TChunk) => {
@@ -680,7 +682,7 @@ export class Wllama {
           })
             .catch(reject)
             .then(() => {
-              callback(undefined);
+              callback(undefined, true);
             });
         }
       );
@@ -764,6 +766,9 @@ export class Wllama {
     let finalResult: any = null;
 
     while (true) {
+      if (options.abortSignal?.aborted) {
+        throw new WllamaAbortError();
+      }
       const result_chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
         'get_result',
         {

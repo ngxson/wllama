@@ -10,6 +10,10 @@ export type DownloadOptions = {
    */
   progressCallback?: DownloadProgressCallback;
   /**
+   * Additional metadata to be stored with the downloaded file
+   */
+  metadataAdditional?: Record<string, any>;
+  /**
    * Custom headers for the request. Useful for authentication (e.g. Bearer token)
    */
   headers?: Record<string, string>;
@@ -51,6 +55,10 @@ export interface CacheEntryMetadata {
    * Original URL of the remote model. Unused for now
    */
   originalURL: string;
+  /**
+   * URL to mmproj file, if exists
+   */
+  mmprojURL?: string | undefined;
 }
 
 /**
@@ -104,6 +112,7 @@ export class CacheManager {
         url,
         filename,
         metadataFileName,
+        metadataAdditional: options.metadataAdditional ?? {},
         options: { headers: options.headers, aborted },
       });
       worker.onmessage = (e: MessageEvent<any>) => {
