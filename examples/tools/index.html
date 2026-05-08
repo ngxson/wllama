@@ -175,7 +175,9 @@
 
       /* spinner */
       @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+          transform: rotate(360deg);
+        }
       }
 
       .spinner {
@@ -225,15 +227,34 @@
 
     Demo prompts:<br />
     <div class="demo-prompts">
-      <button class="demo-btn" data-prompt="What is 1234 multiplied by 5678?">Calculator</button>
-      <button class="demo-btn" data-prompt="What is the current weather in Tokyo?">Weather</button>
-      <button class="demo-btn" data-tool="lamp" data-prompt="Please turn off the lamp.">Control lamp</button>
+      <button class="demo-btn" data-prompt="What is 1234 multiplied by 5678?">
+        Calculator
+      </button>
+      <button
+        class="demo-btn"
+        data-prompt="What is the current weather in Tokyo?"
+      >
+        Weather
+      </button>
+      <button
+        class="demo-btn"
+        data-tool="lamp"
+        data-prompt="Please turn off the lamp."
+      >
+        Control lamp
+      </button>
     </div>
 
-    <textarea id="input_prompt" rows="3" placeholder="Or type your own prompt…"></textarea>
+    <textarea
+      id="input_prompt"
+      rows="3"
+      placeholder="Or type your own prompt…"
+    ></textarea>
     <button id="btn_run" disabled>Run</button>
 
-    <div id="spinner_wrap"><span class="spinner"></span><span id="spinner_label">Generating…</span></div>
+    <div id="spinner_wrap">
+      <span class="spinner"></span><span id="spinner_label">Generating…</span>
+    </div>
 
     <div id="conversation"></div>
 
@@ -255,7 +276,8 @@
       function updateLampDisplay() {
         const block = document.getElementById('tool_def_control_lamp');
         if (block) {
-          block.querySelector('.tool-def-lamp-emoji').textContent = lampState === 'on' ? '💡' : '🌑';
+          block.querySelector('.tool-def-lamp-emoji').textContent =
+            lampState === 'on' ? '💡' : '🌑';
         }
         const lampBtn = document.querySelector('.demo-btn[data-tool="lamp"]');
         if (lampBtn) {
@@ -271,13 +293,15 @@
           type: 'function',
           function: {
             name: 'calculator',
-            description: 'Perform basic arithmetic: addition, subtraction, multiplication, division.',
+            description:
+              'Perform basic arithmetic: addition, subtraction, multiplication, division.',
             parameters: {
               type: 'object',
               properties: {
                 expression: {
                   type: 'string',
-                  description: 'A mathematical expression to evaluate, e.g. "1234 * 5678".',
+                  description:
+                    'A mathematical expression to evaluate, e.g. "1234 * 5678".',
                 },
               },
               required: ['expression'],
@@ -288,7 +312,8 @@
           type: 'function',
           function: {
             name: 'get_weather',
-            description: 'Get the current weather for a given city. Note: always returns rain at 21°C regardless of city.',
+            description:
+              'Get the current weather for a given city. Note: always returns rain at 21°C regardless of city.',
             parameters: {
               type: 'object',
               properties: {
@@ -327,7 +352,9 @@
         switch (name) {
           case 'calculator': {
             try {
-              const result = Function('"use strict"; return (' + args.expression + ')')();
+              const result = Function(
+                '"use strict"; return (' + args.expression + ')'
+              )();
               return { result: String(result) };
             } catch (e) {
               return { error: 'Invalid expression: ' + e.message };
@@ -358,10 +385,14 @@
         div.className = 'msg msg-' + role.replace('_', '-');
         const label = document.createElement('div');
         label.className = 'msg-label';
-        label.textContent = role === 'tool_call' ? '⚙ Tool Call'
-          : role === 'tool_result' ? '↩ Tool Result'
-          : role === 'user' ? '▶ User'
-          : '◀ Assistant';
+        label.textContent =
+          role === 'tool_call'
+            ? '⚙ Tool Call'
+            : role === 'tool_result'
+              ? '↩ Tool Result'
+              : role === 'user'
+                ? '▶ User'
+                : '◀ Assistant';
         div.appendChild(label);
         const body = document.createElement('div');
         if (typeof content === 'string') {
@@ -423,11 +454,13 @@
           if (fn.parameters?.properties) {
             const params = document.createElement('div');
             params.className = 'tool-def-params';
-            const entries = Object.entries(fn.parameters.properties).map(([k, v]) => {
-              const req = fn.parameters.required?.includes(k) ? '' : '?';
-              const enumHint = v.enum ? ` (${v.enum.join(' | ')})` : '';
-              return `<code>${k}${req}: ${v.type}${enumHint}</code> — ${v.description ?? ''}`;
-            });
+            const entries = Object.entries(fn.parameters.properties).map(
+              ([k, v]) => {
+                const req = fn.parameters.required?.includes(k) ? '' : '?';
+                const enumHint = v.enum ? ` (${v.enum.join(' | ')})` : '';
+                return `<code>${k}${req}: ${v.type}${enumHint}</code> — ${v.description ?? ''}`;
+              }
+            );
             params.innerHTML = 'Params: ' + entries.join(' &nbsp;·&nbsp; ');
             block.appendChild(params);
           }
@@ -446,9 +479,7 @@
 
         addMessage('user', userPrompt);
 
-        const messages = [
-          { role: 'user', content: userPrompt },
-        ];
+        const messages = [{ role: 'user', content: userPrompt }];
 
         try {
           let iterations = 0;
@@ -485,18 +516,26 @@
               if (delta.content) {
                 fullContent += delta.content;
                 streamBody.textContent = fullContent;
-                streamBody.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                streamBody.scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'nearest',
+                });
               }
 
               if (delta.tool_calls) {
                 for (const tc of delta.tool_calls) {
                   if (!collectedToolCalls[tc.index]) {
-                    collectedToolCalls[tc.index] = { id: '', name: '', arguments: '' };
+                    collectedToolCalls[tc.index] = {
+                      id: '',
+                      name: '',
+                      arguments: '',
+                    };
                   }
                   const entry = collectedToolCalls[tc.index];
                   if (tc.id) entry.id = tc.id;
                   if (tc.function?.name) entry.name += tc.function.name;
-                  if (tc.function?.arguments) entry.arguments += tc.function.arguments;
+                  if (tc.function?.arguments)
+                    entry.arguments += tc.function.arguments;
                 }
               }
             }
@@ -513,7 +552,7 @@
               const assistantMsg = {
                 role: 'assistant',
                 content: fullContent || null,
-                tool_calls: toolCallsList.map(tc => ({
+                tool_calls: toolCallsList.map((tc) => ({
                   id: tc.id,
                   type: 'function',
                   function: { name: tc.name, arguments: tc.arguments },
@@ -523,7 +562,11 @@
 
               for (const tc of toolCallsList) {
                 let fnArgs;
-                try { fnArgs = JSON.parse(tc.arguments); } catch { fnArgs = {}; }
+                try {
+                  fnArgs = JSON.parse(tc.arguments);
+                } catch {
+                  fnArgs = {};
+                }
 
                 addMessage('tool_call', {
                   id: tc.id,
@@ -607,9 +650,15 @@
 
       // ── Helpers ───────────────────────────────────────────────────────────
 
-      function setStatus(text) { elemStatusText.textContent = text; }
-      function showProgressBar(show) { elemProgressBarWrap.style.display = show ? 'block' : 'none'; }
-      function setProgressBar(pct) { elemProgressBar.style.width = `${Math.min(100, pct)}%`; }
+      function setStatus(text) {
+        elemStatusText.textContent = text;
+      }
+      function showProgressBar(show) {
+        elemProgressBarWrap.style.display = show ? 'block' : 'none';
+      }
+      function setProgressBar(pct) {
+        elemProgressBar.style.width = `${Math.min(100, pct)}%`;
+      }
 
       function setSpinner(show, label = '') {
         elemSpinnerWrap.style.display = show ? 'block' : 'none';
@@ -619,22 +668,24 @@
       function setRunDisabled(disabled) {
         elemBtnRun.disabled = disabled;
         elemInputPrompt.disabled = disabled;
-        document.querySelectorAll('.demo-btn').forEach(b => b.disabled = disabled);
+        document
+          .querySelectorAll('.demo-btn')
+          .forEach((b) => (b.disabled = disabled));
       }
 
       // ── Bootstrap ─────────────────────────────────────────────────────────
 
-      const elemBtnLoadRemote   = document.getElementById('btn_load_remote');
-      const elemBtnPickFiles    = document.getElementById('btn_pick_files');
+      const elemBtnLoadRemote = document.getElementById('btn_load_remote');
+      const elemBtnPickFiles = document.getElementById('btn_pick_files');
       const elemProgressBarWrap = document.getElementById('progress_bar_wrap');
-      const elemProgressBar     = document.getElementById('progress_bar');
-      const elemStatusText      = document.getElementById('status_text');
-      const elemInputPrompt     = document.getElementById('input_prompt');
-      const elemBtnRun          = document.getElementById('btn_run');
-      const elemConversation    = document.getElementById('conversation');
-      const elemToolDefs        = document.getElementById('tool_defs');
-      const elemSpinnerWrap     = document.getElementById('spinner_wrap');
-      const elemSpinnerLabel    = document.getElementById('spinner_label');
+      const elemProgressBar = document.getElementById('progress_bar');
+      const elemStatusText = document.getElementById('status_text');
+      const elemInputPrompt = document.getElementById('input_prompt');
+      const elemBtnRun = document.getElementById('btn_run');
+      const elemConversation = document.getElementById('conversation');
+      const elemToolDefs = document.getElementById('tool_defs');
+      const elemSpinnerWrap = document.getElementById('spinner_wrap');
+      const elemSpinnerLabel = document.getElementById('spinner_label');
 
       renderToolDefs();
       setRunDisabled(true);
@@ -653,7 +704,7 @@
         await loadLocalFile(file);
       };
 
-      document.querySelectorAll('.demo-btn').forEach(btn => {
+      document.querySelectorAll('.demo-btn').forEach((btn) => {
         btn.onclick = () => {
           elemInputPrompt.value = btn.dataset.prompt;
           if (!elemBtnRun.disabled) runChat(btn.dataset.prompt);
