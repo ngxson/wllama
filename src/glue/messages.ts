@@ -29,6 +29,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "str",
+        "name": "mmproj_path",
+        "isNullable": true
+      },
+      {
         "type": "bool",
         "name": "n_ctx_auto",
         "isNullable": false
@@ -59,6 +64,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "str",
+        "name": "model_alias",
+        "isNullable": true
+      },
+      {
         "type": "int",
         "name": "log_level",
         "isNullable": true
@@ -80,7 +90,12 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "int",
-        "name": "n_seq_max",
+        "name": "n_ubatch",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "n_parallel",
         "isNullable": true
       },
       {
@@ -140,12 +155,27 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "bool",
+        "name": "kv_unified",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
         "name": "flash_attn",
         "isNullable": true
       },
       {
         "type": "bool",
         "name": "swa_full",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "n_ctx_checkpoints",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "checkpoint_every_nt",
         "isNullable": true
       },
       {
@@ -156,6 +186,31 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "bool",
         "name": "jinja",
+        "isNullable": true
+      },
+      {
+        "type": "arr_str",
+        "name": "default_template_kwargs_keys",
+        "isNullable": true
+      },
+      {
+        "type": "arr_str",
+        "name": "default_template_kwargs_vals",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "reasoning",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "image_min_tokens",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "image_max_tokens",
         "isNullable": true
       }
     ]
@@ -253,6 +308,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "int",
         "name": "token_decoder_start",
+        "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "media_marker",
         "isNullable": false
       }
     ]
@@ -365,17 +425,20 @@ export interface GlueMsgError {
 export interface GlueMsgLoadReq {
   _name: "load_req";
   model_paths: string[];
+  mmproj_path?: string | undefined;
   n_ctx_auto: boolean;
   use_mmap: boolean;
   use_mlock: boolean;
   n_gpu_layers: number;
   n_ctx: number;
   n_threads: number;
+  model_alias?: string | undefined;
   log_level?: number | undefined;
   embeddings?: boolean | undefined;
   offload_kqv?: boolean | undefined;
   n_batch?: number | undefined;
-  n_seq_max?: number | undefined;
+  n_ubatch?: number | undefined;
+  n_parallel?: number | undefined;
   pooling_type?: string | undefined;
   rope_scaling_type?: string | undefined;
   rope_freq_base?: number | undefined;
@@ -387,10 +450,18 @@ export interface GlueMsgLoadReq {
   yarn_orig_ctx?: number | undefined;
   cache_type_k?: string | undefined;
   cache_type_v?: string | undefined;
+  kv_unified?: boolean | undefined;
   flash_attn?: boolean | undefined;
   swa_full?: boolean | undefined;
+  n_ctx_checkpoints?: boolean | undefined;
+  checkpoint_every_nt?: number | undefined;
   chat_template?: string | undefined;
   jinja?: boolean | undefined;
+  default_template_kwargs_keys?: string[] | undefined;
+  default_template_kwargs_vals?: string[] | undefined;
+  reasoning?: boolean | undefined;
+  image_min_tokens?: number | undefined;
+  image_max_tokens?: number | undefined;
 }
 
 // struct glue_msg_load_res
@@ -414,6 +485,7 @@ export interface GlueMsgLoadRes {
   add_eos_token: boolean;
   has_encoder: boolean;
   token_decoder_start: number;
+  media_marker: string;
 }
 
 // struct glue_msg_completion_req

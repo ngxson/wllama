@@ -250,6 +250,14 @@ struct wllama_context
     if (req.log_level.not_null())
       log_level = static_cast<ggml_log_level>(req.log_level.value);
 
+    // mmproj params
+    if (req.mmproj_path.not_null())
+      params.mmproj.path = req.mmproj_path.value;
+    if (req.image_min_tokens.not_null())
+      params.image_min_tokens = req.image_min_tokens.value;
+    if (req.image_max_tokens.not_null())
+      params.image_max_tokens = req.image_max_tokens.value;
+
     // model params
     if (req.use_mmap.not_null())
       params.use_mmap = req.use_mmap.value;
@@ -257,18 +265,18 @@ struct wllama_context
       params.use_mlock = req.use_mlock.value;
     if (req.n_gpu_layers.not_null())
       params.n_gpu_layers = req.n_gpu_layers.value;
+    if (req.model_alias.not_null())
+      params.model_alias.insert(req.model_alias.value);
 
     params.n_ctx = req.n_ctx.value;
     params.cpuparams.n_threads = req.n_threads.value;
     params.cpuparams_batch.n_threads = req.n_threads.value;
     if (req.embeddings.not_null())
       params.embedding = req.embeddings.value;
-    // if (req.offload_kqv.not_null())
-    //   params.no_kv_offload = !req.offload_kqv.value;
     if (req.n_batch.not_null())
       params.n_batch = req.n_batch.value;
-    if (req.n_seq_max.not_null())
-      params.n_parallel = req.n_seq_max.value;
+    if (req.n_parallel.not_null())
+      params.n_parallel = req.n_parallel.value;
     if (req.pooling_type.not_null())
       params.pooling_type = pooling_type_from_str(req.pooling_type.value);
     // context extending: https://github.com/ggerganov/llama.cpp/pull/2054
@@ -288,6 +296,7 @@ struct wllama_context
       params.yarn_beta_slow = req.yarn_beta_slow.value;
     if (req.yarn_orig_ctx.not_null())
       params.yarn_orig_ctx = req.yarn_orig_ctx.value;
+
     // optimizations
     if (req.cache_type_k.not_null())
       params.cache_type_k = kv_cache_type_from_str(req.cache_type_k.value);
@@ -295,10 +304,35 @@ struct wllama_context
       params.cache_type_v = kv_cache_type_from_str(req.cache_type_v.value);
     if (req.swa_full.not_null())
       params.swa_full = req.swa_full.value;
+    if (req.n_ctx_checkpoints.not_null())
+      params.n_ctx_checkpoints = req.n_ctx_checkpoints.value;
+    if (req.checkpoint_every_nt.not_null())
+      params.checkpoint_every_nt = req.checkpoint_every_nt.value;
+
+    // template params
     if (req.chat_template.not_null())
       params.chat_template = req.chat_template.value;
     if (req.jinja.not_null())
       params.use_jinja = req.jinja.value;
+    if (req.reasoning.not_null()) {
+      if (req.reasoning.value) {
+        params.enable_reasoning = 1;
+        params.default_template_kwargs["enable_thinking"] = "true";
+      } else {
+        params.enable_reasoning = 0;
+        params.default_template_kwargs["enable_thinking"] = "false";
+      }
+    }
+    if (req.default_template_kwargs_keys.not_null() && req.default_template_kwargs_vals.not_null()) {
+      auto &keys = req.default_template_kwargs_keys.arr;
+      auto &vals = req.default_template_kwargs_vals.arr;
+      if (keys.size() != vals.size()) {
+        throw app_exception("default_template_kwargs_keys and default_template_kwargs_vals must have the same length");
+      }
+      for (size_t i = 0; i < keys.size(); i++) {
+        params.default_template_kwargs[keys[i]] = vals[i];
+      }
+    }
 
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);
@@ -353,6 +387,7 @@ struct wllama_context
     res.add_eos_token.value = llama_vocab_get_add_eos(vocab) == 1;
     res.has_encoder.value = llama_model_has_encoder(model);
     res.token_decoder_start.value = llama_model_decoder_start_token(model);
+    res.media_marker.value = get_media_marker();
     return res;
   }
 
@@ -739,28 +774,13 @@ void common_log_add(struct common_log *log, enum ggml_log_level level, const cha
 
 static int common_get_verbosity(enum ggml_log_level level)
 {
-  switch (level)
-  {
-  case GGML_LOG_LEVEL_DEBUG:
-    return LOG_LEVEL_DEBUG;
-  case GGML_LOG_LEVEL_INFO:
-    return LOG_LEVEL_INFO;
-  case GGML_LOG_LEVEL_WARN:
-    return LOG_LEVEL_WARN;
-  case GGML_LOG_LEVEL_ERROR:
-    return LOG_LEVEL_ERROR;
-  case GGML_LOG_LEVEL_CONT:
-    return LOG_LEVEL_INFO; // same as INFO
-  case GGML_LOG_LEVEL_NONE:
-  default:
-    return LOG_LEVEL_OUTPUT;
-  }
+  return static_cast<int>(level);
 }
 
 void common_log_default_callback(enum ggml_log_level level, const char *text, void * /*user_data*/)
 {
   auto verbosity = common_get_verbosity(level);
-  if (verbosity <= static_cast<int>(log_level))
+  if (verbosity >= static_cast<int>(log_level))
   {
     common_log_add(common_log_main(), level, "%s", text);
   }

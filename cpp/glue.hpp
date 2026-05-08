@@ -497,17 +497,20 @@ struct glue_msg_load_req
 {
   GLUE_HANDLER("load_req")
   GLUE_FIELD(arr_str, model_paths)
+  GLUE_FIELD_NULLABLE(str, mmproj_path)
   GLUE_FIELD(bool, n_ctx_auto)
   GLUE_FIELD(bool, use_mmap)
   GLUE_FIELD(bool, use_mlock)
   GLUE_FIELD(int, n_gpu_layers)
   GLUE_FIELD(int, n_ctx)
   GLUE_FIELD(int, n_threads)
+  GLUE_FIELD_NULLABLE(str, model_alias)
   GLUE_FIELD_NULLABLE(int, log_level)
   GLUE_FIELD_NULLABLE(bool, embeddings)
   GLUE_FIELD_NULLABLE(bool, offload_kqv)
   GLUE_FIELD_NULLABLE(int, n_batch)
-  GLUE_FIELD_NULLABLE(int, n_seq_max)
+  GLUE_FIELD_NULLABLE(int, n_ubatch)
+  GLUE_FIELD_NULLABLE(int, n_parallel)
   GLUE_FIELD_NULLABLE(str, pooling_type)
   GLUE_FIELD_NULLABLE(str, rope_scaling_type)
   GLUE_FIELD_NULLABLE(float, rope_freq_base)
@@ -519,10 +522,18 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(int, yarn_orig_ctx)
   GLUE_FIELD_NULLABLE(str, cache_type_k)
   GLUE_FIELD_NULLABLE(str, cache_type_v)
+  GLUE_FIELD_NULLABLE(bool, kv_unified)
   GLUE_FIELD_NULLABLE(bool, flash_attn)
   GLUE_FIELD_NULLABLE(bool, swa_full)
+  GLUE_FIELD_NULLABLE(bool, n_ctx_checkpoints)
+  GLUE_FIELD_NULLABLE(int, checkpoint_every_nt)
   GLUE_FIELD_NULLABLE(str, chat_template)
   GLUE_FIELD_NULLABLE(bool, jinja)
+  GLUE_FIELD_NULLABLE(arr_str, default_template_kwargs_keys)
+  GLUE_FIELD_NULLABLE(arr_str, default_template_kwargs_vals)
+  GLUE_FIELD_NULLABLE(bool, reasoning)
+  GLUE_FIELD_NULLABLE(int, image_min_tokens)
+  GLUE_FIELD_NULLABLE(int, image_max_tokens)
 };
 
 struct glue_msg_load_res
@@ -546,6 +557,7 @@ struct glue_msg_load_res
   GLUE_FIELD(bool, add_eos_token)
   GLUE_FIELD(bool, has_encoder)
   GLUE_FIELD(int, token_decoder_start)
+  GLUE_FIELD(str, media_marker)
 };
 
 /////////

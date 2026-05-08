@@ -5,8 +5,9 @@ import {
   checkEnvironmentCompatible,
   isString,
   isSupportMultiThread,
-  sortFileByShard,
   isValidGgufFile,
+  MMPROJ_FILE_NAME,
+  prepareBlobs,
 } from './utils';
 import CacheManager, { type DownloadOptions } from './cache-manager';
 import { ModelManager, Model } from './model-manager';
@@ -25,6 +26,7 @@ import type {
   ChatCompletionChunk,
   ChatCompletionParams,
   ChatCompletionResponse,
+  ChatCompletionUserMessage,
   CreateEmbeddingResponse,
   EmbeddingCreateParams,
   RawCompletionChunk,
@@ -151,6 +153,7 @@ export class Wllama {
   private eogTokens: Set<number> = new Set();
   private addBosToken: boolean = false;
   private addEosToken: boolean = false;
+  private mediaMarker?: string;
   private chatTemplate?: string;
   private metadata?: ModelMetadata;
   private hasEncoder: boolean = false;
@@ -347,7 +350,7 @@ export class Wllama {
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * - If the model already been downloaded (via `downloadModel()`), then we will use the cached model
    * - Else, we download the model from internet
-   * @param modelUrl URL to the GGUF file. If the model is splitted, pass the URL to the first shard.
+   * @param modelUrl URL to the GGUF file. If the model is splitted, pass the URL to the first shard. Mmproj file should also be provided via this array if you want to use multimodal.
    * @param params
    */
   async loadModelFromUrl(
@@ -409,7 +412,7 @@ export class Wllama {
         'load_error'
       );
     }
-    sortFileByShard(blobs);
+
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
@@ -455,11 +458,8 @@ export class Wllama {
       logLevel = 9999 as any;
     }
 
-    const modelFiles = blobs.map((blob, i) => ({
-      name: `model-${i}.gguf`,
-      blob,
-    }));
-    await this.proxy.moduleInit(modelFiles);
+    const modelFiles = await prepareBlobs(blobs);
+    await this.proxy.moduleInit(modelFiles.all);
 
     // run it
     this.logger().debug('Calling wllamaStart...');
@@ -481,7 +481,10 @@ export class Wllama {
       n_ctx: params.n_ctx || 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       n_ctx_auto: false, // not supported for now
-      model_paths: modelFiles.map((f) => `models/${f.name}`),
+      mmproj_path: modelFiles.mmproj
+        ? `/models/${MMPROJ_FILE_NAME}`
+        : undefined,
+      model_paths: modelFiles.llm.map((f) => `models/${f.name}`),
       embeddings: params.embeddings,
       offload_kqv: params.offload_kqv,
       n_batch: params.n_batch,
@@ -496,13 +499,14 @@ export class Wllama {
       yarn_orig_ctx: params.yarn_orig_ctx,
       cache_type_k: params.cache_type_k as string,
       cache_type_v: params.cache_type_v as string,
-      n_seq_max: 1, // only support single sequence for now
+      n_parallel: 1, // only support single sequence for now
+      kv_unified: false, // TODO: support kv unified cache
       flash_attn: params.flash_attn,
-      swa_full: false, // TEST
-      chat_template: 'chatml', // TEST
-      jinja: false, // TEST
+      swa_full: params.swa_full,
+      chat_template: params.chat_template,
+      jinja: params.jinja,
     });
-    const loadedCtxInfo: LoadedContextInfo = {
+    const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
       metadata: {},
     };
@@ -531,6 +535,7 @@ export class Wllama {
     this.chatTemplate = loadedCtxInfo.metadata['tokenizer.chat_template'];
     this.loadedContextInfo = loadedCtxInfo;
     this.eogTokens = new Set(loadedCtxInfo.list_tokens_eog);
+    this.mediaMarker = loadedCtxInfo.media_marker;
     this.logger().debug({ loadedCtxInfo });
   }
 
@@ -623,17 +628,26 @@ export class Wllama {
     this.checkModelLoaded();
 
     const isStream = !!(options as any).stream;
+    const isChat = !!(options as any).messages;
     const customOpt: any = {};
     if (this.seed !== undefined) {
       customOpt.seed = this.seed;
+    }
+    let files: ArrayBuffer[] = [];
+    if (isChat) {
+      const tmp = this.prepareMultimodalInput(
+        options as any as ChatCompletionParams
+      );
+      options = tmp.params as any;
+      files = tmp.files;
     }
     const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
       'completion',
       {
         _name: 'cmpl_req',
-        is_chat: !!(options as any).messages,
+        is_chat: isChat,
         data_json: JSON.stringify({ ...options, ...customOpt }),
-        files: [], // TODO: support file input
+        files: files.map((f) => new Uint8Array(f)),
       }
     );
 
@@ -697,6 +711,53 @@ export class Wllama {
       this.logger().error('Failed to parse JSON:', data_json);
       throw new WllamaError('Failed to parse model output', 'inference_error');
     }
+  }
+
+  private prepareMultimodalInput(params: ChatCompletionParams): {
+    params: ChatCompletionParams;
+    files: ArrayBuffer[];
+  } {
+    const msg = params.messages;
+    const msgNew: typeof msg = [];
+    const files: ArrayBuffer[] = [];
+    for (const m of msg) {
+      if (Array.isArray(m.content)) {
+        const newContent: typeof m.content = [];
+        for (const c of m.content) {
+          if (c.type === 'text') {
+            // no transform for text content
+            newContent.push(c);
+          } else {
+            // replace multimodal input with media marker
+            if (!this.mediaMarker) {
+              throw new WllamaError(
+                'Media marker is undefined',
+                'inference_error'
+              );
+            }
+            files.push(c.data);
+            newContent.push({
+              type: 'text',
+              text: this.mediaMarker,
+            });
+          }
+        }
+        msgNew.push({
+          ...m,
+          content: newContent,
+        } as ChatCompletionUserMessage);
+      } else {
+        // no transform for non-typed content
+        msgNew.push(m);
+      }
+    }
+    return {
+      params: {
+        ...params,
+        messages: msgNew,
+      },
+      files,
+    };
   }
 
   private async getRespose(options: StreamParams<any>, isStream: boolean) {
