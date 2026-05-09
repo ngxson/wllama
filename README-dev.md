@@ -60,7 +60,7 @@ HeapFS is a ligh-weight wrapper around emscripten's default FS driver. The main 
 Upon started, these steps are performed:
 - `ProxyToWorker` is created in the main wllama JS context
 - A web worker is spawned, the code is taken from `workers-code/generated.ts`
-- The worker loads emscripten code, setup the environement then eventually call the `main()` inside `wllama.cpp`. These preparation steps are injected (see `llama-cpp.js`):
+- The worker loads emscripten code, sets up the environment then eventually calls the `main()` inside `wllama.cpp`. These preparation steps are injected (see `llama-cpp.js`):
     - Hooking `printf` functions
     - Setup HeapFS
     - Setup communication callbacks

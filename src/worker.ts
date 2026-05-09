@@ -73,7 +73,7 @@ export class ProxyToWorker {
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
     if (!this.pathConfig['wllama.wasm']) {
-      throw new Error('"single-thread/wllama.wasm" is missing from pathConfig');
+      throw new Error('"wllama.wasm" is missing from pathConfig');
     }
     let moduleCode = WLLAMA_EMSCRIPTEN_CODE;
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
