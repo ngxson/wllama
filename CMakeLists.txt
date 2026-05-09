@@ -1,15 +1,42 @@
 cmake_minimum_required(VERSION 3.14)
 project("wllama")
-add_subdirectory(llama.cpp)
-
-set(LLAMA_INSTALL_VERSION 0.0.${LLAMA_BUILD_NUMBER})
-add_subdirectory(llama.cpp/tools/mtmd)
 
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 set(CMAKE_HAVE_THREADS_LIBRARY 1)
 set(CMAKE_USE_WIN32_THREADS_INIT 0)
 set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
+
+add_compile_options(
+    -O3 -msimd128 -DNDEBUG
+    -flto=full -frtti -fwasm-exceptions
+    -pthread
+    -sMEMORY64=1
+)
+add_link_options(
+    -sMEMORY64=1
+    -flto=full -fwasm-exceptions
+    --no-entry
+    -sEXPORT_ALL=1
+    -sEXPORT_ES6=0
+    -sMODULARIZE=0
+    -sINITIAL_MEMORY=128MB
+    -sMAXIMUM_MEMORY=4096MB
+    -sALLOW_MEMORY_GROWTH=1
+    -sFORCE_FILESYSTEM=1
+    -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
+    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
+    -sNO_EXIT_RUNTIME=1
+    -sIMPORTED_MEMORY=1
+    -sPTHREAD_POOL_SIZE=Module[\"pthreadPoolSize\"]
+    -sUSE_PTHREADS=1
+    -pthread
+)
+
+add_subdirectory(llama.cpp)
+
+set(LLAMA_INSTALL_VERSION 0.0.${LLAMA_BUILD_NUMBER})
+add_subdirectory(llama.cpp/tools/mtmd)
 
 file(GLOB_RECURSE LLAMA_COMMON_SRC
     CONFIGURE_DEPENDS
@@ -50,34 +77,3 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/mtmd)
 
 add_executable(wllama ${WLLAMA_SRC})
 target_link_libraries(wllama PRIVATE ggml llama mtmd ${CMAKE_THREAD_LIBS_INIT})
-
-set(EM_CXX_FLAGS
-    -O3 -msimd128 -DNDEBUG
-    -flto=full -frtti -fwasm-exceptions
-    -sMEMORY64=1
-)
-
-set(EM_LINK_FLAGS
-    --no-entry
-    -sEXPORT_ALL=1
-    -sEXPORT_ES6=0
-    -sMODULARIZE=0
-    -sINITIAL_MEMORY=128MB
-    -sMAXIMUM_MEMORY=4096MB
-    -sALLOW_MEMORY_GROWTH=1
-    -sFORCE_FILESYSTEM=1
-    -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
-    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
-    -sNO_EXIT_RUNTIME=1
-    -sIMPORTED_MEMORY=1
-)
-
-string(REPLACE ";" " " EM_CXX_FLAGS_STR "${EM_CXX_FLAGS}")
-string(REPLACE ";" " " EM_LINK_FLAGS_STR "${EM_LINK_FLAGS}")
-
-foreach(target IN ITEMS ggml wllama llama mtmd)
-    set_target_properties(${target} PROPERTIES
-        LINK_FLAGS "${EM_CXX_FLAGS_STR} ${EM_LINK_FLAGS_STR}"
-        COMPILE_FLAGS "${EM_CXX_FLAGS_STR}"
-    )
-endforeach()

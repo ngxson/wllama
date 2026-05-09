@@ -106,7 +106,7 @@ const getWasmMemory = () => {
 };
 
 //////////////////////////////////////////////////////////////
-// MEMFS PATCH
+// HEAPFS PATCH
 //////////////////////////////////////////////////////////////
 
 /**
@@ -134,7 +134,7 @@ const fsIdToFile = {}; // map ID => File
 let currFileId = 0;
 
 // Patch and redirect memfs calls to wllama
-const patchMEMFS = () => {
+const patchHeapFS = () => {
   const m = Module;
   // save functions
   m.MEMFS.stream_ops._read = m.MEMFS.stream_ops.read;
@@ -265,10 +265,13 @@ onmessage = async (e) => {
     const argMainScriptBlob = args[0];
     try {
       Module = getWModuleConfig(argMainScriptBlob);
+      Module.preRun = () => {
+        // ENV can be set here (for future use)
+      };
       Module.onRuntimeInitialized = () => {
         // async call once module is ready
         // init FS
-        patchMEMFS();
+        patchHeapFS();
         // init cwrap
         const pointer = 'bigint';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument

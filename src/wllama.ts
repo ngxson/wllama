@@ -80,8 +80,9 @@ export interface WllamaChatMessage {
 }
 
 export interface AssetsPathConfig {
-  'single-thread/wllama.wasm': string;
-  'multi-thread/wllama.wasm'?: string;
+  'wllama.wasm': string;
+  'single-thread/wllama.wasm'?: string; // deprecated, use "wllama.wasm" instead
+  'multi-thread/wllama.wasm'?: string; // deprecated, use "wllama.wasm" instead
 }
 
 export interface ModelMetadata {
@@ -400,44 +401,30 @@ export class Wllama {
         'load_error'
       );
     }
+    if (!this.pathConfig['wllama.wasm']) {
+      throw new WllamaError(
+        '"wllama.wasm" is missing from pathConfig',
+        'load_error'
+      );
+    }
 
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
     // detect if we can use multi-thread
     const supportMultiThread = await isSupportMultiThread();
-    if (!supportMultiThread) {
-      this.logger().warn(
-        'Multi-threads are not supported in this environment, falling back to single-thread'
-      );
-    }
-    const hasPathMultiThread = !!this.pathConfig['multi-thread/wllama.wasm'];
-    if (!hasPathMultiThread) {
-      this.logger().warn(
-        'Missing paths to "multi-thread/wllama.wasm", falling back to single-thread'
-      );
-    }
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
     const nbThreads = params.n_threads ?? hwConccurency;
     this.nbThreads = nbThreads;
-    this.useMultiThread =
-      supportMultiThread && hasPathMultiThread && nbThreads > 1;
-    const mPathConfig = this.useMultiThread
-      ? {
-          'wllama.wasm': absoluteUrl(
-            this.pathConfig['multi-thread/wllama.wasm']!!
-          ),
-        }
-      : {
-          'wllama.wasm': absoluteUrl(
-            this.pathConfig['single-thread/wllama.wasm']
-          ),
-        };
+    this.useMultiThread = supportMultiThread && nbThreads > 1;
+    const mPathConfig = {
+      'wllama.wasm': absoluteUrl(this.pathConfig['wllama.wasm']),
+    };
 
     // initialize the worker
     this.proxy = new ProxyToWorker(
       mPathConfig,
-      this.useMultiThread ? nbThreads : 1,
+      this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
       this.config.suppressNativeLog ?? false,
       this.logger()
     );

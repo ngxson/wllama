@@ -3,8 +3,7 @@ import { Wllama as WllamaMJS } from '../esm/index.js';
 import { Wllama as WllamaMJSMinified } from '../esm/index.min.js';
 
 const CONFIG_PATHS = {
-  'single-thread/wllama.wasm': '/src/single-thread/wllama.wasm',
-  'multi-thread/wllama.wasm': '/src/multi-thread/wllama.wasm',
+  'wllama.wasm': '/src/wasm/wllama.wasm',
 };
 
 const TINY_MODEL =

@@ -5,11 +5,8 @@ set -e
 CURRENT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd $CURRENT_PATH/..
 
-mkdir -p esm/single-thread
-mkdir -p esm/multi-thread
-
-cp src/multi-thread/wllama.wasm  esm/multi-thread
-cp src/single-thread/wllama.wasm esm/single-thread
+mkdir -p esm/wasm
+cp src/wasm/wllama.wasm esm/wasm
 
 # https://stackoverflow.com/questions/62619058/appending-js-extension-on-relative-import-statements-during-typescript-compilat
 
