@@ -4,7 +4,7 @@ Wllama is a webassembly binding of llama.cpp. It contains the main source code o
 
 ## Project structure
 
-The project has these dir:
+The project has these directories:
 - `src`: the main typescript source code
 - `cpp`: C++ interface
 - `scripts`: various scripts for development
@@ -12,7 +12,7 @@ The project has these dir:
 
 The project has these main components:
 - `wllama.ts`: the main public API
-- `model-manager.ts`: relies on cache manager to manage models. For ex, a model can compose from multiple files
+- `model-manager.ts`: relies on cache manager to manage models. For example, a model can be composed of multiple files
     - `cache-manager.ts`: interface for managing cache files. It uses OPFS under the hood
     - `huggingface.ts`: utility for managing models downloading from hugging face hub
 - `worker.ts`: the worker manager that will be responsible of starting the emscripten worker and maintaining the communication with it
@@ -53,23 +53,23 @@ This logic lives in `wllama.ts` (`isSupportMultiThread()` from `utils.ts` perfor
 
 ### HeapFS
 
-HeapFS is a ligh-weight wrapper around emscripten's default FS driver. The main goal is to allow `mmap()` operation to map to existing data, instead of copying it (the default behavior of emscripten). See `workers-code/llama-cpp.js` for more details.
+HeapFS is a lightweight wrapper around emscripten's default FS driver. The main goal is to allow `mmap()` operation to map to existing data, instead of copying it (the default behavior of emscripten). See `workers-code/llama-cpp.js` for more details.
 
 ## Startup process
 
-Upon started, these steps are performed:
+Upon startup, these steps are performed:
 - `ProxyToWorker` is created in the main wllama JS context
 - A web worker is spawned, the code is taken from `workers-code/generated.ts`
 - The worker loads emscripten code, sets up the environment then eventually calls the `main()` inside `wllama.cpp`. These preparation steps are injected (see `llama-cpp.js`):
     - Hooking `printf` functions
-    - Setup HeapFS
-    - Setup communication callbacks
+    - Setting up HeapFS
+    - Setting up communication callbacks
 
 ## Build process
 
 The build process uses emscripten in docker to compile the project.
 
-After compilation, `generate_glue_prototype.js` is called to generate the GLUE message types to be used in typescript.
+After compilation, `generate_glue_prototype.js` is called to generate the GLUE message types to be used in TypeScript.
 
 Built wasm file will then be copied to the `src` directory.
 
