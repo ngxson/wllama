@@ -16,8 +16,7 @@ import type { GlueMsg } from './glue/messages';
 import { createWorker, isSafariMobile } from './utils';
 import {
   LLAMA_CPP_WORKER_CODE,
-  WLLAMA_MULTI_THREAD_CODE,
-  WLLAMA_SINGLE_THREAD_CODE,
+  WLLAMA_EMSCRIPTEN_CODE,
 } from './workers-code/generated';
 
 interface Logger {
@@ -61,13 +60,13 @@ export class ProxyToWorker {
 
   constructor(
     pathConfig: any,
-    nbThread: number = 1,
+    nbThread: number,
     suppressNativeLog: boolean,
     logger: Logger
   ) {
     this.pathConfig = pathConfig;
     this.nbThread = nbThread;
-    this.multiThread = nbThread > 1;
+    this.multiThread = nbThread > 0;
     this.logger = logger;
     this.suppressNativeLog = suppressNativeLog;
   }
@@ -76,9 +75,7 @@ export class ProxyToWorker {
     if (!this.pathConfig['wllama.wasm']) {
       throw new Error('"single-thread/wllama.wasm" is missing from pathConfig');
     }
-    let moduleCode = this.multiThread
-      ? WLLAMA_MULTI_THREAD_CODE
-      : WLLAMA_SINGLE_THREAD_CODE;
+    let moduleCode = WLLAMA_EMSCRIPTEN_CODE;
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
       pathConfig: this.pathConfig,
