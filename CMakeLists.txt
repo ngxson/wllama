@@ -9,58 +9,13 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 add_compile_options(
     -O3 -msimd128 -DNDEBUG
-    -frtti -fwasm-exceptions
+    -flto=full -frtti -fwasm-exceptions
     -pthread
     -sMEMORY64=1
 )
 add_link_options(
     -sMEMORY64=1
-    -fwasm-exceptions
-    # pthread wraps
-    -Wl,--wrap,pthread_mutex_init
-    -Wl,--wrap,__pthread_mutex_lock
-    -Wl,--wrap,__pthread_mutex_unlock
-    -Wl,--wrap,__pthread_mutex_trylock
-    -Wl,--wrap,__pthread_mutex_timedlock
-    -Wl,--wrap,pthread_mutex_destroy
-    -Wl,--wrap,pthread_mutex_consistent
-    -Wl,--wrap,pthread_barrier_init
-    -Wl,--wrap,pthread_barrier_destroy
-    -Wl,--wrap,pthread_barrier_wait
-    -Wl,--wrap,__pthread_create
-    -Wl,--wrap,__pthread_join
-    -Wl,--wrap,__pthread_detach
-    -Wl,--wrap,pthread_cancel
-    -Wl,--wrap,__pthread_testcancel
-    -Wl,--wrap,__pthread_exit
-    -Wl,--wrap,pthread_equal
-    -Wl,--wrap,pthread_kill
-    -Wl,--wrap,pthread_setcancelstate
-    -Wl,--wrap,pthread_setcanceltype
-    -Wl,--wrap,__pthread_key_create
-    -Wl,--wrap,__pthread_key_delete
-    -Wl,--wrap,pthread_getspecific
-    -Wl,--wrap,pthread_setspecific
-    -Wl,--wrap,__pthread_once
-    -Wl,--wrap,pthread_cond_init
-    -Wl,--wrap,pthread_cond_destroy
-    -Wl,--wrap,pthread_cond_wait
-    -Wl,--wrap,__pthread_cond_timedwait
-    -Wl,--wrap,pthread_cond_signal
-    -Wl,--wrap,pthread_cond_broadcast
-    -Wl,--wrap,pthread_atfork
-    -Wl,--wrap,pthread_rwlock_init
-    -Wl,--wrap,pthread_rwlock_destroy
-    -Wl,--wrap,pthread_rwlock_rdlock
-    -Wl,--wrap,pthread_rwlock_tryrdlock
-    -Wl,--wrap,pthread_rwlock_timedrdlock
-    -Wl,--wrap,pthread_rwlock_wrlock
-    -Wl,--wrap,pthread_rwlock_trywrlock
-    -Wl,--wrap,pthread_rwlock_timedwrlock
-    -Wl,--wrap,pthread_rwlock_unlock
-    -Wl,--wrap,sem_post
-    -Wl,--wrap,sem_wait
-    -Wl,--wrap,sem_trywait
+    -flto=full -fwasm-exceptions
     --no-entry
     -sEXPORT_ALL=1
     -sEXPORT_ES6=0
@@ -111,7 +66,6 @@ set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
 
 set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}
     cpp/wllama.cpp
-    cpp/wllama-pthread.cpp
     cpp/glue.hpp
     llama.cpp/include/llama.h)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cpp)

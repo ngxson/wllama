@@ -402,7 +402,10 @@ export class Wllama {
       );
     }
     if (!this.pathConfig['wllama.wasm']) {
-      throw new WllamaError('"wllama.wasm" is missing from pathConfig', 'load_error');
+      throw new WllamaError(
+        '"wllama.wasm" is missing from pathConfig',
+        'load_error'
+      );
     }
 
     if (this.proxy) {
@@ -415,10 +418,8 @@ export class Wllama {
     this.nbThreads = nbThreads;
     this.useMultiThread = supportMultiThread && nbThreads > 1;
     const mPathConfig = {
-          'wllama.wasm': absoluteUrl(
-            this.pathConfig['wllama.wasm']
-          ),
-        };
+      'wllama.wasm': absoluteUrl(this.pathConfig['wllama.wasm']),
+    };
 
     // initialize the worker
     this.proxy = new ProxyToWorker(

@@ -266,8 +266,8 @@ onmessage = async (e) => {
     try {
       Module = getWModuleConfig(argMainScriptBlob);
       Module.preRun = () => {
-        Module.ENV['SUPPORT_PTHREAD'] = '1';
-      }
+        // ENV can be set here (for future use)
+      };
       Module.onRuntimeInitialized = () => {
         // async call once module is ready
         // init FS
