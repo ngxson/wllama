@@ -7,6 +7,25 @@ let wllamaDebug;
 
 let Module = null;
 
+if (!WebAssembly.Suspending) {
+  // JSPI not available - stubs that keep the import/export tables valid.
+  // Suspending wraps imports: identity is fine since async imports won't be called.
+  WebAssembly.Suspending = function (fn) {
+    // console.log(fn.toString());
+    return fn;
+  };
+  // promising wraps exports: must return a Promise so ccall's ret.then() works.
+  WebAssembly.promising = function (fn) {
+    return function (...args) {
+      try {
+        return Promise.resolve(fn(...args));
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    };
+  };
+}
+
 //////////////////////////////////////////////////////////////
 // UTILS
 //////////////////////////////////////////////////////////////
@@ -233,14 +252,19 @@ const heapfsWrite = (id, buffer, offset) => {
 // MAIN CODE
 //////////////////////////////////////////////////////////////
 
-const callWrapper = (name, ret, args) => {
-  const fn = Module.cwrap(name, ret, args);
+const callWrapper = (name, ret, args, isAsync) => {
+  const fn = Module.cwrap(
+    name,
+    ret,
+    args,
+    isAsync ? { async: true } : undefined
+  );
   return async (action, req) => {
     // console.log(`Calling ${name} with action:`, action, 'and req:', req);
     let result;
     try {
       if (args.length === 2) {
-        result = await fn(action, req);
+        result = isAsync ? await fn(action, req) : fn(action, req);
       } else {
         result = fn();
       }
@@ -279,11 +303,11 @@ onmessage = async (e) => {
           'number',
           pointer,
         ]);
-        wllamaStart = callWrapper('wllama_start', 'string', []);
+        wllamaStart = callWrapper('wllama_start', 'string', [], true);
         wllamaAction = callWrapper('wllama_action', pointer, [
           'string',
           pointer,
-        ]);
+        ], true);
         wllamaExit = callWrapper('wllama_exit', 'string', []);
         wllamaDebug = callWrapper('wllama_debug', 'string', []);
         msg({ callbackId, result: null });
