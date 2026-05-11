@@ -11,7 +11,7 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
 > [!IMPORTANT]  
-> **🔥🔥 V3 is out, with multimodal and tool calling support. Read more [here](./guides/intro-v3.md)**  
+> **🔥🔥 V3 is out, with WebGPU, multimodal and tool calling support. Read more [here](./guides/intro-v3.md)**  
 > Memory64 is now a requirement, which drops support for Safari. Please follow [this issue](https://github.com/ngxson/wllama/issues/210) for more info.
 
 ![](./assets/screenshot_0.png)
@@ -82,7 +82,7 @@ import { Wllama } from './esm/index.js';
 
 (async () => {
   const CONFIG_PATHS = {
-    'wllama.wasm': './esm/wasm/wllama.wasm',
+    default: './esm/wasm/wllama.wasm',
   };
   // Automatically switch between single-thread and multi-thread version based on browser support
   // If you want to enforce single-thread, add { "n_threads": 1 } to LoadModelConfig

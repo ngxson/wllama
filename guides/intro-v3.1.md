@@ -35,6 +35,6 @@ const CONFIG_PATHS = {
 
 // New config
 const CONFIG_PATHS = {
-  'wllama.wasm': './path_to_source/wasm/wllama.wasm',
+  default: './path_to_source/wasm/wllama.wasm',
 };
 ```

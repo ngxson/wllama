@@ -6,7 +6,7 @@ import { InferenceParams } from './utils/types';
 export const WLLAMA_VERSION = wllamaPackageJson.version;
 
 export const WLLAMA_CONFIG_PATHS = {
-  'wllama.wasm': wllamaWasm,
+  default: wllamaWasm,
 };
 
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
