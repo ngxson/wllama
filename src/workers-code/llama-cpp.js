@@ -285,10 +285,12 @@ onmessage = async (e) => {
           pointer,
         ]);
         wllamaStart = callWrapper('wllama_start', 'string', [], true);
-        wllamaAction = callWrapper('wllama_action', pointer, [
-          'string',
+        wllamaAction = callWrapper(
+          'wllama_action',
           pointer,
-        ], true);
+          ['string', pointer],
+          true
+        );
         wllamaExit = callWrapper('wllama_exit', 'string', []);
         wllamaDebug = callWrapper('wllama_debug', 'string', []);
         msg({ callbackId, result: null });

@@ -259,14 +259,14 @@ const isSupportSIMD = async () =>
  */
 export const isSupportJSPI = () => {
   return !!(WebAssembly as any).Suspending;
-}
+};
 
 /**
  * @returns true if brower support WebGPU and JSPI (required by emscripten build)
  */
 export const isSupportWebGPU = () => {
   return !!(navigator as any).gpu && isSupportJSPI();
-}
+};
 
 /**
  * Throws an error if the environment is not compatible
@@ -296,7 +296,7 @@ export const isSafari = (): boolean => {
  */
 export const isFirefox = (): boolean => {
   return !!navigator.userAgent.match(/Firefox\/([0-9\.]+)(?:\s|$)/);
-}
+};
 
 /**
  * Regular expression to validate GGUF file paths/URLs
