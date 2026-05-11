@@ -460,7 +460,7 @@ export class Wllama {
     this.logger().debug('Loading model...');
     const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
       _name: 'load_req',
-      log_level: LogLevel.DEBUG, //logLevel,
+      log_level: logLevel,
       use_mmap: true,
       use_mlock: true,
       n_gpu_layers: params.n_gpu_layers ?? 99999,

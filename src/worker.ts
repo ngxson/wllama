@@ -46,6 +46,27 @@ interface Task {
   buffers?: ArrayBuffer[] | undefined;
 }
 
+const JSPI_STUB = `
+if (!WebAssembly.Suspending) {
+  // JSPI not available - stubs that keep the import/export tables valid.
+  // Suspending wraps imports: identity is fine since async imports won't be called.
+  WebAssembly.Suspending = function (fn) {
+    // console.log(fn.toString());
+    return fn;
+  };
+  // promising wraps exports: must return a Promise so ccall's ret.then() works.
+  WebAssembly.promising = function (fn) {
+    return function (...args) {
+      try {
+        return Promise.resolve(fn(...args));
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    };
+  };
+}
+`;
+
 export class ProxyToWorker {
   logger: Logger;
   suppressNativeLog: boolean;
@@ -75,7 +96,7 @@ export class ProxyToWorker {
     if (!this.pathConfig['wllama.wasm']) {
       throw new Error('"wllama.wasm" is missing from pathConfig');
     }
-    let moduleCode = WLLAMA_EMSCRIPTEN_CODE;
+    let moduleCode = JSPI_STUB + WLLAMA_EMSCRIPTEN_CODE;
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
       pathConfig: this.pathConfig,

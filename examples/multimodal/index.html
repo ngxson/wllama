@@ -11,6 +11,7 @@
         color: rgb(222, 222, 222);
         font-family: 'Courier New', Courier, monospace;
         padding: 1em;
+        padding-bottom: 4em;
       }
 
       #output_cmpl {
@@ -92,6 +93,9 @@
 
     Output:<br />
     <div id="output_cmpl"></div>
+    <div id="output_timings" style="margin-top: 0.5em; color: #aaa; font-size: 0.85em; display: none;">
+      Prompt: <span id="timing_prompt">-</span> t/s &nbsp;|&nbsp; Generation: <span id="timing_gen">-</span> t/s
+    </div>
 
     <script type="module">
       import { Wllama } from '../../esm/index.js';
@@ -111,6 +115,12 @@
 
       async function main() {
         setRunDisabled(true);
+
+        // Pre-load the example image
+        const response = await fetch('./bliss.png');
+        imageData = await response.arrayBuffer();
+        elemPreviewImage.src = './bliss.png';
+        elemPreviewImage.style.display = 'block';
 
         elemBtnLoadRemote.onclick = async () => {
           elemBtnLoadRemote.disabled = true;
@@ -149,6 +159,7 @@
           if (!wllama) return;
           setRunDisabled(true);
           elemOutputCmpl.textContent = '';
+          elemOutputTimings.style.display = 'none';
           try {
             await runCompletion();
           } catch (err) {
@@ -226,8 +237,15 @@
           temperature: 0.2,
           stream: true,
           onData: (chunk) => {
+            console.log('Received chunk:', chunk);
             const delta = chunk.choices[0]?.delta?.content;
             if (delta) elemOutputCmpl.textContent += delta;
+            if (chunk.timings) {
+              const t = chunk.timings;
+              elemTimingPrompt.textContent = t.prompt_per_second.toFixed(1);
+              elemTimingGen.textContent = t.predicted_per_second.toFixed(1);
+              elemOutputTimings.style.display = 'block';
+            }
           },
         });
       }
@@ -266,6 +284,9 @@
       const elemPreviewImage = document.getElementById('preview_image');
       const elemBtnRunCmpl = document.getElementById('btn_run_cmpl');
       const elemOutputCmpl = document.getElementById('output_cmpl');
+      const elemOutputTimings = document.getElementById('output_timings');
+      const elemTimingPrompt = document.getElementById('timing_prompt');
+      const elemTimingGen = document.getElementById('timing_gen');
 
       main();
     </script>
