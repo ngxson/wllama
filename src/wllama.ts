@@ -423,7 +423,6 @@ export class Wllama {
     }
     // detect if we can use multi-thread and webgpu
     const supportMultiThread = await isSupportMultiThread();
-    const supportWebGPU = isSupportWebGPU();
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
     const nbThreads = params.n_threads ?? hwConccurency;
     this.nbThreads = nbThreads;
@@ -464,7 +463,7 @@ export class Wllama {
       use_mmap: true,
       use_mlock: true,
       n_gpu_layers: params.n_gpu_layers ?? 99999,
-      n_ctx: params.n_ctx || 1024,
+      n_ctx: params.n_ctx ?? 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       n_ctx_auto: false, // not supported for now
       mmproj_path: modelFiles.mmproj
