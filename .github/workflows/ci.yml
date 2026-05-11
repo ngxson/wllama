@@ -51,6 +51,8 @@ jobs:
       - name: Test (Firefox)
         run: npm run test:firefox
 
+  # TODO: add test for WebGPU on github hosted runner ; current missing ShaderF16 support
+
   lint:
     runs-on: ubuntu-latest
     steps:

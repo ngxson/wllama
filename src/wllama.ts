@@ -354,6 +354,14 @@ export class Wllama {
   }
 
   /**
+   * Check if WebGPU is supported by the current environment.
+   * @returns true if WebGPU is supported
+   */
+  isSupportWebGPU(): boolean {
+    return isSupportWebGPU();
+  }
+
+  /**
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * - If the model already been downloaded (via `downloadModel()`), then we will use the cached model
    * - Else, we download the model from internet

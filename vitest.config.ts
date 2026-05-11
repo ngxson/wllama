@@ -1,6 +1,15 @@
 import { defineConfig } from 'vitest/config';
 
 const SAFARI = process.env.BROWSER === 'safari';
+const WEBGPU = process.env.WEBGPU === '1';
+
+const chromeArgsCI = ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'];
+const chromeArgsWebGPU = [
+  'no-sandbox',
+  'disable-setuid-sandbox',
+  'enable-unsafe-webgpu',
+  'enable-features=WebGPU',
+];
 
 export default defineConfig({
   test: {
@@ -9,30 +18,33 @@ export default defineConfig({
       '**/esm/**',
       '**/docs/**',
       '**/examples/**',
+      ...(!WEBGPU ? ['**/src/*.wgpu.test.*'] : []),
     ],
-    include: ['**/src/*.test.*'],
+    include: WEBGPU ? ['**/src/*.wgpu.test.*'] : ['**/src/*.test.*'],
     browser: {
       enabled: true,
       name: process.env.BROWSER ?? 'chromium',
       provider: SAFARI ? 'webdriverio' : 'playwright',
       // https://playwright.dev
-      providerOptions: process.env.GITHUB_ACTIONS
-        ? {
-            capabilities: {
-              'goog:chromeOptions': {
-                args: ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'],
-              },
-            },
-          }
-        : SAFARI
+      providerOptions: WEBGPU
+        ? { launch: { args: chromeArgsWebGPU.map((a) => `--${a}`) } }
+        : process.env.GITHUB_ACTIONS
           ? {
               capabilities: {
-                alwaysMatch: { browserName: 'safari' },
-                firstMatch: [{}],
-                browserName: 'safari',
+                'goog:chromeOptions': {
+                  args: chromeArgsCI,
+                },
               },
             }
-          : {},
+          : SAFARI
+            ? {
+                capabilities: {
+                  alwaysMatch: { browserName: 'safari' },
+                  firstMatch: [{}],
+                  browserName: 'safari',
+                },
+              }
+            : {},
     },
   },
   server: {

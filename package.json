@@ -24,7 +24,8 @@
     "format": "prettier --write .",
     "test": "vitest",
     "test:firefox": "BROWSER=firefox vitest",
-    "test:safari": "BROWSER=safari vitest"
+    "test:safari": "BROWSER=safari vitest",
+    "test:wgpu": "WEBGPU=1 vitest"
   },
   "repository": {
     "type": "git",
