@@ -4,6 +4,8 @@ export interface LoadModelParams {
   seed?: number;
   n_ctx?: number;
   n_batch?: number;
+  // by default, all layers are offloaded if WebGPU is available
+  n_gpu_layers?: number;
   // by default, on multi-thread build, we take half number of available threads (hardwareConcurrency / 2)
   n_threads?: number;
   embeddings?: boolean;
@@ -26,7 +28,6 @@ export interface LoadModelParams {
   yarn_beta_fast?: number;
   yarn_beta_slow?: number;
   yarn_orig_ctx?: number;
-  // TODO: add group attention
   // optimizations
   cache_type_k?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';

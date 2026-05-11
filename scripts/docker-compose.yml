@@ -21,7 +21,17 @@ services:
 
         mkdir -p build
         cd build
-        emcmake cmake ..
+        mkdir -p emdawn
+
+        DAWN_TAG=v20260317.182325
+        EMDAWN_PKG="emdawnwebgpu_pkg-$${DAWN_TAG}.zip"
+        EMDAWNWEBGPU_DIR="/source/build/emdawn/emdawnwebgpu_pkg"
+        echo "Downloading $${EMDAWN_PKG}"
+        curl -L -o emdawn.zip \
+          "https://github.com/google/dawn/releases/download/$${DAWN_TAG}/$${EMDAWN_PKG}"
+        python3 -c "import zipfile; zf=zipfile.ZipFile('emdawn.zip','r'); zf.extractall('/source/build/emdawn'); zf.close()"
+
+        emcmake cmake .. -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}"
         emmake make wllama -j
 
         # go back to root

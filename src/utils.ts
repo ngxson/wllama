@@ -255,6 +255,20 @@ const isSupportSIMD = async () =>
   );
 
 /**
+ * @returns true if browser support JSPI
+ */
+export const isSupportJSPI = () => {
+  return !!(WebAssembly as any).Suspending;
+};
+
+/**
+ * @returns true if brower support WebGPU and JSPI (required by emscripten build)
+ */
+export const isSupportWebGPU = () => {
+  return !!(navigator as any).gpu && isSupportJSPI();
+};
+
+/**
  * Throws an error if the environment is not compatible
  */
 export const checkEnvironmentCompatible = async (): Promise<void> => {
@@ -275,6 +289,13 @@ export const isSafari = (): boolean => {
     isSafariMobile() ||
     !!navigator.userAgent.match(/Version\/([0-9\._]+).*Safari/)
   ); // safari
+};
+
+/**
+ * Check if browser is Firefox
+ */
+export const isFirefox = (): boolean => {
+  return !!navigator.userAgent.match(/Firefox\/([0-9\.]+)(?:\s|$)/);
 };
 
 /**

@@ -3,8 +3,11 @@ import {
   absoluteUrl,
   cbToAsyncIter,
   checkEnvironmentCompatible,
+  isFirefox,
   isString,
+  isSupportJSPI,
   isSupportMultiThread,
+  isSupportWebGPU,
   MMPROJ_FILE_NAME,
   prepareBlobs,
 } from './utils';
@@ -170,6 +173,13 @@ export class Wllama {
         parallelDownloads: wllamaConfig.parallelDownloads,
         allowOffline: wllamaConfig.allowOffline,
       });
+
+    // warn user to enable JSPI on firefox
+    if (isFirefox() && !isSupportJSPI()) {
+      this.logger().warn(
+        'WebGPU is disabled on Firefox due to missing JSPI support. Please enable "javascript.options.wasm_js_promise_integration" in "about:config" to allow WebGPU support.'
+      );
+    }
   }
 
   private logger() {
@@ -344,6 +354,14 @@ export class Wllama {
   }
 
   /**
+   * Check if WebGPU is supported by the current environment.
+   * @returns true if WebGPU is supported
+   */
+  isSupportWebGPU(): boolean {
+    return isSupportWebGPU();
+  }
+
+  /**
    * Load model from a given URL (or a list of URLs, in case the model is splitted into smaller files)
    * - If the model already been downloaded (via `downloadModel()`), then we will use the cached model
    * - Else, we download the model from internet
@@ -411,7 +429,7 @@ export class Wllama {
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
-    // detect if we can use multi-thread
+    // detect if we can use multi-thread and webgpu
     const supportMultiThread = await isSupportMultiThread();
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
     const nbThreads = params.n_threads ?? hwConccurency;
@@ -452,8 +470,8 @@ export class Wllama {
       log_level: logLevel,
       use_mmap: true,
       use_mlock: true,
-      n_gpu_layers: 0, // not supported for now
-      n_ctx: params.n_ctx || 1024,
+      n_gpu_layers: params.n_gpu_layers ?? 99999,
+      n_ctx: params.n_ctx ?? 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
       n_ctx_auto: false, // not supported for now
       mmproj_path: modelFiles.mmproj

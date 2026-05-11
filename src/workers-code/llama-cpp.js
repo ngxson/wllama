@@ -233,14 +233,19 @@ const heapfsWrite = (id, buffer, offset) => {
 // MAIN CODE
 //////////////////////////////////////////////////////////////
 
-const callWrapper = (name, ret, args) => {
-  const fn = Module.cwrap(name, ret, args);
+const callWrapper = (name, ret, args, isAsync) => {
+  const fn = Module.cwrap(
+    name,
+    ret,
+    args,
+    isAsync ? { async: true } : undefined
+  );
   return async (action, req) => {
     // console.log(`Calling ${name} with action:`, action, 'and req:', req);
     let result;
     try {
       if (args.length === 2) {
-        result = await fn(action, req);
+        result = isAsync ? await fn(action, req) : fn(action, req);
       } else {
         result = fn();
       }
@@ -279,11 +284,13 @@ onmessage = async (e) => {
           'number',
           pointer,
         ]);
-        wllamaStart = callWrapper('wllama_start', 'string', []);
-        wllamaAction = callWrapper('wllama_action', pointer, [
-          'string',
+        wllamaStart = callWrapper('wllama_start', 'string', [], true);
+        wllamaAction = callWrapper(
+          'wllama_action',
           pointer,
-        ]);
+          ['string', pointer],
+          true
+        );
         wllamaExit = callWrapper('wllama_exit', 'string', []);
         wllamaDebug = callWrapper('wllama_debug', 'string', []);
         msg({ callbackId, result: null });

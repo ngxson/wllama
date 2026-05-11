@@ -9,13 +9,15 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 add_compile_options(
     -O3 -msimd128 -DNDEBUG
-    -flto=full -frtti -fwasm-exceptions
+    -flto=full -frtti
+    -fwasm-exceptions
     -pthread
     -sMEMORY64=1
 )
 add_link_options(
     -sMEMORY64=1
-    -flto=full -fwasm-exceptions
+    -flto=full
+    -fwasm-exceptions
     --no-entry
     -sEXPORT_ALL=1
     -sEXPORT_ES6=0
@@ -31,6 +33,8 @@ add_link_options(
     -sPTHREAD_POOL_SIZE=Module[\"pthreadPoolSize\"]
     -sUSE_PTHREADS=1
     -pthread
+    -sJSPI
+    -sJSPI_EXPORTS=['wllama_start','wllama_action']
 )
 
 add_subdirectory(llama.cpp)

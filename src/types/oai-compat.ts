@@ -196,6 +196,18 @@ export interface ChatCompletionChunkChoice {
   logprobs: ChatCompletionChoiceLogprobs | null;
 }
 
+export interface ResultTimings {
+  cache_n: number;
+  prompt_n: number;
+  prompt_ms: number;
+  prompt_per_token_ms: number;
+  prompt_per_second: number;
+  predicted_n: number;
+  predicted_ms: number;
+  predicted_per_token_ms: number;
+  predicted_per_second: number;
+}
+
 /** Response when stream=true — one chunk per SSE event */
 export interface ChatCompletionChunk {
   id: string;
@@ -204,6 +216,7 @@ export interface ChatCompletionChunk {
   model: string;
   choices: ChatCompletionChunkChoice[];
   usage?: ChatCompletionUsage | null;
+  timings?: ResultTimings;
 }
 
 // Raw (text) completion
@@ -249,6 +262,7 @@ export interface RawCompletionResponse {
   choices: RawCompletionChoice[];
   usage: ChatCompletionUsage;
   system_fingerprint?: string;
+  timings?: ResultTimings;
 }
 
 /** One chunk when stream=true */
@@ -264,6 +278,7 @@ export interface RawCompletionChunk {
     logprobs: null;
   }>;
   usage?: ChatCompletionUsage | null;
+  timings?: ResultTimings;
 }
 
 // Embeddings

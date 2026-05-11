@@ -302,6 +302,8 @@ struct wllama_context
       params.cache_type_k = kv_cache_type_from_str(req.cache_type_k.value);
     if (req.cache_type_v.not_null())
       params.cache_type_v = kv_cache_type_from_str(req.cache_type_v.value);
+    if (req.flash_attn.not_null())
+      params.flash_attn_type = req.flash_attn.value ? LLAMA_FLASH_ATTN_TYPE_AUTO : LLAMA_FLASH_ATTN_TYPE_DISABLED;
     if (req.swa_full.not_null())
       params.swa_full = req.swa_full.value;
     if (req.n_ctx_checkpoints.not_null())
@@ -314,22 +316,29 @@ struct wllama_context
       params.chat_template = req.chat_template.value;
     if (req.jinja.not_null())
       params.use_jinja = req.jinja.value;
-    if (req.reasoning.not_null()) {
-      if (req.reasoning.value) {
+    if (req.reasoning.not_null())
+    {
+      if (req.reasoning.value)
+      {
         params.enable_reasoning = 1;
         params.default_template_kwargs["enable_thinking"] = "true";
-      } else {
+      }
+      else
+      {
         params.enable_reasoning = 0;
         params.default_template_kwargs["enable_thinking"] = "false";
       }
     }
-    if (req.default_template_kwargs_keys.not_null() && req.default_template_kwargs_vals.not_null()) {
+    if (req.default_template_kwargs_keys.not_null() && req.default_template_kwargs_vals.not_null())
+    {
       auto &keys = req.default_template_kwargs_keys.arr;
       auto &vals = req.default_template_kwargs_vals.arr;
-      if (keys.size() != vals.size()) {
+      if (keys.size() != vals.size())
+      {
         throw app_exception("default_template_kwargs_keys and default_template_kwargs_vals must have the same length");
       }
-      for (size_t i = 0; i < keys.size(); i++) {
+      for (size_t i = 0; i < keys.size(); i++)
+      {
         params.default_template_kwargs[keys[i]] = vals[i];
       }
     }
@@ -422,28 +431,37 @@ struct wllama_context
     json body = json::parse(req_raw);
 
     json prompt;
-    if (body.count("input") != 0) {
+    if (body.count("input") != 0)
+    {
       prompt = body.at("input");
-    } else if (body.contains("content")) {
+    }
+    else if (body.contains("content"))
+    {
       prompt = body.at("content");
-    } else {
+    }
+    else
+    {
       throw app_exception("\"input\" or \"content\" must be provided");
     }
 
     int embd_normalize = 2;
-    if (body.count("embd_normalize") != 0) {
+    if (body.count("embd_normalize") != 0)
+    {
       embd_normalize = body.at("embd_normalize");
     }
 
     auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true);
-    for (const auto &tokens : tokenized_prompts) {
-      if (tokens.empty()) {
+    for (const auto &tokens : tokenized_prompts)
+    {
+      if (tokens.empty())
+      {
         throw app_exception("Input content cannot be empty");
       }
     }
 
     std::vector<server_task> tasks;
-    for (size_t i = 0; i < tokenized_prompts.size(); i++) {
+    for (size_t i = 0; i < tokenized_prompts.size(); i++)
+    {
       server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
       task.id = rd->get_new_id();
       task.tokens = std::move(tokenized_prompts[i]);
