@@ -10,7 +10,7 @@ Continuing from the [V3.0 release](./intro-v3.md), V3.1 continues to bring more 
 
 WebGPU support is introduced via [PR #215](https://github.com/ngxson/wllama/pull/215). Currently only supports Chrome (for Firefox, a flag must be enabled manually).
 
-Upon updating to V3.1, WebGPU will be enabled by default. By default, all layers will be offloaded to GPU. If the model is too big to fit into VRAM, you can manually adjust the number of layers via the `n_gpu_layers` parameter of `LoadModelParams`. Example:
+Upon updating to V3.1, WebGPU will be enabled automatically. By default, all layers will be offloaded to GPU. If the model is too big to fit into VRAM, you can manually adjust the number of layers via the `n_gpu_layers` parameter of `LoadModelParams`. Example:
 
 ```js
 await wllama.loadModel(files, {
