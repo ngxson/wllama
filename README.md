@@ -18,7 +18,8 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 
 ## Features
 
-- OpenAI-compatible API (fully-typed built-in)
+- 🔌 OpenAI-compatible API (fully-typed built-in)
+- 🚀 WebGPU support
 - 🔥 Multimodal support (image and audio file input)
 - 🔥 Tool calling support
 - Can run inference directly on browser (using [WebAssembly SIMD](https://emscripten.org/docs/porting/simd.html)), no backend or GPU is needed!
@@ -30,7 +31,6 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- No WebGPU support, but support is WIP 😉
 - Max file size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length). If your model is bigger than 2GB, please follow the **Split model** section below.
 
 ## Code demo and documentation
@@ -65,7 +65,15 @@ NOTE: this example only covers completions usage. For embeddings, please see [ex
 
 ### WebGPU support
 
+WebGPU support is introduced via [PR #215](https://github.com/ngxson/wllama/pull/215).
 
+Upon updating to V3.1, WebGPU will be enabled automatically. By default, all layers will be offloaded to GPU. If the model is too big to fit into VRAM, you can manually adjust the number of layers via the `n_gpu_layers` parameter of `LoadModelParams`. Example:
+
+```js
+await wllama.loadModel(files, {
+  n_gpu_layers: 4, // meaning 4 layers are offloaded to GPU; set to 0 to disable GPU inference
+});
+```
 
 ### Prepare your model
 
