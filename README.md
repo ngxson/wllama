@@ -63,6 +63,10 @@ For complete code example, see [examples/main/src/utils/wllama.context.tsx](./ex
 
 NOTE: this example only covers completions usage. For embeddings, please see [examples/embeddings/index.html](./examples/embeddings/index.html)
 
+### WebGPU support
+
+
+
 ### Prepare your model
 
 - It is recommended to split the model into **chunks of maximum 512MB**. This will result in slightly faster download speed (because multiple splits can be downloaded in parallel), and also prevent some out-of-memory issues.  
@@ -200,5 +204,4 @@ npm run build
 ## TODO
 
 - Add support for LoRA adapter
-- Support GPU inference via WebGPU
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
