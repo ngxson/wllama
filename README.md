@@ -11,7 +11,7 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
 > [!IMPORTANT]  
-> **🔥🔥 V3 is out, with WebGPU, multimodal and tool calling support. Read more [here](./guides/intro-v3.md)**  
+> **🔥🔥 V3 is out, with WebGPU, multimodal and tool calling support. Read the [V3 release guide](./guides/intro-v3.md)**  
 > Memory64 is now a requirement, which drops support for Safari. Please follow [this issue](https://github.com/ngxson/wllama/issues/210) for more info.
 
 ![](./assets/screenshot_0.png)
