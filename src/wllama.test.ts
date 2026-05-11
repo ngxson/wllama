@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { Wllama } from './wllama';
 
 const CONFIG_PATHS = {
-  'wllama.wasm': '/src/wasm/wllama.wasm',
+  default: '/src/wasm/wllama.wasm',
 };
 
 const TINY_MODEL =

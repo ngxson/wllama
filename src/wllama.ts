@@ -83,9 +83,9 @@ export interface WllamaChatMessage {
 }
 
 export interface AssetsPathConfig {
-  'wllama.wasm': string;
-  'single-thread/wllama.wasm'?: string; // deprecated, use "wllama.wasm" instead
-  'multi-thread/wllama.wasm'?: string; // deprecated, use "wllama.wasm" instead
+  default: string;
+  'single-thread/wllama.wasm'?: string; // deprecated, use "default" instead
+  'multi-thread/wllama.wasm'?: string; // deprecated, use "default" instead
 }
 
 export interface ModelMetadata {
@@ -419,9 +419,9 @@ export class Wllama {
         'load_error'
       );
     }
-    if (!this.pathConfig['wllama.wasm']) {
+    if (!this.pathConfig['default']) {
       throw new WllamaError(
-        '"wllama.wasm" is missing from pathConfig',
+        '"default" is missing from pathConfig',
         'load_error'
       );
     }
@@ -436,7 +436,7 @@ export class Wllama {
     this.nbThreads = nbThreads;
     this.useMultiThread = supportMultiThread && nbThreads > 1;
     const mPathConfig = {
-      'wllama.wasm': absoluteUrl(this.pathConfig['wllama.wasm']),
+      'wllama.wasm': absoluteUrl(this.pathConfig['default']),
     };
 
     // initialize the worker
