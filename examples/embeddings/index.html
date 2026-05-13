@@ -59,7 +59,7 @@
         print(`Calculating embedding for sentence #${i}: "${sentence}"`);
         timeStart();
         const result = await wllama.createEmbedding({ input: sentence });
-        const vector = result.embedding;
+        const vector = result.data[0].embedding;
         print(`OK, take ${timeEnd()} ms`);
         embeddings.push(vector);
       }

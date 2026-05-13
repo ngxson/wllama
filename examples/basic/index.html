@@ -133,10 +133,10 @@
         setEmbdDisable(true);
         let embdA = await wllama1.createEmbedding({ input: elemInputA.value });
         console.log({embdA});
-        embdA = embdA.embedding; // OAI-compat response
+        embdA = embdA.data[0].embedding; // OAI-compat response
         let embdB = await wllama1.createEmbedding({ input: elemInputB.value });
         console.log({embdB});
-        embdB = embdB.embedding; // OAI-compat response
+        embdB = embdB.data[0].embedding; // OAI-compat response
         // since embeddings are normalized, we don't need to calculate norm
         const dotProd = embdA.reduce((acc, _, i) => acc + embdA[i]*embdB[i], 0);
         elemOutputEmbd.textContent = dotProd;
