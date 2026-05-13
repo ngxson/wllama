@@ -172,7 +172,7 @@ test.sequential('generates embeddings', async () => {
   const res = await wllama.createEmbedding({ input: text });
 
   expect(res).toBeDefined();
-  const embedding = (res as any).embedding as number[];
+  const embedding = res.data[0].embedding as number[];
   expect(Array.isArray(embedding)).toBe(true);
   expect(embedding.length).toBeGreaterThan(0);
   for (const e of embedding) {
@@ -181,7 +181,7 @@ test.sequential('generates embeddings', async () => {
 
   // slightly different text should have high cosine similarity
   const res2 = await wllama.createEmbedding({ input: text + ' ' });
-  const embedding2 = (res2 as any).embedding as number[];
+  const embedding2 = res2.data[0].embedding as number[];
   const dot = embedding.reduce((acc, v, i) => acc + v * embedding2[i], 0);
   const norm1 = Math.sqrt(embedding.reduce((acc, v) => acc + v * v, 0));
   const norm2 = Math.sqrt(embedding2.reduce((acc, v) => acc + v * v, 0));

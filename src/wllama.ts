@@ -15,6 +15,7 @@ import CacheManager, { type DownloadOptions } from './cache-manager';
 import { ModelManager, Model, type ModelSource } from './model-manager';
 import type {
   GlueMsgCompletionRes,
+  GlueMsgEmbeddingRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
 } from './glue/messages';
@@ -555,7 +556,7 @@ export class Wllama {
   ): Promise<CreateEmbeddingResponse> {
     this.checkModelLoaded();
 
-    const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
+    const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
       'embedding',
       {
         _name: 'embd_req',

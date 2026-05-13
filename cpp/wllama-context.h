@@ -180,13 +180,18 @@ struct wllama_context
     }
   }
 
-  std::pair<std::string, bool> get_next_result()
+  std::pair<server_task_result_ptr, bool> get_next_result()
   {
     server_task_result_ptr result = rd->next(should_stop);
     if (result)
-      return {result->to_json().dump(), result->is_error()};
+    {
+      const bool is_error = result->is_error();
+      return {std::move(result), is_error};
+    }
     else
-      return {"", false};
+    {
+      return {nullptr, false};
+    }
   }
 
   kv_dump dump_metadata()
@@ -492,11 +497,31 @@ struct wllama_context
     glue_msg_get_result_res res;
 
     bool has_more = run_loop();
-    auto [data_json, is_error] = get_next_result();
+    auto [result, is_error] = get_next_result();
+
+    json data_json;
+    if (result)
+    {
+      auto *res = dynamic_cast<server_task_result_embd *>(result.get());
+      if (res)
+      {
+        // special handling for embeddings OAI-compat
+        json body = {{"model", meta->model_name}};
+        json responses = json::array();
+        responses.push_back(result->to_json());
+        // TODO: support base64 output
+        data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
+      }
+      else
+      {
+        // otherwise, it should be a completion result, nothing special to do
+        data_json = result->to_json();
+      }
+    }
 
     res.success.value = true;
     res.has_more.value = has_more;
-    res.data_json.value = data_json;
+    res.data_json.value = result ? data_json.dump() : "";
     res.is_error.value = is_error;
     return res;
   }
