@@ -184,9 +184,14 @@ struct wllama_context
   {
     server_task_result_ptr result = rd->next(should_stop);
     if (result)
-      return {std::move(result), result->is_error()};
+    {
+      const bool is_error = result->is_error();
+      return {std::move(result), is_error};
+    }
     else
+    {
       return {nullptr, false};
+    }
   }
 
   kv_dump dump_metadata()
