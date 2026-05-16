@@ -77,7 +77,7 @@ export class ProxyToWorker {
   taskId: number = 1;
   resultQueue: Task[] = [];
   busy = false; // is the work loop is running?
-  worker?: Worker;
+  worker?: Worker | undefined;
   pathConfig: any;
   multiThread: boolean;
   nbThread: number;
@@ -246,21 +246,23 @@ export class ProxyToWorker {
     offset: number,
     size: number
   ): Promise<void> {
-    const blob = this.fileBlobs.get(name);
-    if (!blob) {
-      this.logger.error(`fileReadResponse: blob not found for name="${name}"`);
-      this.worker!!.postMessage({
-        verb: 'fs.read_res',
-        args: [new ArrayBuffer(0)],
-      });
-      return;
+    try {
+      const blob = this.fileBlobs.get(name);
+      if (!blob) {
+        throw new Error(`blob not found for name="${name}"`);
+      }
+      const chunk = blob.slice(offset, offset + size);
+      const buffer = await chunk.arrayBuffer();
+      this.worker!!.postMessage(
+        { verb: 'fs.read_res', args: [buffer] },
+        { transfer: [buffer] }
+      );
+    } catch (err) {
+      this.logger.error('fileReadResponse failed, terminating worker:', err);
+      this.worker?.terminate();
+      this.worker = undefined;
+      this.abort(`File read failed: ${err}`);
     }
-    const chunk = blob.slice(offset, offset + size);
-    const buffer = await chunk.arrayBuffer();
-    this.worker!!.postMessage(
-      { verb: 'fs.read_res', args: [buffer] },
-      { transfer: [buffer] }
-    );
   }
 
   /**
@@ -334,7 +336,7 @@ export class ProxyToWorker {
     // handle fs.read_req signal from wasm (JSPI-suspended worker)
     if (verb === FILE_READ_REQ_EVENT) {
       const [name, offset, size] = args as [string, number, number];
-      this.fileReadResponse(name, offset, size);
+      this.fileReadResponse(name, offset, size).catch(() => {}); // errors handled inside
       return;
     }
 
