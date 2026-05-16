@@ -82,6 +82,7 @@ export class ProxyToWorker {
   multiThread: boolean;
   nbThread: number;
   useAsyncFile: boolean;
+  fileBlobs: Map<string, Blob> = new Map(); // filename -> Blob for async reads
 
   constructor(
     pathConfig: any,
@@ -120,7 +121,7 @@ export class ProxyToWorker {
       verb: 'module.init',
       args: [
         new Blob([moduleCode], { type: 'text/javascript' }),
-        this.useAsyncFile
+        this.useAsyncFile,
       ],
       callbackId: this.taskId++,
     });
@@ -129,8 +130,15 @@ export class ProxyToWorker {
     const nativeFiles: ({ id: number } & (typeof ggufFiles)[number])[] = [];
     for (const file of ggufFiles) {
       const needAllocBuffer = !this.useAsyncFile; // only alloc if mmap is used
-      const id = await this.fileAlloc(file.name, file.blob.size, needAllocBuffer);
+      const id = await this.fileAlloc(
+        file.name,
+        file.blob.size,
+        needAllocBuffer
+      );
       nativeFiles.push({ id, ...file });
+      if (this.useAsyncFile) {
+        this.fileBlobs.set(file.name, file.blob);
+      }
     }
 
     // stream files (only used in non async - mmap mode)
@@ -197,7 +205,11 @@ export class ProxyToWorker {
    * Allocate a new file in heapfs
    * @returns fileId, to be used by fileWrite()
    */
-  private async fileAlloc(fileName: string, size: number, allocBuffer: boolean): Promise<number> {
+  private async fileAlloc(
+    fileName: string,
+    size: number,
+    allocBuffer: boolean
+  ): Promise<number> {
     const result = await this.pushTask({
       verb: 'fs.alloc',
       args: [fileName, size, allocBuffer],
@@ -229,7 +241,26 @@ export class ProxyToWorker {
     }
   }
 
-  private async fileReadResponse(fileId: number, offset: number, chunkSize: number) {
+  private async fileReadResponse(
+    name: string,
+    offset: number,
+    size: number
+  ): Promise<void> {
+    const blob = this.fileBlobs.get(name);
+    if (!blob) {
+      this.logger.error(`fileReadResponse: blob not found for name="${name}"`);
+      this.worker!!.postMessage({
+        verb: 'fs.read_res',
+        args: [new ArrayBuffer(0)],
+      });
+      return;
+    }
+    const chunk = blob.slice(offset, offset + size);
+    const buffer = await chunk.arrayBuffer();
+    this.worker!!.postMessage(
+      { verb: 'fs.read_res', args: [buffer] },
+      { transfer: [buffer] }
+    );
   }
 
   /**
@@ -300,8 +331,12 @@ export class ProxyToWorker {
       this.abort(args[0]);
     }
 
-    // handle fs.read_req signal
-    // TODO
+    // handle fs.read_req signal from wasm (JSPI-suspended worker)
+    if (verb === FILE_READ_REQ_EVENT) {
+      const [name, offset, size] = args as [string, number, number];
+      this.fileReadResponse(name, offset, size);
+      return;
+    }
 
     // handle task result
     const { callbackId, result, err } = e.data;

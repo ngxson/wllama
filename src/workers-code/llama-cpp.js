@@ -148,7 +148,8 @@ const patchHeapFS = () => {
     const name = stream.node.name;
     if (fsNameToFile[name]) {
       const f = fsNameToFile[name];
-      stream.node.contents = getHeapU8().subarray(f.ptr, f.ptr + f.size);
+      const ptr = Number(f.ptr);
+      stream.node.contents = getHeapU8().subarray(ptr, ptr + f.size);
       stream.node.usedBytes = f.size;
     }
   };
@@ -179,8 +180,9 @@ const patchHeapFS = () => {
     const name = stream.node.name;
     if (fsNameToFile[name]) {
       const f = fsNameToFile[name];
+      const mmapPtr = f.ptr + BigInt(position);
       return {
-        ptr: f.ptr + position,
+        ptr: mmapPtr,
         allocated: false,
       };
     } else {
@@ -200,7 +202,7 @@ const heapfsAlloc = (name, size, allocBuffer) => {
     throw new Error('File size must be bigger than 0');
   }
   const m = Module;
-  const ptr = allocBuffer ? BigInt(0) : m.mmapAlloc(size);
+  const ptr = BigInt(allocBuffer ? m.mmapAlloc(size) : 0);
   const file = {
     ptr: ptr,
     size: size,
@@ -213,7 +215,6 @@ const heapfsAlloc = (name, size, allocBuffer) => {
 
 // Add new file to wllama heapfs, return number of written bytes
 const heapfsWrite = (id, buffer, offset) => {
-  const m = Module;
   if (fsIdToFile[id]) {
     const { ptr, size } = fsIdToFile[id];
     const afterWriteByte = offset + buffer.byteLength;
@@ -222,7 +223,7 @@ const heapfsWrite = (id, buffer, offset) => {
         `File ID ${id} write out of bound, afterWriteByte = ${afterWriteByte} while size = ${size}`
       );
     }
-    getHeapU8().set(buffer, ptr + offset);
+    getHeapU8().set(buffer, Number(ptr) + offset);
     return buffer.byteLength;
   } else {
     throw new Error(`File ID ${id} not found in heapfs`);
@@ -235,6 +236,36 @@ const heapfsWrite = (id, buffer, offset) => {
 
 let isAwaitReading = false;
 let pendingReadPromise = null;
+let pendingReadResolve = null;
+let pendingReadReject = null;
+
+const _stripModelsPrefix = (path) => path.replace(/^\/?models\//, '');
+
+// Called from EM_ASYNC_JS stub in wllama-fs.h (path is already a JS string)
+const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
+  const name = _stripModelsPrefix(path);
+
+  pendingReadPromise = new Promise((res, rej) => {
+    pendingReadResolve = res;
+    pendingReadReject = rej;
+  });
+  isAwaitReading = true;
+
+  postMessage({ verb: 'fs.read_req', args: [name, offset, req_size] });
+
+  let data;
+  try {
+    data = await pendingReadPromise;
+  } finally {
+    isAwaitReading = false;
+    pendingReadResolve = null;
+    pendingReadReject = null;
+  }
+
+  const bytes = new Uint8Array(data);
+  getHeapU8().set(bytes, out_ptr);
+  return BigInt(bytes.length);
+};
 
 //////////////////////////////////////////////////////////////
 // MAIN CODE
@@ -268,6 +299,25 @@ onmessage = async (e) => {
   if (!e.data) return;
   const { verb, args, callbackId } = e.data;
 
+  // fs.read_res arrives while wasm is JSPI-suspended; resolve the pending promise.
+  if (verb === 'fs.read_res') {
+    if (pendingReadResolve) {
+      pendingReadResolve(args[0]);
+    }
+    return;
+  }
+
+  // Guard: while awaiting a file read, reject any other incoming task.
+  if (isAwaitReading) {
+    if (callbackId) {
+      msg({
+        callbackId,
+        err: 'Worker is suspended waiting for file data (JSPI)',
+      });
+    }
+    return;
+  }
+
   if (!callbackId) {
     msg({ verb: 'console.error', args: ['callbackId is required', e.data] });
     return;
@@ -280,7 +330,7 @@ onmessage = async (e) => {
       Module = getWModuleConfig(argMainScriptBlob);
       Module.preRun = () => {
         if (argUseAsyncFile) {
-          Module.ENV["USE_ASYNC_FILE"] = "1";
+          Module.ENV['USE_ASYNC_FILE'] = '1';
         }
       };
       Module.onRuntimeInitialized = () => {

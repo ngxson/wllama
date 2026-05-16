@@ -21,11 +21,11 @@
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-#define WLLAMA_ACTION(name)                 \
-  else if (action == #name)                 \
-  {                                         \
-    auto res = app.action_##name(req_raw);  \
-    res.handler.serialize(output_buffer);   \
+#define WLLAMA_ACTION(name)                \
+  else if (action == #name)                \
+  {                                        \
+    auto res = app.action_##name(req_raw); \
+    res.handler.serialize(output_buffer);  \
   }
 
 static void llama_log_callback_logTee(ggml_log_level level, const char *text, void *user_data)
@@ -81,6 +81,13 @@ extern "C" const char *wllama_start()
     // std::cerr << llama_print_system_info() << "\n";
     llama_log_set(llama_log_callback_logTee, nullptr);
     wllama_malloc(1024, 0);
+
+    wllama_fs::make_sure_ready();
+    if (wllama_fs::use_async)
+    {
+      printStr(GGML_LOG_LEVEL_INFO, "Using async file read");
+    }
+
     return "{\"success\":true}";
   }
   catch (std::exception &e)
