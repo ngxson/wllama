@@ -195,12 +195,12 @@ const patchHeapFS = () => {
 };
 
 // Allocate a new file in wllama heapfs, returns file ID
-const heapfsAlloc = (name, size) => {
+const heapfsAlloc = (name, size, allocBuffer) => {
   if (size < 1) {
     throw new Error('File size must be bigger than 0');
   }
   const m = Module;
-  const ptr = m.mmapAlloc(size);
+  const ptr = allocBuffer ? BigInt(0) : m.mmapAlloc(size);
   const file = {
     ptr: ptr,
     size: size,
@@ -228,6 +228,13 @@ const heapfsWrite = (id, buffer, offset) => {
     throw new Error(`File ID ${id} not found in heapfs`);
   }
 };
+
+//////////////////////////////////////////////////////////////
+// ASYNC FILE READ
+//////////////////////////////////////////////////////////////
+
+let isAwaitReading = false;
+let pendingReadPromise = null;
 
 //////////////////////////////////////////////////////////////
 // MAIN CODE
@@ -268,10 +275,13 @@ onmessage = async (e) => {
 
   if (verb === 'module.init') {
     const argMainScriptBlob = args[0];
+    const argUseAsyncFile = args[1];
     try {
       Module = getWModuleConfig(argMainScriptBlob);
       Module.preRun = () => {
-        // ENV can be set here (for future use)
+        if (argUseAsyncFile) {
+          Module.ENV["USE_ASYNC_FILE"] = "1";
+        }
       };
       Module.onRuntimeInitialized = () => {
         // async call once module is ready
@@ -305,6 +315,7 @@ onmessage = async (e) => {
   if (verb === 'fs.alloc') {
     const argFilename = args[0];
     const argSize = args[1];
+    const argAllocBuffer = args[2];
     try {
       // create blank file
       const emptyBuffer = new ArrayBuffer(0);
@@ -317,7 +328,7 @@ onmessage = async (e) => {
         true
       );
       // alloc data on heap
-      const fileId = heapfsAlloc(argFilename, argSize);
+      const fileId = heapfsAlloc(argFilename, argSize, argAllocBuffer);
       msg({ callbackId, result: { fileId } });
     } catch (err) {
       msg({ callbackId, err });

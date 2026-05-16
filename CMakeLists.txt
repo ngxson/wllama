@@ -35,6 +35,9 @@ add_link_options(
     -pthread
     -sJSPI
     -sJSPI_EXPORTS=['wllama_start','wllama_action']
+    -Wl,--wrap,fopen
+    -Wl,--wrap,fclose
+    -Wl,--wrap,fread
 )
 
 add_subdirectory(llama.cpp)

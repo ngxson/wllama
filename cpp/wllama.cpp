@@ -16,6 +16,7 @@
 
 #include "llama.h"
 #include "wllama-context.h"
+#include "wllama-fs.h"
 #include "wllama.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))

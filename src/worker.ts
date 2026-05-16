@@ -13,7 +13,7 @@
 
 import { glueDeserialize, glueSerialize } from './glue/glue';
 import type { GlueMsg } from './glue/messages';
-import { createWorker, isSafariMobile } from './utils';
+import { canUseAsyncFileRead, createWorker, isSafariMobile } from './utils';
 import {
   LLAMA_CPP_WORKER_CODE,
   WLLAMA_EMSCRIPTEN_CODE,
@@ -26,11 +26,14 @@ interface Logger {
   error: typeof console.error;
 }
 
+const FILE_READ_REQ_EVENT = 'fs.read_req';
+
 interface TaskParam {
   verb:
     | 'module.init'
     | 'fs.alloc'
     | 'fs.write'
+    | 'fs.read_res'
     | 'wllama.start'
     | 'wllama.action'
     | 'wllama.exit'
@@ -78,6 +81,7 @@ export class ProxyToWorker {
   pathConfig: any;
   multiThread: boolean;
   nbThread: number;
+  useAsyncFile: boolean;
 
   constructor(
     pathConfig: any,
@@ -90,6 +94,7 @@ export class ProxyToWorker {
     this.multiThread = nbThread > 0;
     this.logger = logger;
     this.suppressNativeLog = suppressNativeLog;
+    this.useAsyncFile = canUseAsyncFileRead();
   }
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
@@ -113,23 +118,29 @@ export class ProxyToWorker {
 
     const res = await this.pushTask({
       verb: 'module.init',
-      args: [new Blob([moduleCode], { type: 'text/javascript' })],
+      args: [
+        new Blob([moduleCode], { type: 'text/javascript' }),
+        this.useAsyncFile
+      ],
       callbackId: this.taskId++,
     });
 
     // allocate all files
     const nativeFiles: ({ id: number } & (typeof ggufFiles)[number])[] = [];
     for (const file of ggufFiles) {
-      const id = await this.fileAlloc(file.name, file.blob.size);
+      const needAllocBuffer = !this.useAsyncFile; // only alloc if mmap is used
+      const id = await this.fileAlloc(file.name, file.blob.size, needAllocBuffer);
       nativeFiles.push({ id, ...file });
     }
 
-    // stream files
-    await Promise.all(
-      nativeFiles.map((file) => {
-        return this.fileWrite(file.id, file.blob);
-      })
-    );
+    // stream files (only used in non async - mmap mode)
+    if (!this.useAsyncFile) {
+      await Promise.all(
+        nativeFiles.map((file) => {
+          return this.fileWrite(file.id, file.blob);
+        })
+      );
+    }
 
     return res;
   }
@@ -186,10 +197,10 @@ export class ProxyToWorker {
    * Allocate a new file in heapfs
    * @returns fileId, to be used by fileWrite()
    */
-  private async fileAlloc(fileName: string, size: number): Promise<number> {
+  private async fileAlloc(fileName: string, size: number, allocBuffer: boolean): Promise<number> {
     const result = await this.pushTask({
       verb: 'fs.alloc',
-      args: [fileName, size],
+      args: [fileName, size, allocBuffer],
       callbackId: this.taskId++,
     });
     return result.fileId;
@@ -216,6 +227,9 @@ export class ProxyToWorker {
       );
       offset += size;
     }
+  }
+
+  private async fileReadResponse(fileId: number, offset: number, chunkSize: number) {
   }
 
   /**
@@ -286,6 +300,10 @@ export class ProxyToWorker {
       this.abort(args[0]);
     }
 
+    // handle fs.read_req signal
+    // TODO
+
+    // handle task result
     const { callbackId, result, err } = e.data;
     if (callbackId) {
       const idx = this.resultQueue.findIndex(
