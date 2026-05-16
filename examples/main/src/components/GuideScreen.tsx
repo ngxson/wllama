@@ -48,8 +48,7 @@ export default function GuideScreen() {
             </li>
             <li>Running on smartphone maybe buggy.</li>
             <li>
-              <b>WebGPU is not supported</b>. We're still working hard to add
-              support for WebGPU.
+              <b>Safari is not supported</b>, due to lack of Memory64 support.
             </li>
           </ul>
         </div>
