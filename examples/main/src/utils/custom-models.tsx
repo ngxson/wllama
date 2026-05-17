@@ -1,4 +1,3 @@
-import { MAX_GGUF_SIZE } from '../config';
 import { DisplayedModel } from './displayed-model';
 import { WllamaStorage } from './utils';
 
@@ -58,11 +57,11 @@ const getModelSize = async (url: string): Promise<number> => {
     })
   );
 
-  if (sizes.some((s) => s >= MAX_GGUF_SIZE)) {
-    throw new Error(
-      'GGUF file is too big (max. 2GB per file). Please split the file into smaller shards (learn more in "Guide")'
-    );
-  }
+  // if (sizes.some((s) => s >= MAX_GGUF_SIZE)) {
+  //   throw new Error(
+  //     'GGUF file is too big (max. 2GB per file). Please split the file into smaller shards (learn more in "Guide")'
+  //   );
+  // }
 
   return sumArr(sizes);
 };

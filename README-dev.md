@@ -51,10 +51,6 @@ The thread pool size is passed to emscripten via `-sPTHREAD_POOL_SIZE=Module["pt
 
 This logic lives in `wllama.ts` (`isSupportMultiThread()` from `utils.ts` performs the feature detection).
 
-### HeapFS
-
-HeapFS is a lightweight wrapper around emscripten's default FS driver. The main goal is to allow `mmap()` operation to map to existing data, instead of copying it (the default behavior of emscripten). See `workers-code/llama-cpp.js` for more details.
-
 ## Startup process
 
 Upon startup, these steps are performed:
@@ -64,6 +60,43 @@ Upon startup, these steps are performed:
     - Hooking `printf` functions
     - Setting up HeapFS
     - Setting up communication callbacks
+
+## File access
+
+Wllama employs some tricks to avoid making copies while reading GGUF files. The runtime uses one of these 2 mechanisms. See `workers-code/llama-cpp.js` for the implementation.
+
+Please note that wllama only accepts `Blob` as input data.
+
+### Async file read
+
+This implementation hooks into `fopen`, `fseek` and `fread`, and forwards these calls to the main thread (via message port), where we eventually call `Blob.slice()` to read the data. Because of the asynchronous execution via `onmessage` and `postMessage`, JSPI is required.
+
+Upon running, action `fs.alloc` is fired to indicate that the file can be read through JSPI call. The actual buffer won't be allocated for the file, but only the metadata is.
+
+When wasm calls `fread()`:
+- `fread()` calls `await fileRead()` in the JS context
+- `fileRead()` posts a message of type `fs.read_req` to the main thread
+- Main thread uses `Blob.slice()` to read the data, then sends it back via a `fs.read_res` message
+- Worker's `onmessage` receives the message and resumes the awaiting coroutine
+
+Note:
+- While awaiting the read data, the worker should not have any other activities (a global variable is used as a guard and will raise an exception on any incoming messages)
+- The minimum read size is 1MB. If less than this amount is requested, the full 1MB block is cached for subsequent reads. This is because reading GGUF metadata frequently involves reads of less than 1KB at a time, which can become a bottleneck without caching.
+- Env var `USE_ASYNC_FILE` is used to signal from JS to wasm that we are using async file read (upon starting the module). If `USE_ASYNC_FILE` is not set, we fallback to HeapFS/mmap case (see in next section)
+
+### HeapFS
+
+HeapFS is a lightweight wrapper around emscripten's default FS driver. The main goal is to allow `mmap()` to map to existing data instead of copying it (the default emscripten behavior).
+
+These steps are performed:
+
+- Action `fs.alloc` is fired to create the file handle and file buffer in the wasm context
+- The main thread then creates and holds a `ReadableStream` for the `Blob`
+- The main thread reads the file chunk by chunk, streaming it to the worker via `fs.write` messages
+- Once streaming is finished, the `ReadableStream` is closed
+- The model load is then triggered with `mmap = true`, and `mmap()` is wrapped to return a pointer to the correct data in the buffer allocated in step 1
+
+The main downside of this approach is that on WebGPU, even though some tensors can be offloaded to the GPU, we still need to allocate the full model in main memory. For example, a 4GB model will still occupy 4GB of main memory, even if half of the layers (~2GB) are offloaded to the GPU.
 
 ## Build process
 
