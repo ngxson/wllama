@@ -608,3 +608,18 @@ struct glue_msg_get_result_res
   GLUE_FIELD(bool, is_error)
   GLUE_FIELD(str, data_json)
 };
+
+/////////
+
+struct glue_msg_test_backend_ops_req
+{
+  GLUE_HANDLER("tbop_req")
+  GLUE_FIELD(arr_str, args)
+};
+
+struct glue_msg_test_backend_ops_res
+{
+  GLUE_HANDLER("tbop_res")
+  GLUE_FIELD(int, retcode)
+  GLUE_FIELD(bool, success)
+};

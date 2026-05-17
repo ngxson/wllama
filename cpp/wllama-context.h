@@ -22,6 +22,16 @@
 
 #include "glue.hpp"
 
+#ifdef WLLAMA_TEST_BACKEND
+int main_test_backend_ops(int argc, char **argv);
+#else
+int main_test_backend_ops(int, char **)
+{
+  SVR_ERR("WLLAMA_TEST_BACKEND is not set");
+  return -1000;
+}
+#endif
+
 #define PARSE_REQ(msg_typename) \
   msg_typename req;             \
   glue_inbuf inbuf(req_raw);    \
@@ -523,6 +533,31 @@ struct wllama_context
     res.has_more.value = has_more;
     res.data_json.value = result ? data_json.dump() : "";
     res.is_error.value = is_error;
+    return res;
+  }
+
+  glue_msg_test_backend_ops_res action_test_backend_ops(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_test_backend_ops_req);
+    glue_msg_test_backend_ops_res res;
+
+    auto &args = req.args.arr;
+
+    std::vector<char *> argv;
+    argv.reserve(args.size());
+    for (auto &s : args)
+    {
+      argv.push_back(const_cast<char *>(s.c_str()));
+    }
+
+    auto curr_log_lvl = log_level;
+    log_level = GGML_LOG_LEVEL_DEBUG;
+    int retcode = main_test_backend_ops((int)argv.size(), argv.data());
+    log_level = curr_log_lvl; // restore log level
+
+    res.retcode.value = retcode;
+    res.success.value = retcode == 0;
+
     return res;
   }
 };

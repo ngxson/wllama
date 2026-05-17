@@ -113,6 +113,7 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
     WLLAMA_ACTION(completion)
     WLLAMA_ACTION(embedding)
     WLLAMA_ACTION(get_result)
+    WLLAMA_ACTION(test_backend_ops)
 
     else
     {

@@ -35,6 +35,7 @@ app.get("/", (req, res) => {
     <a href="/examples/embeddings">Embeddings</a><br/>
     <a href="/examples/multimodal">Multimodal</a><br/>
     <a href="/examples/tools">Tools</a><br/>
+    <a href="/examples/test-backend-ops">Test Backend Ops (FOR DEBUGGING ONLY)</a><br/>
   `);
 });
 

@@ -19,6 +19,7 @@ import type {
   GlueMsgEmbeddingRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
+  GlueMsgTestBackendOpsRes,
 } from './glue/messages';
 import { LIBLLAMA_VERSION } from './workers-code/generated';
 import type {
@@ -710,6 +711,62 @@ export class Wllama {
   async exit(): Promise<void> {
     await this.proxy?.wllamaExit();
     this.proxy = null as any;
+  }
+
+  /**
+   * [FOR DEBUGGING ONLY] Run ggml backend ops tests without loading any model.
+   *
+   * Initializes the wasm runtime, executes `test-backend-ops` with the given args, then shuts down.
+   *
+   * For more info, please refer to guides/debug.md
+   *
+   * @param args Arguments forwarded to test-backend-ops (e.g. ["-o", "ADD"])
+   * @returns retcode (0 = all tests passed) and success flag
+   */
+  async testBackendOps(
+    args: string[] = []
+  ): Promise<{ retcode: number; success: boolean }> {
+    if (!this.pathConfig['default']) {
+      throw new WllamaError('"default" is missing from pathConfig', 'load_error');
+    }
+
+    if (!isSupportMultiThread()) {
+      throw new WllamaError(
+        'Multi-threading is required to run backend ops tests, but it is not supported in the current environment.'
+      );
+    }
+
+    const tmpProxy = new ProxyToWorker(
+      {
+        'wllama.wasm': absoluteUrl(this.pathConfig['default']),
+      },
+      0, // single-thread; no model needed
+      this.config.suppressNativeLog ?? false,
+      this.logger()
+    );
+
+    try {
+      await tmpProxy.moduleInit([]);
+
+      const startResult: any = await tmpProxy.wllamaStart();
+      if (!startResult.success) {
+        throw new WllamaError(
+          `Error while calling start function, result = ${startResult}`
+        );
+      }
+
+      const result = await tmpProxy.wllamaAction<GlueMsgTestBackendOpsRes>(
+        'test_backend_ops',
+        { _name: 'tbop_req', args: [
+            'test-backend-ops',
+            ...args,
+        ] }
+      );
+
+      return { retcode: result.retcode, success: result.success };
+    } finally {
+      await tmpProxy.wllamaExit();
+    }
   }
 
   //////////////////////////////////////////////

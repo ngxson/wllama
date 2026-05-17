@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project("wllama")
 
+option(WLLAMA_TEST_BACKEND "Build wllama with test-backend-ops included" OFF)
+
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 set(CMAKE_HAVE_THREADS_LIBRARY 1)
 set(CMAKE_USE_WIN32_THREADS_INIT 0)
@@ -77,6 +79,17 @@ set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}
     cpp/wllama.cpp
     cpp/glue.hpp
     llama.cpp/include/llama.h)
+
+if(WLLAMA_TEST_BACKEND)
+    message(WARNING "Building wllama with test-backend-ops included")
+    set(TEST_BACKEND_OPS_SRC ${CMAKE_CURRENT_BINARY_DIR}/test-backend-ops.cpp)
+    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tests/test-backend-ops.cpp TEST_BACKEND_OPS_CONTENT)
+    string(REPLACE "int main(" "int main_test_backend_ops(" TEST_BACKEND_OPS_CONTENT "${TEST_BACKEND_OPS_CONTENT}")
+    file(WRITE ${TEST_BACKEND_OPS_SRC} "${TEST_BACKEND_OPS_CONTENT}")
+    list(APPEND WLLAMA_SRC ${TEST_BACKEND_OPS_SRC})
+    add_compile_definitions(WLLAMA_TEST_BACKEND)
+endif()
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cpp)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common)

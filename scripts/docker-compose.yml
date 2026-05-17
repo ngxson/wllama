@@ -10,6 +10,8 @@ services:
       args:
         EMSDK_IMAGE_TAG: ${EMSDK_IMAGE_TAG}
     user: "${D_UID}:${D_GID}"
+    environment:
+      - WLLAMA_TEST_BACKEND=${WLLAMA_TEST_BACKEND:-}
     volumes:
       - ..:/source:Z
     entrypoint: /bin/bash
@@ -31,7 +33,12 @@ services:
           "https://github.com/google/dawn/releases/download/$${DAWN_TAG}/$${EMDAWN_PKG}"
         python3 -c "import zipfile; zf=zipfile.ZipFile('emdawn.zip','r'); zf.extractall('/source/build/emdawn'); zf.close()"
 
-        emcmake cmake .. -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}"
+        CMAKE_EXTRA_FLAGS=""
+        if [ -n "${WLLAMA_TEST_BACKEND}" ]; then
+          CMAKE_EXTRA_FLAGS="-DWLLAMA_TEST_BACKEND=ON";
+        fi
+
+        emcmake cmake .. -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
         emmake make wllama -j
 
         # go back to root
