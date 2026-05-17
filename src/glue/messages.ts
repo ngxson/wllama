@@ -422,6 +422,35 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       }
     ]
+  },
+  "tbop_req": {
+    "name": "tbop_req",
+    "structName": "glue_msg_test_backend_ops_req",
+    "className": "GlueMsgTestBackendOpsReq",
+    "fields": [
+      {
+        "type": "arr_str",
+        "name": "args",
+        "isNullable": false
+      }
+    ]
+  },
+  "tbop_res": {
+    "name": "tbop_res",
+    "structName": "glue_msg_test_backend_ops_res",
+    "className": "GlueMsgTestBackendOpsRes",
+    "fields": [
+      {
+        "type": "int",
+        "name": "retcode",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
   }
 };
 
@@ -541,5 +570,18 @@ export interface GlueMsgGetResultRes {
   data_json: string;
 }
 
+// struct glue_msg_test_backend_ops_req
+export interface GlueMsgTestBackendOpsReq {
+  _name: "tbop_req";
+  args: string[];
+}
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgGetResultReq | GlueMsgGetResultRes;
+// struct glue_msg_test_backend_ops_res
+export interface GlueMsgTestBackendOpsRes {
+  _name: "tbop_res";
+  retcode: number;
+  success: boolean;
+}
+
+
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;
