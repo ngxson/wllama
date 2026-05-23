@@ -29,10 +29,16 @@ Out of the box, wllama fetches the compat assets from jsDelivr CDN when compat m
 
 ### Recommended preset
 
-We recommend to disable the compat mode on Firefox, as the WebGPU on Firefox via compat mode is extremely slow, not usable:
+By default (`mode = 'safari'`), compat is disabled on Firefox because WebGPU via compat mode is extremely slow there. This is the recommended behaviour:
 
 ```js
-wllama.setCompat('default', 'exclude_firefox');
+wllama.setCompat('default');
+```
+
+If you also want compat on Firefox (e.g. to reach users without JSPI enabled), pass `'firefox_safari'`:
+
+```js
+wllama.setCompat('default', 'firefox_safari');
 ```
 
 ## Disabling compat mode
@@ -78,5 +84,5 @@ export const WLLAMA_COMPAT_CONFIG = {
 };
 
 const instance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
-instance.setCompat(WLLAMA_COMPAT_CONFIG, 'exclude_firefox');
+instance.setCompat(WLLAMA_COMPAT_CONFIG);
 ```

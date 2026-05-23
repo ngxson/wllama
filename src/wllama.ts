@@ -215,13 +215,13 @@ export class Wllama {
   /**
    * Set compatibility options for Wllama.
    * @param compat Set to null to disable compatibility, or 'default' to use the default compat resources from CDN.
-   * @param mode If set to 'exclude_firefox', disable compatibility only on Firefox (not WebGPU, but allow better performance)
+   * @param mode 'safari' by default; If set to 'firefox_safari', the compat mode will **also** be enabled on Firefox, which will significantly degrade the performance but allow using WebGPU on Firefox.
    */
   setCompat(
     compat: WllamaCompat | null | 'default',
-    mode?: 'exclude_firefox' | undefined
+    mode: 'safari' | 'firefox_safari' = 'safari'
   ) {
-    if (mode === 'exclude_firefox') {
+    if (mode === 'safari') {
       if (isFirefox()) {
         this.compat = null;
         return;

@@ -227,7 +227,7 @@
             'exclude_firefox'
           );
         } else {
-          wllama.setCompat('default', 'exclude_firefox');
+          wllama.setCompat('default');
         }
 
         const makeProgressCallback =
@@ -269,7 +269,7 @@
             'exclude_firefox'
           );
         } else {
-          wllama.setCompat('default', 'exclude_firefox');
+          wllama.setCompat('default');
         }
         try {
           await wllama.loadModel(Array.from(files));

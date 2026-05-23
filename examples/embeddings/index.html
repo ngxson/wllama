@@ -40,9 +40,9 @@
         wllama.setCompat({
           wasm: '../../compat/wasm/wllama.wasm',
           worker: '../../compat/wasm/wllama.js',
-        }, 'exclude_firefox');
+        });
       } else {
-        wllama.setCompat('default', 'exclude_firefox');
+        wllama.setCompat('default');
       }
 
       print(`DEMO EMBEDDINGS`);

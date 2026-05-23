@@ -65,7 +65,7 @@ const WllamaContext = createContext<WllamaContextValue>({} as any);
 
 const createWllamaInstance = () => {
   const instance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
-  instance.setCompat(WLLAMA_COMPAT_CONFIG, 'exclude_firefox');
+  instance.setCompat(WLLAMA_COMPAT_CONFIG);
   return instance;
 };
 

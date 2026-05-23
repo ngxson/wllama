@@ -621,7 +621,7 @@
             'exclude_firefox'
           );
         } else {
-          wllama.setCompat('default', 'exclude_firefox');
+          wllama.setCompat('default');
         }
         try {
           await wllama.loadModelFromHF(MODEL_HF, {
@@ -656,7 +656,7 @@
             'exclude_firefox'
           );
         } else {
-          wllama.setCompat('default', 'exclude_firefox');
+          wllama.setCompat('default');
         }
         try {
           await wllama.loadModel([file]);
