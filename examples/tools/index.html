@@ -613,13 +613,10 @@
         wllama = new Wllama(CONFIG_PATHS);
         // when running demo locally, we want to point the compat to local for debugging; when deployed, we point it to CDN
         if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
-          wllama.setCompat(
-            {
-              wasm: '../../compat/wasm/wllama.wasm',
-              worker: '../../compat/wasm/wllama.js',
-            },
-            'exclude_firefox'
-          );
+          wllama.setCompat({
+            wasm: '../../compat/wasm/wllama.wasm',
+            worker: '../../compat/wasm/wllama.js',
+          });
         } else {
           wllama.setCompat('default');
         }
@@ -648,13 +645,10 @@
         wllama = new Wllama(CONFIG_PATHS);
         // when running demo locally, we want to point the compat to local for debugging; when deployed, we point it to CDN
         if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
-          wllama.setCompat(
-            {
-              wasm: '../../compat/wasm/wllama.wasm',
-              worker: '../../compat/wasm/wllama.js',
-            },
-            'exclude_firefox'
-          );
+          wllama.setCompat({
+            wasm: '../../compat/wasm/wllama.wasm',
+            worker: '../../compat/wasm/wllama.js',
+          });
         } else {
           wllama.setCompat('default');
         }

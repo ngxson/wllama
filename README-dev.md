@@ -69,9 +69,9 @@ Please note that wllama only accepts `Blob` as input data.
 
 ### Async file read
 
-This implementation hooks into `fopen`, `fseek` and `fread`, and forwards these calls to the main thread (via message port), where we eventually call `Blob.slice()` to read the data. Because of the asynchronous execution via `onmessage` and `postMessage`, JSPI is required.
+This implementation hooks into `fopen`, `fseek` and `fread`, and forwards these calls to the main thread (via message port), where we eventually call `Blob.slice()` to read the data. Because of the asynchronous execution via `onmessage` and `postMessage`, JSPI / Asyncify is required.
 
-Upon running, action `fs.alloc` is fired to indicate that the file can be read through JSPI call. The actual buffer won't be allocated for the file, but only the metadata is.
+Upon running, action `fs.alloc` is fired to indicate that the file can be read through JSPI / Asyncify call. The actual buffer won't be allocated for the file, but only the metadata is.
 
 When wasm calls `fread()`:
 - `fread()` calls `await fileRead()` in the JS context

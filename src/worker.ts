@@ -108,7 +108,7 @@ export class ProxyToWorker {
     this.multiThread = nbThread > 0;
     this.logger = logger;
     this.suppressNativeLog = suppressNativeLog;
-    this.useAsyncFile = canUseAsyncFileRead();
+    this.useAsyncFile = canUseAsyncFileRead(resources.compat);
   }
 
   async getModuleCode(): Promise<string> {
