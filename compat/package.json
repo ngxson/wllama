@@ -1,6 +1,6 @@
 {
   "name": "@wllama/wllama-compat",
-  "version": "3.2.2",
+  "version": "3.2.3",
   "description": "Optional package providing compatibility with older browsers for @wllama/wllama",
   "main": "index.js",
   "type": "module",

@@ -387,6 +387,7 @@ export const cbToAsyncIter =
  * Check if we can use async file read, where the wasm env can asynchronously read a Blob.
  * Please refer to README-dev.md for more details.
  */
-export const canUseAsyncFileRead = () => isSupportJSPI();
+export const canUseAsyncFileRead = (compat: boolean) =>
+  isSupportJSPI() || compat;
 
 export const needCompat = () => !isSupportJSPI() || !isSupportMem64();

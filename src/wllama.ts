@@ -533,7 +533,8 @@ export class Wllama {
     const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
       _name: 'load_req',
       log_level: logLevel,
-      use_mmap: !canUseAsyncFileRead(), // if async read is not supported, use mmap; refer to README-dev.md for more details
+      // if async read is not supported, use mmap; refer to README-dev.md for more details
+      use_mmap: !canUseAsyncFileRead(workerResources.compat),
       use_mlock: false,
       n_gpu_layers: params.n_gpu_layers ?? 99999,
       n_ctx: params.n_ctx ?? 1024,
