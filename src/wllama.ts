@@ -6,7 +6,6 @@ import {
   checkEnvironmentCompatible,
   isFirefox,
   isString,
-  isSupportJSPI,
   isSupportMultiThread,
   isSupportWebGPU,
   MMPROJ_FILE_NAME,
