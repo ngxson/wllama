@@ -471,7 +471,10 @@ export class Wllama {
     if (needCompat()) {
       if (!this.compat) {
         this.logger().warn(
-          'Compatibility mode is required but no compat options provided, things may break. To use compatibility mode, please refer to @wllama/wllama-compat package.'
+          'Not using compat mode' +
+            (isFirefox()
+              ? ' (expected on Firefox - WebGPU will be disabled)'
+              : '')
         );
       } else {
         const isUsingDefault =
@@ -495,11 +498,11 @@ export class Wllama {
     if (isFirefox()) {
       if (workerResources.compat) {
         this.logger().warn(
-          'On Firefox, consider enabling "javascript.options.wasm_js_promise_integration" in "about:config" to improve performance.'
+          'Using compat mode on Firefox, performance will be significantly degraded; Consider enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
         );
-      } else if (isSupportJSPI()) {
+      } else if (!isSupportJSPI()) {
         this.logger().warn(
-          'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat more, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
+          'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat mode, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
         );
       }
     }
