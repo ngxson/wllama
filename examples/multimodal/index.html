@@ -217,6 +217,18 @@
       async function loadRemoteModel() {
         showProgressBar(true);
         wllama = new Wllama(CONFIG_PATHS);
+        // when running demo locally, we want to point the compat to local for debugging; when deployed, we point it to CDN
+        if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
+          wllama.setCompat(
+            {
+              wasm: '../../compat/wasm/wllama.wasm',
+              worker: '../../compat/wasm/wllama.js',
+            },
+            'exclude_firefox'
+          );
+        } else {
+          wllama.setCompat('default');
+        }
 
         const makeProgressCallback =
           (label) =>
@@ -247,6 +259,18 @@
       async function loadLocalFiles(files) {
         setStatus('Loading local files...');
         wllama = new Wllama(CONFIG_PATHS);
+        // when running demo locally, we want to point the compat to local for debugging; when deployed, we point it to CDN
+        if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
+          wllama.setCompat(
+            {
+              wasm: '../../compat/wasm/wllama.wasm',
+              worker: '../../compat/wasm/wllama.js',
+            },
+            'exclude_firefox'
+          );
+        } else {
+          wllama.setCompat('default');
+        }
         try {
           await wllama.loadModel(Array.from(files));
           setStatus('Model loaded!');

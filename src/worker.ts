@@ -13,7 +13,12 @@
 
 import { glueDeserialize, glueSerialize } from './glue/glue';
 import type { GlueMsg } from './glue/messages';
-import { canUseAsyncFileRead, createWorker, isSafariMobile } from './utils';
+import {
+  canUseAsyncFileRead,
+  createWorker,
+  isSafariMobile,
+  isString,
+} from './utils';
 import {
   LLAMA_CPP_WORKER_CODE,
   WLLAMA_EMSCRIPTEN_CODE,
@@ -70,7 +75,16 @@ if (!WebAssembly.Suspending) {
 }
 `;
 
+export interface WllamaWorkerResources {
+  wasmPath: string;
+  // if jsPath is not provided, use WLLAMA_EMSCRIPTEN_CODE
+  jsPath?: string | { code: string } | undefined;
+  // in compat mode, mem64 must be disabled
+  compat: boolean;
+}
+
 export class ProxyToWorker {
+  resources: WllamaWorkerResources;
   logger: Logger;
   suppressNativeLog: boolean;
   taskQueue: Task[] = [];
@@ -78,19 +92,18 @@ export class ProxyToWorker {
   resultQueue: Task[] = [];
   busy = false; // is the work loop is running?
   worker?: Worker | undefined;
-  pathConfig: any;
   multiThread: boolean;
   nbThread: number;
   useAsyncFile: boolean;
   fileBlobs: Map<string, Blob> = new Map(); // filename -> Blob for async reads
 
   constructor(
-    pathConfig: any,
+    resources: WllamaWorkerResources,
     nbThread: number,
     suppressNativeLog: boolean,
     logger: Logger
   ) {
-    this.pathConfig = pathConfig;
+    this.resources = resources;
     this.nbThread = nbThread;
     this.multiThread = nbThread > 0;
     this.logger = logger;
@@ -98,15 +111,38 @@ export class ProxyToWorker {
     this.useAsyncFile = canUseAsyncFileRead();
   }
 
-  async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
-    if (!this.pathConfig['wllama.wasm']) {
-      throw new Error('"wllama.wasm" is missing from pathConfig');
+  async getModuleCode(): Promise<string> {
+    if (!this.resources.jsPath) {
+      if (this.resources.compat) {
+        throw new Error(
+          'compat mode is enabled but no jsPath was provided. Pass a worker JS via setCompat() or install @wllama/wllama-compat.'
+        );
+      }
+      return WLLAMA_EMSCRIPTEN_CODE;
+    } else if ((this.resources.jsPath as { code: string }).code) {
+      return (this.resources.jsPath as { code: string }).code;
+    } else if (isString(this.resources.jsPath)) {
+      const response = await fetch(this.resources.jsPath as string);
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch worker code from ${this.resources.jsPath}`
+        );
+      }
+      return await response.text();
+    } else {
+      throw new Error('No JS code provided for worker');
     }
-    let moduleCode = JSPI_STUB + WLLAMA_EMSCRIPTEN_CODE;
+  }
+
+  async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
+    let moduleCode = JSPI_STUB + (await this.getModuleCode());
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
-      pathConfig: this.pathConfig,
+      pathConfig: {
+        'wllama.wasm': this.resources.wasmPath,
+      },
       nbThread: this.nbThread,
+      compat: this.resources.compat,
     };
     const completeCode: string = [
       `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,

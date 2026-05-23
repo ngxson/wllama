@@ -11,8 +11,9 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
 > [!IMPORTANT]  
-> **🔥🔥 V3 is out, with WebGPU, multimodal and tool calling support. Read the [V3 release guide](./guides/intro-v3.md)**  
-> Memory64 is now a requirement, which drops support for Safari. Please follow [this issue](https://github.com/ngxson/wllama/issues/210) for more info.
+> **🔥🔥 V3 is out, with WebGPU, multimodal and tool calling support. Read the [V3 release guide](./guides/intro-v3.md)**
+>
+> For compatibility issues, please refer to [@wllama/wllama-compat](./compat/README.md)
 
 ![](./assets/screenshot_0.png)
 
@@ -70,6 +71,10 @@ WebGPU support is introduced via [PR #215](https://github.com/ngxson/wllama/pull
 Upon updating to V3.1, WebGPU will be enabled automatically. By default, all layers will be offloaded to GPU. If the model is too big to fit into VRAM, you can manually adjust the number of layers via the `n_gpu_layers` parameter of `LoadModelParams`. Example:
 
 ```js
+// (optionally) will allow running WebGPU on Safari via compatibility mode
+// the second argument 'exclude_firefox' is optional, it disables WebGPU on Firefox (the performance is too bad)
+wllama.setCompat('default', 'exclude_firefox');
+
 await wllama.loadModel(files, {
   n_gpu_layers: 4, // meaning 4 layers are offloaded to GPU; set to 0 to disable GPU inference
 });

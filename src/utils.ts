@@ -262,10 +262,25 @@ export const isSupportJSPI = () => {
 };
 
 /**
- * @returns true if brower support WebGPU and JSPI (required by emscripten build)
+ * @returns true if brower support WebGPU. Note: for browser without JSPI support, compat mode will be used.
  */
 export const isSupportWebGPU = () => {
-  return !!(navigator as any).gpu && isSupportJSPI();
+  return !!(navigator as any).gpu;
+};
+
+/**
+ * @returns true if browser support WASM Memory64
+ */
+export const isSupportMem64 = (): boolean => {
+  try {
+    new WebAssembly.Memory({
+      address: 'i64',
+      initial: 1n, // 1 page (64 KiB)
+    } as any);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -373,3 +388,5 @@ export const cbToAsyncIter =
  * Please refer to README-dev.md for more details.
  */
 export const canUseAsyncFileRead = () => isSupportJSPI();
+
+export const needCompat = () => !isSupportJSPI() || !isSupportMem64();

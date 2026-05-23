@@ -1,4 +1,4 @@
-import { ProxyToWorker } from './worker';
+import { ProxyToWorker, type WllamaWorkerResources } from './worker';
 import {
   absoluteUrl,
   canUseAsyncFileRead,
@@ -10,6 +10,7 @@ import {
   isSupportMultiThread,
   isSupportWebGPU,
   MMPROJ_FILE_NAME,
+  needCompat,
   prepareBlobs,
 } from './utils';
 import CacheManager, { type DownloadOptions } from './cache-manager';
@@ -39,6 +40,7 @@ import type {
 } from './types/oai-compat';
 import { LogLevel } from './types/types';
 import { getHFModelSource, type HuggingFaceParams } from './huggingface';
+import { WasmCompatFromCDN } from './wasm-from-cdn';
 
 export interface WllamaLogger {
   debug: typeof console.debug;
@@ -135,10 +137,21 @@ export class WllamaAbortError extends Error {
   }
 }
 
+/**
+ * Set compatibility options for Wllama.
+ * By default, these are set to URL of the latest builds on CDN, which requires internet to download. If you want to use local assets or have your own CDN, follow the instruction from @wllama/wllama-compat package.
+ */
+export interface WllamaCompat {
+  worker: string | { code: string };
+  wasm: string;
+}
+
 export class Wllama {
   // The CacheManager and ModelManager are singleton, can be accessed by user
   public cacheManager: CacheManager;
   public modelManager: ModelManager;
+
+  private compat: WllamaCompat | null = null;
 
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
@@ -175,13 +188,7 @@ export class Wllama {
         parallelDownloads: wllamaConfig.parallelDownloads,
         allowOffline: wllamaConfig.allowOffline,
       });
-
-    // warn user to enable JSPI on firefox
-    if (isFirefox() && !isSupportJSPI()) {
-      this.logger().warn(
-        'WebGPU is disabled on Firefox due to missing JSPI support. Please enable "javascript.options.wasm_js_promise_integration" in "about:config" to allow WebGPU support.'
-      );
-    }
+    this.setCompat('default');
   }
 
   private logger() {
@@ -204,6 +211,24 @@ export class Wllama {
    */
   static getLibllamaVersion(): string {
     return LIBLLAMA_VERSION;
+  }
+
+  /**
+   * Set compatibility options for Wllama.
+   * @param compat Set to null to disable compatibility, or 'default' to use the default compat resources from CDN.
+   * @param mode 'safari' by default; If set to 'firefox_safari', the compat mode will **also** be enabled on Firefox, which will significantly degrade the performance but allow using WebGPU on Firefox.
+   */
+  setCompat(
+    compat: WllamaCompat | null | 'default',
+    mode: 'safari' | 'firefox_safari' = 'safari'
+  ) {
+    if (mode === 'safari') {
+      if (isFirefox()) {
+        this.compat = null;
+        return;
+      }
+    }
+    this.compat = compat === 'default' ? WasmCompatFromCDN : compat;
   }
 
   /**
@@ -437,13 +462,51 @@ export class Wllama {
     const nbThreads = params.n_threads ?? hwConccurency;
     this.nbThreads = nbThreads;
     this.useMultiThread = supportMultiThread && nbThreads > 1;
-    const mPathConfig = {
-      'wllama.wasm': absoluteUrl(this.pathConfig['default']),
+
+    // prepare worker resources
+    const workerResources: WllamaWorkerResources = {
+      wasmPath: absoluteUrl(this.pathConfig['default']),
+      compat: false,
     };
+    if (needCompat()) {
+      if (!this.compat) {
+        this.logger().warn(
+          'Compatibility mode is required but no compat options provided, things may break. To use compatibility mode, please refer to @wllama/wllama-compat package.'
+        );
+      } else {
+        const isUsingDefault =
+          this.compat.worker === WasmCompatFromCDN.worker &&
+          this.compat.wasm === WasmCompatFromCDN.wasm;
+        if (isUsingDefault) {
+          this.logger().warn(
+            'Compatibility mode is activated, using resources from CDN. To use local resources, please refer to @wllama/wllama-compat package.'
+          );
+          this.logger().warn(
+            'IMPORTANT: Performance will be significantly degraded in compatibility mode.'
+          );
+        }
+
+        workerResources.wasmPath = absoluteUrl(this.compat.wasm);
+        workerResources.jsPath = this.compat.worker;
+        workerResources.compat = true;
+      }
+    }
+
+    if (isFirefox()) {
+      if (workerResources.compat) {
+        this.logger().warn(
+          'On Firefox, consider enabling "javascript.options.wasm_js_promise_integration" in "about:config" to improve performance.'
+        );
+      } else if (isSupportJSPI()) {
+        this.logger().warn(
+          'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat more, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
+        );
+      }
+    }
 
     // initialize the worker
     this.proxy = new ProxyToWorker(
-      mPathConfig,
+      workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
       this.config.suppressNativeLog ?? false,
       this.logger()

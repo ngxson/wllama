@@ -3,6 +3,7 @@ node_modules
 .vscode
 /cache
 /build
+/build-compat
 /build-wasm
 /docs
 /dist
@@ -18,3 +19,5 @@ tmp.patch
 
 a.out.js
 a.out.wasm
+
+/compat/wasm/*.wasm
