@@ -151,7 +151,7 @@ export class Wllama {
   public cacheManager: CacheManager;
   public modelManager: ModelManager;
 
-  private compat: WllamaCompat | null = WasmCompatFromCDN;
+  private compat: WllamaCompat | null = null;
 
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
@@ -188,6 +188,7 @@ export class Wllama {
         parallelDownloads: wllamaConfig.parallelDownloads,
         allowOffline: wllamaConfig.allowOffline,
       });
+    this.setCompat('default');
   }
 
   private logger() {
