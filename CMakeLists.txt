@@ -7,15 +7,14 @@ set(CMAKE_USE_WIN32_THREADS_INIT 0)
 set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
-add_compile_options(
+set(WLLAMA_COMPILE_OPTIONS
     -O3 -msimd128 -DNDEBUG
     -flto=full -frtti
     -pthread
 )
-add_link_options(
+set(WLLAMA_LINK_OPTIONS
     -flto=full
     --no-entry
-    -sEXPORT_ALL=1
     -sEXPORT_ES6=0
     -sMODULARIZE=0
     -sINITIAL_MEMORY=128MB
@@ -23,7 +22,7 @@ add_link_options(
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
     -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
-    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
+    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8,MEMFS,FS,mmapAlloc
     -sNO_EXIT_RUNTIME=1
     -sIMPORTED_MEMORY=1
     -sPTHREAD_POOL_SIZE=Module[\"pthreadPoolSize\"]
@@ -39,26 +38,30 @@ add_link_options(
 if (WLLAMA_COMPAT)
     # no wasm exception (not compatible with asyncify - asyncify is needed for firefox and safari)
     # no mem64 (not compatible with safari)
-    add_compile_options(
+    list(APPEND WLLAMA_COMPILE_OPTIONS
         -fexceptions
         -pthread
     )
-    add_link_options(
+    list(APPEND WLLAMA_LINK_OPTIONS
         -fexceptions
         -sASYNCIFY=1
+        -sASYNCIFY_ADD=['wllama_start','wllama_action']
     )
 else()
-    add_compile_options(
+    list(APPEND WLLAMA_COMPILE_OPTIONS
         -sMEMORY64=1
         -fwasm-exceptions
     )
-    add_link_options(
+    list(APPEND WLLAMA_LINK_OPTIONS
         -sMEMORY64=1
         -fwasm-exceptions
         -sJSPI
         -sJSPI_EXPORTS=['wllama_start','wllama_action']
     )
 endif()
+
+add_compile_options(${WLLAMA_COMPILE_OPTIONS})
+add_link_options(${WLLAMA_LINK_OPTIONS})
 
 add_subdirectory(llama.cpp)
 

@@ -6,6 +6,7 @@ let wllamaExit;
 let wllamaDebug;
 
 let Module = null;
+let isCompat = false;
 
 //////////////////////////////////////////////////////////////
 // UTILS
@@ -30,11 +31,17 @@ const getHeapU8 = () => {
   return new Uint8Array(buffer);
 };
 
+const toSizeT = (num) => {
+  return isCompat ? Number(num) : BigInt(num);
+};
+
 // Get module config that forwards stdout/err to main thread
 const getWModuleConfig = (_argMainScriptBlob) => {
   var pathConfig = RUN_OPTIONS.pathConfig;
   var pthreadPoolSize = RUN_OPTIONS.nbThread;
   var argMainScriptBlob = _argMainScriptBlob;
+
+  isCompat = RUN_OPTIONS.compat;
 
   if (!pathConfig['wllama.wasm']) {
     throw new Error('"wllama.wasm" is missing in pathConfig');
@@ -91,10 +98,10 @@ const getWasmMemory = () => {
   while (maxBytes > minBytes) {
     try {
       const wasmMemory = new WebAssembly.Memory({
-        initial: BigInt(minBytes / 65536),
-        maximum: BigInt(maxBytes / 65536),
+        initial: toSizeT(minBytes / 65536),
+        maximum: toSizeT(maxBytes / 65536),
         shared: true,
-        address: 'i64',
+        address: isCompat ? undefined : 'i64',
       });
       return wasmMemory;
     } catch (e) {
@@ -180,7 +187,7 @@ const patchHeapFS = () => {
     const name = stream.node.name;
     if (fsNameToFile[name]) {
       const f = fsNameToFile[name];
-      const mmapPtr = f.ptr + BigInt(position);
+      const mmapPtr = f.ptr + toSizeT(position);
       return {
         ptr: mmapPtr,
         allocated: false,
@@ -202,7 +209,7 @@ const heapfsAlloc = (name, size, allocBuffer) => {
     throw new Error('File size must be bigger than 0');
   }
   const m = Module;
-  const ptr = BigInt(allocBuffer ? m.mmapAlloc(size) : 0);
+  const ptr = toSizeT(allocBuffer ? m.mmapAlloc(size) : 0);
   const file = {
     ptr: ptr,
     size: size,
@@ -264,7 +271,7 @@ const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
 
   const bytes = new Uint8Array(data);
   getHeapU8().set(bytes, out_ptr);
-  return BigInt(bytes.length);
+  return toSizeT(bytes.length);
 };
 
 //////////////////////////////////////////////////////////////
@@ -338,7 +345,7 @@ onmessage = async (e) => {
         // init FS
         patchHeapFS();
         // init cwrap
-        const pointer = 'bigint';
+        const pointer = isCompat ? 'number' : 'bigint';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument
         wllamaMalloc = callWrapper('wllama_malloc', pointer, [
           'number',
@@ -413,7 +420,7 @@ onmessage = async (e) => {
     const argAction = args[0];
     const argEncodedMsg = args[1];
     try {
-      const inputPtr = await wllamaMalloc(BigInt(argEncodedMsg.byteLength), 0);
+      const inputPtr = await wllamaMalloc(toSizeT(argEncodedMsg.byteLength), 0);
       // copy data to wasm heap
       const inputBuffer = new Uint8Array(
         getHeapU8().buffer,

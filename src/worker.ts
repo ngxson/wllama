@@ -79,6 +79,8 @@ export interface WllamaWorkerResources {
   wasmPath: string;
   // if jsPath is not provided, use WLLAMA_EMSCRIPTEN_CODE
   jsPath?: string | { code: string } | undefined;
+  // in compat mode, mem64 must be disabled
+  compat: boolean;
 }
 
 export class ProxyToWorker {
@@ -135,6 +137,7 @@ export class ProxyToWorker {
         'wllama.wasm': this.resources.wasmPath,
       },
       nbThread: this.nbThread,
+      compat: this.resources.compat,
     };
     const completeCode: string = [
       `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,

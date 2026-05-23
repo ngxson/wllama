@@ -188,13 +188,6 @@ export class Wllama {
         parallelDownloads: wllamaConfig.parallelDownloads,
         allowOffline: wllamaConfig.allowOffline,
       });
-
-    // warn user to enable JSPI on firefox
-    if (isFirefox() && !isSupportJSPI()) {
-      this.logger().warn(
-        'WebGPU is disabled on Firefox due to missing JSPI support. Please enable "javascript.options.wasm_js_promise_integration" in "about:config" to allow WebGPU support.'
-      );
-    }
   }
 
   private logger() {
@@ -221,10 +214,20 @@ export class Wllama {
 
   /**
    * Set compatibility options for Wllama.
-   * @param compat Set to null to disable compatibility
+   * @param compat Set to null to disable compatibility, or 'default' to use the default compat resources from CDN.
+   * @param mode If set to 'exclude_firefox', disable compatibility only on Firefox (not WebGPU, but allow better performance)
    */
-  setCompat(compat: WllamaCompat | null) {
-    this.compat = compat;
+  setCompat(
+    compat: WllamaCompat | null | 'default',
+    mode?: 'exclude_firefox' | undefined
+  ) {
+    if (mode === 'exclude_firefox') {
+      if (isFirefox()) {
+        this.compat = null;
+        return;
+      }
+    }
+    this.compat = compat === 'default' ? WasmCompatFromCDN : compat;
   }
 
   /**
@@ -462,6 +465,7 @@ export class Wllama {
     // prepare worker resources
     const workerResources: WllamaWorkerResources = {
       wasmPath: absoluteUrl(this.pathConfig['default']),
+      compat: false,
     };
     if (needCompat()) {
       if (!this.compat) {
@@ -476,10 +480,26 @@ export class Wllama {
           this.logger().warn(
             'Compatibility mode is activated, using resources from CDN. To use local resources, please refer to @wllama/wllama-compat package.'
           );
+          this.logger().warn(
+            'IMPORTANT: Performance will be significantly degraded in compatibility mode.'
+          );
         }
 
         workerResources.wasmPath = absoluteUrl(this.compat.wasm);
         workerResources.jsPath = this.compat.worker;
+        workerResources.compat = true;
+      }
+    }
+
+    if (isFirefox()) {
+      if (workerResources.compat) {
+        this.logger().warn(
+          'On Firefox, consider enabling "javascript.options.wasm_js_promise_integration" in "about:config" to improve performance.'
+        );
+      } else {
+        this.logger().warn(
+          'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat more, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
+        );
       }
     }
 

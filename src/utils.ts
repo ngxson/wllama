@@ -262,10 +262,10 @@ export const isSupportJSPI = () => {
 };
 
 /**
- * @returns true if brower support WebGPU and JSPI (required by emscripten build)
+ * @returns true if brower support WebGPU. Note: for browser without JSPI support, compat mode will be used.
  */
 export const isSupportWebGPU = () => {
-  return !!(navigator as any).gpu && isSupportJSPI();
+  return !!(navigator as any).gpu;
 };
 
 /**
