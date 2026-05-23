@@ -65,8 +65,5 @@
     "semi": true,
     "singleQuote": true,
     "bracketSameLine": false
-  },
-  "dependencies": {
-    "@huggingface/jinja": "^0.5.8"
   }
 }
