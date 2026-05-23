@@ -22,7 +22,7 @@ set(WLLAMA_LINK_OPTIONS
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
     -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
-    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8,MEMFS,FS,mmapAlloc
+    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8,MEMFS,FS,mmapAlloc,ENV,wasmMemory
     -sNO_EXIT_RUNTIME=1
     -sIMPORTED_MEMORY=1
     -sPTHREAD_POOL_SIZE=Module[\"pthreadPoolSize\"]

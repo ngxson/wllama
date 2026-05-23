@@ -1,8 +1,15 @@
 import { test, expect } from 'vitest';
-import { Wllama } from './wllama';
+import { Wllama, type WllamaConfig } from './wllama';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',
+};
+
+// TODO: enable compat mode in tests once test infrastructure supports Safari/asyncify
+const createWllama = (config = CONFIG_PATHS, options: WllamaConfig = {}) => {
+  const w = new Wllama(config, options);
+  w.setCompat(null);
+  return w;
 };
 
 const TINY_MODEL =
@@ -14,7 +21,7 @@ const SPLIT_MODEL =
 const EMBD_MODEL = TINY_MODEL; // for better speed
 
 test.sequential('loads single model file', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -33,7 +40,7 @@ test.sequential('loads single model file', async () => {
 });
 
 test.sequential('loads single model file from HF', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   await wllama.loadModelFromHF(
     { repo: 'ggml-org/models', file: 'tinyllamas/stories15M-q4_0.gguf' },
@@ -48,7 +55,7 @@ test.sequential('loads single model file from HF', async () => {
 });
 
 test.sequential('loads single thread model', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -68,7 +75,7 @@ test.sequential('loads single thread model', async () => {
 });
 
 test.sequential('loads model with progress callback', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   let progressCalled = false;
   let lastLoaded = 0;
@@ -90,7 +97,7 @@ test.sequential('loads model with progress callback', async () => {
 });
 
 test.sequential('loads split model files', async () => {
-  const wllama = new Wllama(CONFIG_PATHS, {
+  const wllama = createWllama(CONFIG_PATHS, {
     parallelDownloads: 5,
   });
 
@@ -103,7 +110,7 @@ test.sequential('loads split model files', async () => {
 });
 
 test.sequential('generates completion', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -126,7 +133,7 @@ test.sequential('generates completion', async () => {
 });
 
 test.sequential('abort signal', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -159,7 +166,7 @@ test.sequential('abort signal', async () => {
 });
 
 test.sequential('generates embeddings', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   await wllama.loadModelFromUrl(EMBD_MODEL, {
     n_ctx: 1024,
@@ -193,7 +200,7 @@ test.sequential('generates embeddings', async () => {
 });
 
 test.sequential('allowOffline', async () => {
-  const wllama = new Wllama(CONFIG_PATHS, {
+  const wllama = createWllama(CONFIG_PATHS, {
     allowOffline: true,
   });
 
@@ -214,7 +221,7 @@ test.sequential('allowOffline', async () => {
 });
 
 test.sequential('generates chat completion', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -243,7 +250,7 @@ test.sequential('generates chat completion', async () => {
 });
 
 test.sequential('generates chat completion using async iterator', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
@@ -280,7 +287,7 @@ test.sequential('generates chat completion using async iterator', async () => {
 });
 
 test.sequential('cleans up resources', async () => {
-  const wllama = new Wllama(CONFIG_PATHS);
+  const wllama = createWllama();
   await wllama.loadModelFromUrl(TINY_MODEL);
   expect(wllama.isModelLoaded()).toBe(true);
   await wllama.exit();

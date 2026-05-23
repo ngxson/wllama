@@ -93,7 +93,9 @@
         wllama.setCompat({
           wasm: '../../compat/wasm/wllama.wasm',
           worker: '../../compat/wasm/wllama.js',
-        }, 'exclude_firefox');
+        });
+      } else {
+        wllama.setCompat('default');
       }
 
       if (files) {

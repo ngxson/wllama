@@ -113,6 +113,11 @@ export class ProxyToWorker {
 
   async getModuleCode(): Promise<string> {
     if (!this.resources.jsPath) {
+      if (this.resources.compat) {
+        throw new Error(
+          'compat mode is enabled but no jsPath was provided. Pass a worker JS via setCompat() or install @wllama/wllama-compat.'
+        );
+      }
       return WLLAMA_EMSCRIPTEN_CODE;
     } else if ((this.resources.jsPath as { code: string }).code) {
       return (this.resources.jsPath as { code: string }).code;

@@ -6,6 +6,7 @@ import {
   checkEnvironmentCompatible,
   isFirefox,
   isString,
+  isSupportJSPI,
   isSupportMultiThread,
   isSupportWebGPU,
   MMPROJ_FILE_NAME,
@@ -495,7 +496,7 @@ export class Wllama {
         this.logger().warn(
           'On Firefox, consider enabling "javascript.options.wasm_js_promise_integration" in "about:config" to improve performance.'
         );
-      } else {
+      } else if (isSupportJSPI()) {
         this.logger().warn(
           'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat more, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
         );

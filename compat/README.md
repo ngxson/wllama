@@ -70,11 +70,11 @@ wllama.setCompat({
 });
 ```
 
-**IMPORTANT**: for Vite, you will need to import it as `?raw`
+**IMPORTANT**: for Vite, you will need to import the JS as `?raw`
 
 ```ts
 import compatWasm from '@wllama/wllama-compat/wasm/wllama.wasm?url';
-import compatWorker from '@wllama/wllama-compat/wasm/wllama.js?raw';
+import compatWorker from '@wllama/wllama-compat/wasm/wllama.js?raw'; // IMPORTANT: ?raw, NOT ?url
 
 export const WLLAMA_COMPAT_CONFIG = {
   wasm: compatWasm,
