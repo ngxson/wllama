@@ -20,7 +20,7 @@
     "build": "npm run clean && npm run build:worker && npm run build:tsup && npm run build:minified && npm run build:typedef",
     "postbuild": "./scripts/post_build.sh && npm run docs",
     "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts",
-    "upload": "npm run format && npm run build && npm publish --access public",
+    "upload": "npm run format && npm run build && npm publish --access public && (cd compat && npm publish --access public)",
     "format": "prettier --write .",
     "test": "vitest",
     "test:firefox": "BROWSER=firefox vitest",
