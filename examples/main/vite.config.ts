@@ -1,7 +1,11 @@
+/// <reference types="node" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const COMPAT_WASM = resolve(
   __dirname,
