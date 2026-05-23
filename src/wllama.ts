@@ -1,4 +1,4 @@
-import { ProxyToWorker } from './worker';
+import { ProxyToWorker, type WllamaWorkerResources } from './worker';
 import {
   absoluteUrl,
   canUseAsyncFileRead,
@@ -10,6 +10,7 @@ import {
   isSupportMultiThread,
   isSupportWebGPU,
   MMPROJ_FILE_NAME,
+  needCompat,
   prepareBlobs,
 } from './utils';
 import CacheManager, { type DownloadOptions } from './cache-manager';
@@ -39,6 +40,7 @@ import type {
 } from './types/oai-compat';
 import { LogLevel } from './types/types';
 import { getHFModelSource, type HuggingFaceParams } from './huggingface';
+import { WasmCompatFromCDN } from './wasm-from-cdn';
 
 export interface WllamaLogger {
   debug: typeof console.debug;
@@ -135,10 +137,21 @@ export class WllamaAbortError extends Error {
   }
 }
 
+/**
+ * Set compatibility options for Wllama.
+ * By default, these are set to URL of the latest builds on CDN, which requires internet to download. If you want to use local assets or have your own CDN, follow the instruction from @wllama/wllama-compat package.
+ */
+export interface WllamaCompat {
+  worker: string | { code: string };
+  wasm: string;
+}
+
 export class Wllama {
   // The CacheManager and ModelManager are singleton, can be accessed by user
   public cacheManager: CacheManager;
   public modelManager: ModelManager;
+
+  private compat: WllamaCompat | null = WasmCompatFromCDN;
 
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
@@ -204,6 +217,14 @@ export class Wllama {
    */
   static getLibllamaVersion(): string {
     return LIBLLAMA_VERSION;
+  }
+
+  /**
+   * Set compatibility options for Wllama.
+   * @param compat Set to null to disable compatibility
+   */
+  setCompat(compat: WllamaCompat | null) {
+    this.compat = compat;
   }
 
   /**
@@ -437,13 +458,34 @@ export class Wllama {
     const nbThreads = params.n_threads ?? hwConccurency;
     this.nbThreads = nbThreads;
     this.useMultiThread = supportMultiThread && nbThreads > 1;
-    const mPathConfig = {
-      'wllama.wasm': absoluteUrl(this.pathConfig['default']),
+
+    // prepare worker resources
+    const workerResources: WllamaWorkerResources = {
+      wasmPath: absoluteUrl(this.pathConfig['default']),
     };
+    if (needCompat()) {
+      if (!this.compat) {
+        this.logger().warn(
+          'Compatibility mode is required but no compat options provided, things may break. To use compatibility mode, please refer to @wllama/wllama-compat package.'
+        );
+      } else {
+        const isUsingDefault =
+          this.compat.worker === WasmCompatFromCDN.worker &&
+          this.compat.wasm === WasmCompatFromCDN.wasm;
+        if (isUsingDefault) {
+          this.logger().warn(
+            'Compatibility mode is activated, using resources from CDN. To use local resources, please refer to @wllama/wllama-compat package.'
+          );
+        }
+
+        workerResources.wasmPath = absoluteUrl(this.compat.wasm);
+        workerResources.jsPath = this.compat.worker;
+      }
+    }
 
     // initialize the worker
     this.proxy = new ProxyToWorker(
-      mPathConfig,
+      workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
       this.config.suppressNativeLog ?? false,
       this.logger()

@@ -13,6 +13,11 @@ const WasmFromCDN = {
   default: 'https://cdn.jsdelivr.net/npm/@wllama/wllama@${version}/src/wasm/wllama.wasm',
 };
 
+export const WasmCompatFromCDN = {
+  worker: 'https://cdn.jsdelivr.net/npm/@wllama/wllama-compat@${version}/wasm/worker.js',
+  wasm: 'https://cdn.jsdelivr.net/npm/@wllama/wllama-compat@${version}/wasm/wllama.wasm',
+};
+
 export default WasmFromCDN;
 `.trim();
 

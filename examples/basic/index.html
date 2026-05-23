@@ -87,6 +87,15 @@
     async function startCompletions(modelUrl, files) {
       const wllama = new Wllama(CONFIG_PATHS);
       // await wllama.cacheManager.clear();
+
+      // note: this is optional
+      if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
+        wllama.setCompat({
+          wasm: '../../compat/wasm/wllama.wasm',
+          worker: '../../compat/wasm/wllama.js',
+        });
+      }
+
       if (files) {
         await wllama.loadModel(files);
       } else {

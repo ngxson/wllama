@@ -10,14 +10,10 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 add_compile_options(
     -O3 -msimd128 -DNDEBUG
     -flto=full -frtti
-    -fwasm-exceptions
     -pthread
-    -sMEMORY64=1
 )
 add_link_options(
-    -sMEMORY64=1
     -flto=full
-    -fwasm-exceptions
     --no-entry
     -sEXPORT_ALL=1
     -sEXPORT_ES6=0
@@ -33,14 +29,36 @@ add_link_options(
     -sPTHREAD_POOL_SIZE=Module[\"pthreadPoolSize\"]
     -sUSE_PTHREADS=1
     -pthread
-    -sJSPI
-    -sJSPI_EXPORTS=['wllama_start','wllama_action']
     -Wl,--wrap,fopen
     -Wl,--wrap,fclose
     -Wl,--wrap,fread
     -Wl,--wrap,fseek
     -Wl,--wrap,ftell
 )
+
+if (WLLAMA_COMPAT)
+    # no wasm exception (not compatible with asyncify - asyncify is needed for firefox and safari)
+    # no mem64 (not compatible with safari)
+    add_compile_options(
+        -fexceptions
+        -pthread
+    )
+    add_link_options(
+        -fexceptions
+        -sASYNCIFY=1
+    )
+else()
+    add_compile_options(
+        -sMEMORY64=1
+        -fwasm-exceptions
+    )
+    add_link_options(
+        -sMEMORY64=1
+        -fwasm-exceptions
+        -sJSPI
+        -sJSPI_EXPORTS=['wllama_start','wllama_action']
+    )
+endif()
 
 add_subdirectory(llama.cpp)
 

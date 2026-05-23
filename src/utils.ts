@@ -269,6 +269,21 @@ export const isSupportWebGPU = () => {
 };
 
 /**
+ * @returns true if browser support WASM Memory64
+ */
+export const isSupportMem64 = (): boolean => {
+  try {
+    new WebAssembly.Memory({
+      address: 'i64',
+      initial: 1n, // 1 page (64 KiB)
+    } as any);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Throws an error if the environment is not compatible
  */
 export const checkEnvironmentCompatible = async (): Promise<void> => {
@@ -373,3 +388,5 @@ export const cbToAsyncIter =
  * Please refer to README-dev.md for more details.
  */
 export const canUseAsyncFileRead = () => isSupportJSPI();
+
+export const needCompat = () => !isSupportJSPI() || !isSupportMem64();
