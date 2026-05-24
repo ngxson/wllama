@@ -35,6 +35,7 @@ export interface LoadModelParams {
   swa_full?: boolean;
   chat_template?: string;
   jinja?: boolean;
+  reasoning?: boolean;
 }
 
 // Note: snake_case is used to match llama.cpp's naming convention

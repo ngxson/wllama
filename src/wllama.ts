@@ -567,6 +567,7 @@ export class Wllama {
       swa_full: params.swa_full,
       chat_template: params.chat_template,
       jinja: params.jinja,
+      reasoning: params.reasoning,
     });
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
@@ -640,7 +641,7 @@ export class Wllama {
       );
     }
 
-    return await this.getRespose(options as any, false);
+    return await this.getResponse(options as any, false);
   }
 
   /**
@@ -720,7 +721,7 @@ export class Wllama {
       );
     }
 
-    return await this.getRespose(options as StreamParams<TChunk>, isStream);
+    return await this.getResponse(options as StreamParams<TChunk>, isStream);
   }
 
   /**
@@ -851,7 +852,7 @@ export class Wllama {
     };
   }
 
-  private async getRespose(options: StreamParams<any>, isStream: boolean) {
+  private async getResponse(options: StreamParams<any>, isStream: boolean) {
     let finalResult: any = null;
 
     while (true) {
