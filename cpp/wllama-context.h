@@ -348,6 +348,11 @@ struct wllama_context
       }
     }
 
+    // Equivalent to llama.cpp's --no-warmup when set to false. Defaults
+    // to llama.cpp's default (true) when omitted from the request.
+    if (req.warmup.not_null())
+      params.warmup = req.warmup.value;
+
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);
 

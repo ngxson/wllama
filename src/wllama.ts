@@ -570,6 +570,7 @@ export class Wllama {
       reasoning: params.reasoning,
       image_min_tokens: params.image_min_tokens,
       image_max_tokens: params.image_max_tokens,
+      warmup: params.warmup,
     });
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,

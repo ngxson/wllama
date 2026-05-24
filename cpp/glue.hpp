@@ -534,6 +534,7 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(bool, reasoning)
   GLUE_FIELD_NULLABLE(int, image_min_tokens)
   GLUE_FIELD_NULLABLE(int, image_max_tokens)
+  GLUE_FIELD_NULLABLE(bool, warmup)
 };
 
 struct glue_msg_load_res

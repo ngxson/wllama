@@ -38,6 +38,9 @@ export interface LoadModelParams {
   reasoning?: boolean;
   image_min_tokens?: number;
   image_max_tokens?: number;
+  // mirrors llama.cpp's --no-warmup. When false, skips the warmup decode at
+  // model load time. Defaults to llama.cpp's default (true) when omitted.
+  warmup?: boolean;
 }
 
 // Note: snake_case is used to match llama.cpp's naming convention
