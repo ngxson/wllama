@@ -347,9 +347,7 @@ struct wllama_context
         params.default_template_kwargs[keys[i]] = vals[i];
       }
     }
-
-    // Equivalent to llama.cpp's --no-warmup when set to false. Defaults
-    // to llama.cpp's default (true) when omitted from the request.
+    
     if (req.warmup.not_null())
       params.warmup = req.warmup.value;
 
