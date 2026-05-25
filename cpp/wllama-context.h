@@ -334,6 +334,10 @@ struct wllama_context
         params.default_template_kwargs["enable_thinking"] = "false";
       }
     }
+    if (req.reasoning_budget_tokens.not_null())
+      params.sampling.reasoning_budget_tokens = req.reasoning_budget_tokens.value;
+    if (req.reasoning_budget_message.not_null())
+      params.sampling.reasoning_budget_message = req.reasoning_budget_message.value;
     if (req.default_template_kwargs_keys.not_null() && req.default_template_kwargs_vals.not_null())
     {
       auto &keys = req.default_template_kwargs_keys.arr;

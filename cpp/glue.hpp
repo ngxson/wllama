@@ -532,6 +532,8 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(arr_str, default_template_kwargs_keys)
   GLUE_FIELD_NULLABLE(arr_str, default_template_kwargs_vals)
   GLUE_FIELD_NULLABLE(bool, reasoning)
+  GLUE_FIELD_NULLABLE(int, reasoning_budget_tokens)
+  GLUE_FIELD_NULLABLE(str, reasoning_budget_message)
   GLUE_FIELD_NULLABLE(int, image_min_tokens)
   GLUE_FIELD_NULLABLE(int, image_max_tokens)
   GLUE_FIELD_NULLABLE(bool, warmup)

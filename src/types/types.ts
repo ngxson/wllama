@@ -36,6 +36,8 @@ export interface LoadModelParams {
   chat_template?: string;
   jinja?: boolean;
   reasoning?: boolean;
+  reasoning_budget_tokens?: number;
+  reasoning_budget_message?: string;
   image_min_tokens?: number;
   image_max_tokens?: number;
   warmup?: boolean;

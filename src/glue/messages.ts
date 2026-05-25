@@ -205,6 +205,16 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "int",
+        "name": "reasoning_budget_tokens",
+        "isNullable": true
+      },
+      {
+        "type": "str",
+        "name": "reasoning_budget_message",
+        "isNullable": true
+      },
+      {
+        "type": "int",
         "name": "image_min_tokens",
         "isNullable": true
       },
@@ -475,6 +485,8 @@ export interface GlueMsgLoadReq {
   default_template_kwargs_keys?: string[] | undefined;
   default_template_kwargs_vals?: string[] | undefined;
   reasoning?: boolean | undefined;
+  reasoning_budget_tokens?: number | undefined;
+  reasoning_budget_message?: string | undefined;
   image_min_tokens?: number | undefined;
   image_max_tokens?: number | undefined;
   warmup?: boolean | undefined;

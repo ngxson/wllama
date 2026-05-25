@@ -568,6 +568,8 @@ export class Wllama {
       chat_template: params.chat_template,
       jinja: params.jinja,
       reasoning: params.reasoning,
+      reasoning_budget_tokens: params.reasoning_budget_tokens,
+      reasoning_budget_message: params.reasoning_budget_message,
       image_min_tokens: params.image_min_tokens,
       image_max_tokens: params.image_max_tokens,
       warmup: params.warmup,
