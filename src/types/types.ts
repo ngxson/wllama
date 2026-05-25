@@ -10,11 +10,18 @@ export interface LoadModelParams {
   n_threads?: number;
   embeddings?: boolean;
   offload_kqv?: boolean;
-  pooling_type?:
-    | 'LLAMA_POOLING_TYPE_UNSPECIFIED'
+  pooling_type?: // legacy values
+  | 'LLAMA_POOLING_TYPE_UNSPECIFIED'
     | 'LLAMA_POOLING_TYPE_NONE'
     | 'LLAMA_POOLING_TYPE_MEAN'
-    | 'LLAMA_POOLING_TYPE_CLS';
+    | 'LLAMA_POOLING_TYPE_CLS'
+    // new values
+    | 'unspecified'
+    | 'none'
+    | 'mean'
+    | 'cls'
+    | 'last'
+    | 'rank';
   // context extending
   rope_scaling_type?:
     | 'LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED'
@@ -39,6 +46,28 @@ export interface LoadModelParams {
   image_min_tokens?: number;
   image_max_tokens?: number;
   warmup?: boolean;
+  no_kv_offload?: boolean;
+  mmproj_offload?: boolean;
+  cont_batching?: boolean;
+  n_keep?: number;
+  ctx_shift?: boolean;
+  cache_idle_slots?: boolean;
+  n_cache_reuse?: number;
+  lora_adapters?: { path: string; scale?: number }[];
+  lora_init_without_apply?: boolean;
+  spec_draft_model?: string;
+  spec_draft_ngl?: number;
+  spec_draft_n_max?: number;
+  spec_draft_n_min?: number;
+  spec_draft_p_min?: number;
+  spec_draft_threads?: number;
+  spec_draft_threads_batch?: number;
+  kv_overrides?: Record<string, string>;
+  reasoning_budget_tokens?: number;
+  reasoning_budget_message?: string;
+  reasoning_format?: 'none' | 'deepseek-legacy' | 'deepseek';
+  skip_chat_parsing?: boolean;
+  prefill_assistant?: boolean;
 }
 
 // Note: snake_case is used to match llama.cpp's naming convention

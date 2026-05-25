@@ -56,6 +56,7 @@ inline static ggml_type kv_cache_type_from_str(const std::string &s)
 
 inline static enum llama_pooling_type pooling_type_from_str(const std::string &s)
 {
+  // legacy values
   if (s == "LLAMA_POOLING_TYPE_UNSPECIFIED")
     return LLAMA_POOLING_TYPE_UNSPECIFIED;
   if (s == "LLAMA_POOLING_TYPE_NONE")
@@ -64,6 +65,19 @@ inline static enum llama_pooling_type pooling_type_from_str(const std::string &s
     return LLAMA_POOLING_TYPE_MEAN;
   if (s == "LLAMA_POOLING_TYPE_CLS")
     return LLAMA_POOLING_TYPE_CLS;
+  // new values
+  if (s == "unspecified")
+    return LLAMA_POOLING_TYPE_UNSPECIFIED;
+  if (s == "none")
+    return LLAMA_POOLING_TYPE_NONE;
+  if (s == "mean")
+    return LLAMA_POOLING_TYPE_MEAN;
+  if (s == "cls")
+    return LLAMA_POOLING_TYPE_CLS;
+  if (s == "last")
+    return LLAMA_POOLING_TYPE_LAST;
+  if (s == "rank")
+    return LLAMA_POOLING_TYPE_RANK;
   throw std::runtime_error("Invalid pooling type: " + s);
 }
 
@@ -78,6 +92,66 @@ inline static llama_rope_scaling_type rope_scaling_type_from_str(const std::stri
   if (s == "LLAMA_ROPE_SCALING_TYPE_YARN")
     return LLAMA_ROPE_SCALING_TYPE_YARN;
   throw std::runtime_error("Invalid RoPE scaling type: " + s);
+}
+
+inline static common_reasoning_format reasoning_format_from_str(const std::string &s)
+{
+  if (s == "none")
+    return COMMON_REASONING_FORMAT_NONE;
+  if (s == "deepseek-legacy")
+    return COMMON_REASONING_FORMAT_DEEPSEEK_LEGACY;
+  if (s == "deepseek")
+    return COMMON_REASONING_FORMAT_DEEPSEEK;
+  throw std::runtime_error("Invalid reasoning format: " + s);
+}
+
+inline static llama_model_kv_override parse_kv_override(const std::string &key, const std::string &val_str)
+{
+  llama_model_kv_override kvo;
+  strncpy(kvo.key, key.c_str(), sizeof(kvo.key) - 1);
+  kvo.key[sizeof(kvo.key) - 1] = '\0';
+  auto colon = val_str.find(':');
+  if (colon == std::string::npos)
+    throw std::runtime_error("Invalid kv_override value, expected TYPE:value: " + val_str);
+  const std::string type_str = val_str.substr(0, colon);
+  const std::string value_str = val_str.substr(colon + 1);
+  if (type_str == "int")
+  {
+    kvo.tag = LLAMA_KV_OVERRIDE_TYPE_INT;
+    kvo.val_i64 = std::stoll(value_str);
+  }
+  else if (type_str == "float")
+  {
+    kvo.tag = LLAMA_KV_OVERRIDE_TYPE_FLOAT;
+    kvo.val_f64 = std::stod(value_str);
+  }
+  else if (type_str == "bool")
+  {
+    kvo.tag = LLAMA_KV_OVERRIDE_TYPE_BOOL;
+    if (value_str == "true" || value_str == "1")
+    {
+      kvo.val_bool = true;
+    }
+    else if (value_str == "false" || value_str == "0")
+    {
+      kvo.val_bool = false;
+    }
+    else
+    {
+      throw std::runtime_error("Invalid bool value for kv_override: " + value_str);
+    }
+  }
+  else if (type_str == "str")
+  {
+    kvo.tag = LLAMA_KV_OVERRIDE_TYPE_STR;
+    strncpy(kvo.val_str, value_str.c_str(), sizeof(kvo.val_str) - 1);
+    kvo.val_str[sizeof(kvo.val_str) - 1] = '\0';
+  }
+  else
+  {
+    throw std::runtime_error("Invalid kv_override type: " + type_str);
+  }
+  return kvo;
 }
 
 class app_exception : public std::exception
@@ -301,6 +375,8 @@ struct wllama_context
       params.yarn_beta_slow = req.yarn_beta_slow.value;
     if (req.yarn_orig_ctx.not_null())
       params.yarn_orig_ctx = req.yarn_orig_ctx.value;
+    if (req.warmup.not_null())
+      params.warmup = req.warmup.value;
 
     // optimizations
     if (req.cache_type_k.not_null())
@@ -347,9 +423,83 @@ struct wllama_context
         params.default_template_kwargs[keys[i]] = vals[i];
       }
     }
-    
-    if (req.warmup.not_null())
-      params.warmup = req.warmup.value;
+
+    // GPU
+    if (req.no_kv_offload.not_null())
+      params.no_kv_offload = req.no_kv_offload.value;
+    if (req.mmproj_offload.not_null())
+      params.mmproj_use_gpu = req.mmproj_offload.value;
+
+    // batch / context scheduling
+    if (req.cont_batching.not_null())
+      params.cont_batching = req.cont_batching.value;
+    if (req.n_keep.not_null())
+      params.n_keep = req.n_keep.value;
+    if (req.ctx_shift.not_null())
+      params.ctx_shift = req.ctx_shift.value;
+    if (req.cache_idle_slots.not_null())
+      params.cache_idle_slots = req.cache_idle_slots.value;
+    if (req.n_cache_reuse.not_null())
+      params.n_cache_reuse = req.n_cache_reuse.value;
+
+    // lora
+    if (req.lora_paths.not_null())
+    {
+      const auto &paths = req.lora_paths.arr;
+      const auto &scales = req.lora_scales.arr;
+      if (!scales.empty() && scales.size() != paths.size())
+        throw app_exception("lora_paths and lora_scales must have the same length");
+      for (size_t i = 0; i < paths.size(); i++)
+      {
+        common_adapter_lora_info info;
+        info.path = paths[i];
+        info.scale = scales.empty() ? 1.0f : scales[i];
+        params.lora_adapters.push_back(std::move(info));
+      }
+    }
+    if (req.lora_init_without_apply.not_null())
+      params.lora_init_without_apply = req.lora_init_without_apply.value;
+
+    // speculative decoding
+    if (req.spec_draft_model.not_null())
+      params.speculative.draft.mparams.path = req.spec_draft_model.value;
+    if (req.spec_draft_ngl.not_null())
+      params.speculative.draft.n_gpu_layers = req.spec_draft_ngl.value;
+    if (req.spec_draft_n_max.not_null())
+      params.speculative.draft.n_max = req.spec_draft_n_max.value;
+    if (req.spec_draft_n_min.not_null())
+      params.speculative.draft.n_min = req.spec_draft_n_min.value;
+    if (req.spec_draft_p_min.not_null())
+      params.speculative.draft.p_min = req.spec_draft_p_min.value;
+    if (req.spec_draft_threads.not_null())
+      params.speculative.draft.cpuparams.n_threads = req.spec_draft_threads.value;
+    if (req.spec_draft_threads_batch.not_null())
+      params.speculative.draft.cpuparams_batch.n_threads = req.spec_draft_threads_batch.value;
+
+    // kv overrides
+    if (req.kv_overrides_keys.not_null() && req.kv_overrides_vals.not_null())
+    {
+      const auto &keys = req.kv_overrides_keys.arr;
+      const auto &vals = req.kv_overrides_vals.arr;
+      if (keys.size() != vals.size())
+        throw app_exception("kv_overrides_keys and kv_overrides_vals must have the same length");
+      for (size_t i = 0; i < keys.size(); i++)
+        params.kv_overrides.push_back(parse_kv_override(keys[i], vals[i]));
+    }
+
+    // reasoning
+    if (req.reasoning_budget_tokens.not_null())
+      params.sampling.reasoning_budget_tokens = req.reasoning_budget_tokens.value;
+    if (req.reasoning_budget_message.not_null())
+      params.sampling.reasoning_budget_message = req.reasoning_budget_message.value;
+    if (req.reasoning_format.not_null())
+      params.reasoning_format = reasoning_format_from_str(req.reasoning_format.value);
+
+    // other
+    if (req.skip_chat_parsing.not_null())
+      params.force_pure_content_parser = req.skip_chat_parsing.value;
+    if (req.prefill_assistant.not_null())
+      params.prefill_assistant = req.prefill_assistant.value;
 
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);

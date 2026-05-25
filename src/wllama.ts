@@ -571,6 +571,34 @@ export class Wllama {
       image_min_tokens: params.image_min_tokens,
       image_max_tokens: params.image_max_tokens,
       warmup: params.warmup,
+      no_kv_offload: params.no_kv_offload,
+      mmproj_offload: params.mmproj_offload,
+      cont_batching: params.cont_batching,
+      n_keep: params.n_keep,
+      ctx_shift: params.ctx_shift,
+      cache_idle_slots: params.cache_idle_slots,
+      n_cache_reuse: params.n_cache_reuse,
+      lora_paths: params.lora_adapters?.map((a) => a.path),
+      lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
+      lora_init_without_apply: params.lora_init_without_apply,
+      spec_draft_model: params.spec_draft_model,
+      spec_draft_ngl: params.spec_draft_ngl,
+      spec_draft_n_max: params.spec_draft_n_max,
+      spec_draft_n_min: params.spec_draft_n_min,
+      spec_draft_p_min: params.spec_draft_p_min,
+      spec_draft_threads: params.spec_draft_threads,
+      spec_draft_threads_batch: params.spec_draft_threads_batch,
+      kv_overrides_keys: params.kv_overrides
+        ? Object.keys(params.kv_overrides)
+        : undefined,
+      kv_overrides_vals: params.kv_overrides
+        ? Object.values(params.kv_overrides)
+        : undefined,
+      reasoning_budget_tokens: params.reasoning_budget_tokens,
+      reasoning_budget_message: params.reasoning_budget_message,
+      reasoning_format: params.reasoning_format,
+      skip_chat_parsing: params.skip_chat_parsing,
+      prefill_assistant: params.prefill_assistant,
     });
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
