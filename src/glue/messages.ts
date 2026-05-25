@@ -3,7 +3,7 @@
 
 import type { GlueMessageProto } from './glue';
 
-export const GLUE_VERSION = 1;
+export const GLUE_VERSION = 2;
 
 export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
   "erro_evt": {
