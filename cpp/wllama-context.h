@@ -128,7 +128,18 @@ inline static llama_model_kv_override parse_kv_override(const std::string &key, 
   else if (type_str == "bool")
   {
     kvo.tag = LLAMA_KV_OVERRIDE_TYPE_BOOL;
-    kvo.val_bool = (value_str == "true" || value_str == "1");
+    if (value_str == "true" || value_str == "1")
+    {
+      kvo.val_bool = true;
+    }
+    else if (value_str == "false" || value_str == "0")
+    {
+      kvo.val_bool = false;
+    }
+    else
+    {
+      throw std::runtime_error("Invalid bool value for kv_override: " + value_str);
+    }
   }
   else if (type_str == "str")
   {
