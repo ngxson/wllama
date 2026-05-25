@@ -525,7 +525,7 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(bool, kv_unified)
   GLUE_FIELD_NULLABLE(bool, flash_attn)
   GLUE_FIELD_NULLABLE(bool, swa_full)
-  GLUE_FIELD_NULLABLE(bool, n_ctx_checkpoints)
+  GLUE_FIELD_NULLABLE(int, n_ctx_checkpoints)
   GLUE_FIELD_NULLABLE(int, checkpoint_every_nt)
   GLUE_FIELD_NULLABLE(str, chat_template)
   GLUE_FIELD_NULLABLE(bool, jinja)

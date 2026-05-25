@@ -169,7 +169,7 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": true
       },
       {
-        "type": "bool",
+        "type": "int",
         "name": "n_ctx_checkpoints",
         "isNullable": true
       },
@@ -468,7 +468,7 @@ export interface GlueMsgLoadReq {
   kv_unified?: boolean | undefined;
   flash_attn?: boolean | undefined;
   swa_full?: boolean | undefined;
-  n_ctx_checkpoints?: boolean | undefined;
+  n_ctx_checkpoints?: number | undefined;
   checkpoint_every_nt?: number | undefined;
   chat_template?: string | undefined;
   jinja?: boolean | undefined;
