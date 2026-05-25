@@ -347,6 +347,9 @@ struct wllama_context
         params.default_template_kwargs[keys[i]] = vals[i];
       }
     }
+    
+    if (req.warmup.not_null())
+      params.warmup = req.warmup.value;
 
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);

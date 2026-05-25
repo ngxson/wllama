@@ -212,6 +212,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "int",
         "name": "image_max_tokens",
         "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "warmup",
+        "isNullable": true
       }
     ]
   },
@@ -472,6 +477,7 @@ export interface GlueMsgLoadReq {
   reasoning?: boolean | undefined;
   image_min_tokens?: number | undefined;
   image_max_tokens?: number | undefined;
+  warmup?: boolean | undefined;
 }
 
 // struct glue_msg_load_res
