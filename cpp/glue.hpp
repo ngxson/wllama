@@ -21,7 +21,7 @@
 #include <functional>
 
 // increase when messages change
-#define GLUE_VERSION 1
+#define GLUE_VERSION 2
 
 #define GLUE_MAGIC 0x45554c47 // "GLUE"
 #define GLUE_PROTO_ID_LEN 8
