@@ -160,6 +160,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "bool",
+        "name": "cache_idle_slots",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
         "name": "flash_attn",
         "isNullable": true
       },
@@ -466,6 +471,7 @@ export interface GlueMsgLoadReq {
   cache_type_k?: string | undefined;
   cache_type_v?: string | undefined;
   kv_unified?: boolean | undefined;
+  cache_idle_slots?: boolean | undefined;
   flash_attn?: boolean | undefined;
   swa_full?: boolean | undefined;
   n_ctx_checkpoints?: boolean | undefined;

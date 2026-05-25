@@ -563,6 +563,7 @@ export class Wllama {
       cache_type_v: params.cache_type_v as string,
       n_parallel: 1, // only support single sequence for now
       kv_unified: false, // TODO: support kv unified cache
+      cache_idle_slots: false, // suppress llama.cpp "--cache-idle-slots requires --kv-unified" warning until kv_unified support
       flash_attn: params.flash_attn,
       swa_full: params.swa_full,
       chat_template: params.chat_template,

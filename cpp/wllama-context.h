@@ -282,6 +282,8 @@ struct wllama_context
       params.n_batch = req.n_batch.value;
     if (req.n_parallel.not_null())
       params.n_parallel = req.n_parallel.value;
+    if (req.cache_idle_slots.not_null())
+      params.cache_idle_slots = req.cache_idle_slots.value;
     if (req.pooling_type.not_null())
       params.pooling_type = pooling_type_from_str(req.pooling_type.value);
     // context extending: https://github.com/ggerganov/llama.cpp/pull/2054
