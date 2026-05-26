@@ -161,7 +161,8 @@ export class Wllama {
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
   private nbThreads: number = 1;
-  // private useEmbeddings: boolean = false;
+  private useEmbeddings: boolean = false;
+  private useRerank: boolean = false;
   // available when loaded
   private loadedContextInfo: LoadedContextInfo = null as any;
   private seed: number | undefined = undefined;
@@ -615,7 +616,8 @@ export class Wllama {
     this.bosToken = loadedCtxInfo.token_bos;
     this.eosToken = loadedCtxInfo.token_eos;
     this.eotToken = loadedCtxInfo.token_eot;
-    // this.useEmbeddings = !!params.embeddings;
+    this.useEmbeddings = !!params.embeddings;
+    this.useRerank = params.pooling_type == 'rank';
     this.metadata = {
       hparams: {
         nVocab: loadedCtxInfo.n_vocab,
@@ -659,6 +661,12 @@ export class Wllama {
   ): Promise<CreateEmbeddingResponse> {
     this.checkModelLoaded();
 
+    if (!this.useEmbeddings) {
+      throw new WllamaError(
+        'Embeddings is not enabled. Please set it via LoadModelParams.embeddings'
+      );
+    }
+
     const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
       'embedding',
       {
@@ -686,6 +694,12 @@ export class Wllama {
    */
   async createRerank(options: RerankParams): Promise<RerankResponse> {
     this.checkModelLoaded();
+
+    if (!this.useEmbeddings || !this.useRerank) {
+      throw new WllamaError(
+        'Rerank is not enabled. Please set it via LoadModelParams: embeddings = true and pooling_type = rank'
+      );
+    }
 
     const top_n = options.top_n ?? options.documents.length;
     let totalTokens = 0;
