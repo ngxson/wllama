@@ -84,8 +84,7 @@ await wllama.loadModel(files, {
 
 ### Prepare your model
 
-- It is recommended to split the model into **chunks of maximum 512MB**. This will result in slightly faster download speed (because multiple splits can be downloaded in parallel), and also prevent some out-of-memory issues.
-  See the "Split model" section below for more details.
+- It is recommended to split the model into **chunks of maximum 512MB**. This will result in slightly faster download speed (because multiple splits can be downloaded in parallel), and also prevent some out-of-memory issues. **See the "Split model" section below for more details.**
 - It is recommended to use quantized Q4, Q5 or Q6 for balance among performance, file size and quality. Using IQ (with imatrix) is **not** recommended, may result in slow inference and low quality.
 
 ### Simple usage with ES6 module
