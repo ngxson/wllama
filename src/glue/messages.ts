@@ -515,6 +515,30 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       }
     ]
   },
+  "rrnk_req": {
+    "name": "rrnk_req",
+    "structName": "glue_msg_rerank_req",
+    "className": "GlueMsgRerankReq",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
+  "rrnk_res": {
+    "name": "rrnk_res",
+    "structName": "glue_msg_rerank_res",
+    "className": "GlueMsgRerankRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
+  },
   "gres_req": {
     "name": "gres_req",
     "structName": "glue_msg_get_result_req",
@@ -677,6 +701,18 @@ export interface GlueMsgEmbeddingRes {
   success: boolean;
 }
 
+// struct glue_msg_rerank_req
+export interface GlueMsgRerankReq {
+  _name: "rrnk_req";
+  data_json: string;
+}
+
+// struct glue_msg_rerank_res
+export interface GlueMsgRerankRes {
+  _name: "rrnk_res";
+  success: boolean;
+}
+
 // struct glue_msg_get_result_req
 export interface GlueMsgGetResultReq {
   _name: "gres_req";
@@ -692,4 +728,4 @@ export interface GlueMsgGetResultRes {
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgGetResultReq | GlueMsgGetResultRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgGetResultReq | GlueMsgGetResultRes;

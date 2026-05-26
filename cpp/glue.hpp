@@ -620,6 +620,20 @@ struct glue_msg_embedding_res
 
 /////////
 
+struct glue_msg_rerank_req
+{
+  GLUE_HANDLER("rrnk_req")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_rerank_res
+{
+  GLUE_HANDLER("rrnk_res")
+  GLUE_FIELD(bool, success)
+};
+
+/////////
+
 struct glue_msg_get_result_req
 {
   GLUE_HANDLER("gres_req")

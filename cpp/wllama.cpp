@@ -112,6 +112,7 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
     WLLAMA_ACTION(load)
     WLLAMA_ACTION(completion)
     WLLAMA_ACTION(embedding)
+    WLLAMA_ACTION(rerank)
     WLLAMA_ACTION(get_result)
 
     else

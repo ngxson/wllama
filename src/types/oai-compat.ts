@@ -308,3 +308,28 @@ export interface CreateEmbeddingResponse {
   model: string;
   usage: EmbeddingUsage;
 }
+
+// Reranking (NOT official OAI-compat, but is a commonly-used API schema)
+
+export interface RerankParams {
+  query: string;
+  documents: string[];
+  top_n?: number;
+}
+
+export interface RerankResult {
+  index: number;
+  relevance_score: number;
+}
+
+export interface RerankUsage {
+  prompt_tokens: number;
+  total_tokens: number;
+}
+
+export interface RerankResponse {
+  model: string;
+  object: 'list';
+  usage: RerankUsage;
+  results: RerankResult[];
+}

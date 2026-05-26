@@ -20,6 +20,9 @@ const SPLIT_MODEL =
 
 const EMBD_MODEL = TINY_MODEL; // for better speed
 
+const RERANK_MODEL =
+  'https://huggingface.co/ggml-org/models/resolve/main/jina-reranker-v1-tiny-en/ggml-model-f16.gguf';
+
 test.sequential('loads single model file', async () => {
   const wllama = createWllama();
 
@@ -195,6 +198,46 @@ test.sequential('generates embeddings', async () => {
   const cosineSim = dot / (norm1 * norm2);
   expect(cosineSim).toBeGreaterThan(1 - 0.05);
   expect(cosineSim).toBeLessThan(1);
+
+  await wllama.exit();
+});
+
+test.sequential('reranks documents', async () => {
+  const wllama = createWllama();
+
+  await wllama.loadModelFromUrl(RERANK_MODEL, {
+    embeddings: true,
+    pooling_type: 'rank',
+  });
+
+  expect(wllama.isModelLoaded()).toBe(true);
+
+  const query = 'What is machine learning?';
+  const documents = [
+    'Machine learning is a branch of artificial intelligence.',
+    'The weather today is sunny and warm.',
+    'Neural networks are used in deep learning.',
+  ];
+
+  const res = await wllama.createRerank({ query, documents });
+
+  expect(res).toBeDefined();
+  expect(res.results).toHaveLength(documents.length);
+  for (const r of res.results) {
+    expect(typeof r.index).toBe('number');
+    expect(typeof r.relevance_score).toBe('number');
+  }
+
+  // results should be sorted highest score first
+  for (let i = 0; i < res.results.length - 1; i++) {
+    expect(res.results[i].relevance_score).toBeGreaterThanOrEqual(
+      res.results[i + 1].relevance_score
+    );
+  }
+
+  // the most relevant documents should outscore the other
+  const weatherIdx = res.results.findIndex((r) => r.index === 1);
+  expect(weatherIdx).toBeGreaterThan(0);
 
   await wllama.exit();
 });
