@@ -6,11 +6,14 @@ WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
 
 👉 [Try the demo app](https://huggingface.co/spaces/ngxson/wllama)
 
+👉 See the [blog post](https://reeselevine.github.io/llamas-on-the-web/) introducing WebGPU support in llama.cpp and wllama
+
 📄 [Documentation](https://github.ngxson.com/wllama/docs/)
 
 For changelog, please visit [releases page](https://github.com/ngxson/wllama/releases)
 
-> [!IMPORTANT]  
+> [!IMPORTANT]
+>
 > **🔥🔥 V3 is out, with WebGPU, multimodal and tool calling support. Read the [V3 release guide](./guides/intro-v3.md)**
 >
 > For compatibility issues, please refer to [@wllama/wllama-compat](./compat/README.md)
@@ -81,8 +84,7 @@ await wllama.loadModel(files, {
 
 ### Prepare your model
 
-- It is recommended to split the model into **chunks of maximum 512MB**. This will result in slightly faster download speed (because multiple splits can be downloaded in parallel), and also prevent some out-of-memory issues.  
-  See the "Split model" section below for more details.
+- It is recommended to split the model into **chunks of maximum 512MB**. This will result in slightly faster download speed (because multiple splits can be downloaded in parallel), and also prevent some out-of-memory issues. **See the "Split model" section below for more details.**
 - It is recommended to use quantized Q4, Q5 or Q6 for balance among performance, file size and quality. Using IQ (with imatrix) is **not** recommended, may result in slow inference and low quality.
 
 ### Simple usage with ES6 module
@@ -217,3 +219,7 @@ npm run build
 
 - Add support for LoRA adapter
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
+
+## Acknowledgments
+
+Wllama was created and is maintained by [Xuan-Son Nguyen](https://ngxson.com/). The WebGPU backend for llama.cpp is maintained by [Reese Levine](https://reeselevine.github.io/). We thank all other contributors to both wllama and llama.cpp, whose work made this project possible.
