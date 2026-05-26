@@ -644,6 +644,37 @@ struct wllama_context
     return res;
   }
 
+  glue_msg_rerank_res action_rerank(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_rerank_req);
+    glue_msg_rerank_res res;
+
+    json body = json::parse(req.data_json.value);
+    if (!body.contains("query") || !body.at("query").is_string())
+    {
+      throw app_exception("\"query\" must be a string");
+    }
+    if (!body.contains("document") || !body.at("document").is_string())
+    {
+      throw app_exception("\"document\" must be a string");
+    }
+    std::string query = body.at("query");
+    std::string document = body.at("document");
+
+    rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
+    last_error = "";
+
+    auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document);
+    server_task task = server_task(SERVER_TASK_TYPE_RERANK);
+    task.id = rd->get_new_id();
+    task.index = 0;
+    task.tokens = std::move(tokens);
+    rd->post_task(std::move(task));
+
+    res.success.value = true;
+    return res;
+  }
+
   glue_msg_get_result_res action_get_result(const char *req_raw)
   {
     PARSE_REQ(glue_msg_get_result_req);
@@ -655,9 +686,9 @@ struct wllama_context
     json data_json;
     if (result)
     {
-      auto *res = dynamic_cast<server_task_result_embd *>(result.get());
-      if (res)
+      if (auto *embd = dynamic_cast<server_task_result_embd *>(result.get()))
       {
+        (void)embd;
         // special handling for embeddings OAI-compat
         json body = {{"model", meta->model_name}};
         json responses = json::array();
@@ -665,9 +696,16 @@ struct wllama_context
         // TODO: support base64 output
         data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
       }
+      else if (auto *rerank = dynamic_cast<server_task_result_rerank *>(result.get()))
+      {
+        data_json = json{
+            {"score", rerank->score},
+            {"tokens_evaluated", rerank->n_tokens},
+        };
+      }
       else
       {
-        // otherwise, it should be a completion result, nothing special to do
+        // completion result
         data_json = result->to_json();
       }
     }

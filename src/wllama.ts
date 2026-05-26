@@ -18,6 +18,7 @@ import { ModelManager, Model, type ModelSource } from './model-manager';
 import type {
   GlueMsgCompletionRes,
   GlueMsgEmbeddingRes,
+  GlueMsgRerankRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
 } from './glue/messages';
@@ -37,6 +38,8 @@ import type {
   RawCompletionChunk,
   RawCompletionParams,
   RawCompletionResponse,
+  RerankParams,
+  RerankResponse,
 } from './types/oai-compat';
 import { LogLevel } from './types/types';
 import { getHFModelSource, type HuggingFaceParams } from './huggingface';
@@ -676,6 +679,52 @@ export class Wllama {
   }
 
   /**
+   * Rerank a list of documents against a query.
+   * Requires the model to be loaded with embeddings: true and pooling_type: 'rank'.
+   * @param options Reranking options (query, documents, top_n)
+   * @returns Reranking response with relevance scores sorted highest first
+   */
+  async createRerank(options: RerankParams): Promise<RerankResponse> {
+    this.checkModelLoaded();
+
+    const top_n = options.top_n ?? options.documents.length;
+    let totalTokens = 0;
+    const rawResults: Array<{ index: number; score: number }> = [];
+
+    for (let i = 0; i < options.documents.length; i++) {
+      const result = await this.proxy.wllamaAction<GlueMsgRerankRes>('rerank', {
+        _name: 'rrnk_req',
+        data_json: JSON.stringify({
+          query: options.query,
+          document: options.documents[i],
+        }),
+      });
+
+      if (!result.success) {
+        throw new WllamaError(
+          'Model failed to start reranking',
+          'inference_error'
+        );
+      }
+
+      const { score, tokens_evaluated } = await this.getRerankResult();
+      totalTokens += tokens_evaluated;
+      rawResults.push({ index: i, score });
+    }
+
+    rawResults.sort((a, b) => b.score - a.score);
+    return {
+      model: this.getModelMetadata().meta['general.name'] ?? '',
+      object: 'list',
+      usage: { prompt_tokens: totalTokens, total_tokens: totalTokens },
+      results: rawResults.slice(0, top_n).map(({ index, score }) => ({
+        index,
+        relevance_score: score,
+      })),
+    };
+  }
+
+  /**
    * Make chat completion for a given chat messages.
    * @param options OAI-compatible chat completion options
    * @returns OAI-compatible chat completion response (only the final result when stream=false) or an async iterator of completion chunks (when stream=true)
@@ -881,6 +930,34 @@ export class Wllama {
       },
       files,
     };
+  }
+
+  private async getRerankResult(): Promise<{
+    score: number;
+    tokens_evaluated: number;
+  }> {
+    while (true) {
+      const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+        'get_result',
+        { _name: 'gres_req' }
+      );
+
+      const jsonString = chunk.data_json;
+      if (jsonString && jsonString.length > 0) {
+        if (chunk.is_error) {
+          const jsonData = this.jsonDecode(jsonString);
+          throw new WllamaError(
+            jsonData.message || 'Unknown reranking error',
+            'inference_error'
+          );
+        }
+        return this.jsonDecode(jsonString);
+      }
+
+      if (!chunk.has_more) break;
+    }
+
+    throw new WllamaError('No reranking result received', 'inference_error');
   }
 
   private async getResponse(options: StreamParams<any>, isStream: boolean) {
