@@ -89,7 +89,7 @@ const getWModuleConfig = (_argMainScriptBlob) => {
     wasmMemory: pthreadPoolSize > 1 ? getWasmMemory() : null,
     onAbort: function (message) {
       isAborted = true;
-      msg({ verb: 'signal.abort', args: ['abort', message, lastStack] });
+      msg({ verb: 'signal.abort', args: ['abort', message, lastStack, null] });
     },
   };
 };
@@ -313,13 +313,11 @@ function handleError(err) {
   // If WASM already aborted, onAbort already sent signal.abort; skip to avoid
   // re-reporting the resulting WebAssembly.RuntimeError as a JS exception.
   if (isAborted) return;
-  const message =
-    err instanceof Error
-      ? err.message
-      : typeof err === 'string'
-        ? err
-        : 'Unknown error';
-  const stack = err instanceof Error && err.stack ? String(err.stack) : '';
+  // ExitStatus is Emscripten's non-Error thrown when WASM calls exit() - it is not a crash, just normal program/thread termination.
+  if (err && err.name === 'ExitStatus') return;
+
+  const message = err ? err.message || String(err) : 'Unknown error';
+  const stack = err ? err.stack || String(err) : '';
   msg({
     verb: 'signal.abort',
     args: ['exception', message, stack, err],
