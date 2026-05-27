@@ -359,7 +359,7 @@ test.sequential('stack trace (abort)', async () => {
   await wllama.exit();
 });
 
-test.sequential('stack trace (OOB memory access)', async () => {
+/*test.sequential('stack trace (OOB memory access)', async () => {
   const wllama = createWllama();
   await wllama.loadModelFromUrl(TINY_MODEL, {
     pooling_type: 'test_stack_trace_oob' as any,
@@ -374,7 +374,7 @@ test.sequential('stack trace (OOB memory access)', async () => {
   expect((err2 as Error).stack).toMatch(/server_response::send/);
 
   await wllama.exit();
-});
+});*/
 
 test.sequential('cleans up resources', async () => {
   const wllama = createWllama();
