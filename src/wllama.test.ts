@@ -1,7 +1,7 @@
 import { test, expect, afterEach } from 'vitest';
 
 // Add a 2s delay between tests on GitHub CI to avoid rate limits
-if (process.env.GITHUB_ACTIONS) {
+if (import.meta.env.GITHUB_ACTIONS) {
   afterEach(async () => {
     await new Promise((resolve) => setTimeout(resolve, 2000));
   });
