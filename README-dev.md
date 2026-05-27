@@ -26,10 +26,10 @@ GLUE is a home-grown binary protocol inspired by Protobuf. It is used internally
 The main goal of GLUE is to allow a type-safe interface with low overhead. It works by serializing messages into `ArrayBuffer` and transferring them using [Transferable objects](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects), which avoids copying.
 
 **Wire format:**
-- 4 bytes — magic number (`GLUE`)
-- 4 bytes — version number (`GLUE_VERSION`)
-- 8 bytes — message prototype ID
-- 4 bytes — message length (unsigned)
+- 4 bytes - magic number (`GLUE`)
+- 4 bytes - version number (`GLUE_VERSION`)
+- 8 bytes - message prototype ID
+- 4 bytes - message length (unsigned)
 - message fields, each encoded as:
   - 4 bytes data type (e.g. `int`, `float`, `str`, `raw`, and array variants)
   - 4 bytes size (only for arrays and strings)
@@ -100,63 +100,56 @@ The main downside of this approach is that on WebGPU, even though some tensors c
 
 ## Compressed source map
 
-The standard `.wasm.map` produced by emscripten maps every wasm byte offset to a source file and line. For wllama's purposes — resolving a stack-trace function index like `wasm-function[2436]` to a file and line — this is far more data than needed, and it includes noise from emsdk/libc/libc++ that is never actionable.
+Emscripten's `--emit-symbol-map` flag produces a `.js.symbols` file mapping each wasm function index to its demangled C++ name. `scripts/build_source_map.js` reads this file alongside the `.wasm` binary and produces a single TypeScript file (`src/wasm/source-map.ts`) containing a compact deduplicated name table per build, gzip-compressed and base64-encoded.
 
-`scripts/build_source_map.js` post-processes one or more `.wasm.map` files into a single TypeScript file (`src/wasm/source_map.ts`) containing a compact binary source map per build, gzip-compressed and base64-encoded. The corresponding `.wasm` file must be next to each `.map` file (same base name, minus `.map`).
+The script runs automatically as part of the docker build (see `scripts/docker-compose.yml`). It can also be run manually:
 
 ```sh
+# uses build/ and build-compat/ by default
+node scripts/build_source_map.js
+
+# or with explicit paths
 node scripts/build_source_map.js \
-  --input default:build/wllama.wasm.map \
-  --input compat:build-compat/wllama.wasm.map \
-  --output src/wasm/source_map.ts
+  --input default:build \
+  --input compat:build-compat \
+  --output src/wasm/source-map.ts
 ```
 
-### What it does
+### Name cleaning rules
 
-- Parses the wasm binary to find the byte offset of every function body
-- Looks up each offset in the source map to get `(file, line)`
-- Drops all emsdk/libc/libc++ functions (marked as no-mapping)
-- Shortens source file paths to minimal disambiguating suffixes (e.g. `models/qwen3vl.cpp` instead of the full path)
-- Encodes the result as a compact binary, then gzip-compresses and base64-encodes it
+Raw demangled names can be hundreds of characters. The following rules are applied in order:
 
-### Size
-
-| | Standard `.wasm.map` | Compressed output |
-|---|---|---|
-| Raw size | ~5 MB | ~22 KB binary |
-| Shipped size | — | ~9 KB (gzipped) / ~12 KB (base64 in TS) |
-| Granularity | per instruction | per function |
-| emsdk entries | included | dropped |
+1. **std:: collapse** - any name starting with `std::` is replaced with the single hint `std::...`
+2. **Lambda/closure extraction** - names containing `::$_N` or `::'lambda'` are replaced with the nearest enclosing context (the segment inside the last `<…>` before the marker)
+3. **Parameter stripping** - parameter lists are dropped; empty `()` is kept, non-empty is removed entirely
+4. **libc++ internals** - `::__1::`, `::__2::`, etc. are collapsed to `::`
+5. **ABI tags** - `[abi:…]` annotations are removed
+6. **Template truncation** - template argument content longer than 10 characters is truncated to `<first10chars...>`
+7. **Final cleanup** - double `::::` collapsed, whitespace normalised
 
 ### Binary format (before gzip)
 
 All integers are little-endian.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ HEADER (12 bytes)                                       │
-│   u32  first_func_id   — wasm function index of entry 0 │
-│   u32  num_funcs       — number of functions            │
-│   u32  num_sources     — number of source files         │
-├─────────────────────────────────────────────────────────┤
-│ SOURCE NAME TABLE                                       │
-│   for each source (num_sources entries):                │
-│     u8   length        — byte length of name            │
-│     u8[] name          — UTF-8 filename (no null term)  │
-├─────────────────────────────────────────────────────────┤
-│ FILE INDEX STREAM  (RLE)                                │
-│   repeated until num_funcs values decoded:              │
-│     u16  run_length    — how many consecutive functions │
-│     u16  file_idx      — index into source name table   │
-│                          0xFFFF = no mapping            │
-├─────────────────────────────────────────────────────────┤
-│ LINE NUMBER STREAM                                      │
-│   u16[num_funcs]       — source line per function       │
-│                          (0 when file_idx == 0xFFFF)    │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│ HEADER (12 bytes)                                        │
+│   u32  first_func_id  - wasm function index of entry 0  │
+│   u32  num_funcs      - number of functions              │
+│   u32  num_names      - number of unique names           │
+├──────────────────────────────────────────────────────────┤
+│ NAME TABLE  (num_names entries)                          │
+│   for each name:                                         │
+│     u8   length       - byte length of name (max 254)   │
+│     u8[] name         - UTF-8 string (no null term)      │
+├──────────────────────────────────────────────────────────┤
+│ INDEX ARRAY  (num_funcs × u16)                           │
+│   u16  name_idx       - index into name table            │
+│                         0xFFFF = no name / unknown       │
+└──────────────────────────────────────────────────────────┘
 ```
 
-To decode at runtime: base64-decode → `DecompressionStream('gzip')` → parse binary. Given a function index `id`, the entry is at position `id - first_func_id` in both streams.
+To decode at runtime: base64-decode -> `DecompressionStream('gzip')` -> parse binary. Given a wasm function index `id`, look up `index_array[id - first_func_id]` to get the name table slot.
 
 ## Build process
 
