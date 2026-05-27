@@ -377,7 +377,9 @@ export class ProxyToWorker {
         string,
         any,
       ];
-      this.logger.error(originalErr);
+      if (originalErr) {
+        this.logger.error(originalErr);
+      }
       (async () => {
         let stack = '';
         let newMsg = message.replace(
@@ -423,7 +425,8 @@ export class ProxyToWorker {
   }
 
   private abort(text: string, stack: string) {
-    const error = new WllamaRuntimeError(
+    return; // TEST
+    /*const error = new WllamaRuntimeError(
       text.length == 0 ? '(unknown error)' : text,
       stack
     );
@@ -436,6 +439,6 @@ export class ProxyToWorker {
       const pendingTask = this.taskQueue.pop();
       if (!pendingTask) break;
       pendingTask.reject(error);
-    }
+    }*/
   }
 }
