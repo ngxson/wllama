@@ -49,26 +49,6 @@ async function loadMap(buildKey: string): Promise<DecodedMap> {
   return entry;
 }
 
-function ulebRead(bytes: Uint8Array, pos: number): [number, number] {
-  let result = 0,
-    shift = 0;
-  while (true) {
-    const b = bytes[pos++];
-    result |= (b & 0x7f) << shift;
-    if (!(b & 0x80)) break;
-    shift += 7;
-  }
-  return [result, pos];
-}
-
-function ulebSkipLimits(bytes: Uint8Array, pos: number): number {
-  const kind = bytes[pos++];
-  [, pos] = ulebRead(bytes, pos);
-  if (kind === 0x01 || kind === 0x03 || kind === 0x05 || kind === 0x07)
-    [, pos] = ulebRead(bytes, pos);
-  return pos;
-}
-
 export const Debug = {
   /**
    * Resolves a list of wasm function indices to their cleaned symbol names.
