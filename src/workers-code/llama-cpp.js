@@ -308,9 +308,13 @@ const callWrapper = (name, ret, args, isAsync) => {
 };
 
 function handleError(err) {
+  const message =
+    err instanceof Error ? err.message : typeof err === 'string' ? err : 'Unknown error';
+  const stack =
+    err instanceof Error && err.stack ? String(err.stack) : '';
   msg({
     verb: 'signal.abort',
-    args: ['exception', err.message || 'Unknown error', err.stack.toString()],
+    args: ['exception', message, stack],
   });
 }
 

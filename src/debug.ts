@@ -69,7 +69,7 @@ export const Debug = {
     });
   },
   /**
-   * Annotates a wasm stack trace string with resolved source file and line numbers.
+   * Annotates a wasm stack trace string with resolved function names.
    *
    * Example input from Chrome:
    *   at http://localhost:8080/esm/wasm/wllama.wasm:wasm-function[775]:0x74251
@@ -84,7 +84,7 @@ export const Debug = {
    *       at wrapper (d746f19e-4523-4f36-ba06-d0969acc0b05:22:126009)
    *
    * Example output:
-   *   func[775] -> common.cpp:123
+   *   wasm-func[775] (server_response::send)
    */
   decodeStackTrace: async (
     stack: string,

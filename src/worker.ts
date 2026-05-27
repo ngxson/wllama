@@ -416,15 +416,19 @@ export class ProxyToWorker {
   }
 
   private abort(text: string, stack: string) {
+    const error = new WllamaRuntimeError(
+      text.length == 0 ? '(unknown error)' : text,
+      stack
+    );
     while (this.resultQueue.length > 0) {
       const waitingTask = this.resultQueue.pop();
       if (!waitingTask) break;
-      waitingTask.reject(
-        new WllamaRuntimeError(
-          text.length == 0 ? '(unknown error)' : text,
-          stack
-        )
-      );
+      waitingTask.reject(error);
+    }
+    while (this.taskQueue.length > 0) {
+      const pendingTask = this.taskQueue.pop();
+      if (!pendingTask) break;
+      pendingTask.reject(error);
     }
   }
 }

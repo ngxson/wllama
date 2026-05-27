@@ -1,4 +1,11 @@
-import { test, expect } from 'vitest';
+import { test, expect, afterEach } from 'vitest';
+
+// Add a 2s delay between tests on GitHub CI to avoid rate limits
+if (process.env.GITHUB_ACTIONS) {
+  afterEach(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  });
+}
 import { Wllama, type WllamaConfig } from './wllama';
 
 const CONFIG_PATHS = {
@@ -338,13 +345,13 @@ test.sequential('stack trace (abort)', async () => {
   });
   expect(wllama.isModelLoaded()).toBe(true);
 
-  try {
-    await wllama.createCompletion({ prompt: 'test', max_tokens: 1 });
-  } catch (e) {
-    expect((e as Error).name).toBe('RuntimeError');
-    expect((e as Error).stack).toMatch(/__wrap_abort/);
-    expect((e as Error).stack).toMatch(/server_response::send/);
-  }
+  const err1: unknown = await wllama
+    .createCompletion({ prompt: 'test', max_tokens: 1 })
+    .catch((e: unknown) => e);
+  expect(err1).toBeInstanceOf(Error);
+  expect((err1 as Error).name).toBe('RuntimeError');
+  expect((err1 as Error).stack).toMatch(/__wrap_abort/);
+  expect((err1 as Error).stack).toMatch(/server_response::send/);
 
   await wllama.exit();
 });
@@ -356,12 +363,12 @@ test.sequential('stack trace (OOB memory access)', async () => {
   });
   expect(wllama.isModelLoaded()).toBe(true);
 
-  try {
-    await wllama.createCompletion({ prompt: 'test', max_tokens: 1 });
-  } catch (e) {
-    expect((e as Error).name).toBe('RuntimeError');
-    expect((e as Error).stack).toMatch(/server_response::send/);
-  }
+  const err2: unknown = await wllama
+    .createCompletion({ prompt: 'test', max_tokens: 1 })
+    .catch((e: unknown) => e);
+  expect(err2).toBeInstanceOf(Error);
+  expect((err2 as Error).name).toBe('RuntimeError');
+  expect((err2 as Error).stack).toMatch(/server_response::send/);
 
   await wllama.exit();
 });
