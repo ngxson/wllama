@@ -2,7 +2,7 @@ import { test, expect, beforeEach } from 'vitest';
 
 declare const __GITHUB_CI__: boolean;
 
-// Add a 2s delay before each test on GitHub CI to avoid HuggingFace rate limits.
+// Add a small delay before each test on GitHub CI to avoid HuggingFace rate limits.
 // typeof guard handles the case where vitest define is not configured.
 if (typeof __GITHUB_CI__ !== 'undefined' && __GITHUB_CI__) {
   beforeEach(async () => {

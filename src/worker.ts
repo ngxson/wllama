@@ -372,6 +372,7 @@ export class ProxyToWorker {
       return;
     } else if (verb === 'signal.abort') {
       const [signalType, message, rawStack] = args as [string, string, string];
+      console.error(`Received abort signal from worker: ${signalType} ${message} ${rawStack}`);
       (async () => {
         let stack = '';
         let newMsg = message.replace(
