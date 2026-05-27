@@ -151,16 +151,19 @@ test.sequential('abort signal', async () => {
     top_k: 40,
     seed: 42,
     stream: true,
-    onData: () => {},
     abortSignal: abortController.signal,
   });
 
   let i = 0;
-  for await (const _ of stream) {
-    if (i === 2) {
-      abortController.abort();
+  try {
+    for await (const _ of stream) {
+      if (i === 2) {
+        abortController.abort();
+      }
+      i++;
     }
-    i++;
+  } catch (e) {
+    expect((e as Error).name).toBe('AbortError');
   }
 
   expect(i).toBe(4);
@@ -310,7 +313,6 @@ test.sequential('generates chat completion using async iterator', async () => {
     max_tokens: 10,
     temperature: 0.0,
     stream: true,
-    onData: () => {},
   });
 
   let finalText = '';
@@ -333,6 +335,24 @@ test.sequential('stack trace (abort)', async () => {
   const wllama = createWllama();
   await wllama.loadModelFromUrl(TINY_MODEL, {
     pooling_type: 'test_stack_trace_abort' as any,
+  });
+  expect(wllama.isModelLoaded()).toBe(true);
+
+  try {
+    await wllama.createCompletion({ prompt: 'test', max_tokens: 1 });
+  } catch (e) {
+    expect((e as Error).name).toBe('RuntimeError');
+    expect((e as Error).stack).toMatch(/__wrap_abort/);
+    expect((e as Error).stack).toMatch(/server_response::send/);
+  }
+
+  await wllama.exit();
+});
+
+test.sequential('stack trace (OOB memory access)', async () => {
+  const wllama = createWllama();
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    pooling_type: 'test_stack_trace_oob' as any,
   });
   expect(wllama.isModelLoaded()).toBe(true);
 

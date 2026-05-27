@@ -39,7 +39,7 @@ extern "C" void __real_abort(void);
 extern "C" void __wrap_abort(void)
 {
   char buf[4096];
-  emscripten_get_callstack(EM_LOG_JS_STACK | EM_LOG_DEMANGLE | EM_LOG_NO_PATHS, buf, sizeof(buf));
+  emscripten_get_callstack(EM_LOG_JS_STACK | EM_LOG_NO_PATHS, buf, sizeof(buf));
   for (size_t i = 0; i < sizeof(buf); i++)
   {
     if (buf[i] == '\n')

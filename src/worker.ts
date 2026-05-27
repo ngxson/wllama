@@ -373,13 +373,19 @@ export class ProxyToWorker {
       (async () => {
         let stack = '';
         if (signalType === 'abort') {
-          stack = rawStack.replace(/\|/g, '\n');
+          // stack = rawStack.replace(/\|/g, '\n');
+          // ignore for now, already handled in the 'exception' code path below
+          return;
         } else if (signalType === 'exception') {
           stack = rawStack;
         }
         const decoded = await Debug.decodeStackTrace(stack, isCompatBuild);
         this.logger.error(`Stack trace (${signalType}):\n` + decoded);
-        this.abort(message, decoded);
+        const newMsg = message.replace(
+          'Build with -sASSERTIONS for more info.',
+          ''
+        );
+        this.abort(newMsg, decoded);
       })();
       return;
     }

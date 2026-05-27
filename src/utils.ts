@@ -354,22 +354,32 @@ export const createWorker = (workerCode: string | Blob): Worker => {
 export const cbToAsyncIter =
   <A extends any[], T>(
     fn: (
-      ...args: [...args: A, callback: (val?: T, done?: boolean) => void]
+      ...args: [
+        ...args: A,
+        callback: (val?: T, done?: boolean, err?: Error) => void,
+      ]
     ) => void
   ) =>
   (...args: A): AsyncIterable<T> => {
     let values: Promise<[T, boolean]>[] = [];
     let resolve: (x: [T, boolean]) => void;
+    let reject: (e: Error) => void;
     values.push(
-      new Promise((r) => {
-        resolve = r;
+      new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
       })
     );
-    fn(...args, (val?: T, done?: boolean) => {
+    fn(...args, (val?: T, done?: boolean, err?: Error) => {
+      if (err) {
+        reject(err);
+        return;
+      }
       resolve([val!, done!]);
       values.push(
-        new Promise((r) => {
-          resolve = r;
+        new Promise((res, rej) => {
+          resolve = res;
+          reject = rej;
         })
       );
     });

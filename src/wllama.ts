@@ -761,32 +761,48 @@ export class Wllama {
   ): Promise<ChatCompletionResponse>;
   async createChatCompletion(
     options: ChatCompletionParams & StreamParams<ChatCompletionChunk>
+  ): Promise<void>;
+  async createChatCompletion(
+    options: ChatCompletionParams & { stream: true }
   ): Promise<AsyncIterable<ChatCompletionChunk>>;
   async createChatCompletion(
     options: ChatCompletionParams
-  ): Promise<ChatCompletionResponse | AsyncIterable<ChatCompletionChunk>> {
-    return options.stream
-      ? await this.createCompletionGenerator(options)
-      : await this.createCompletionImpl({ ...options, stream: false });
+  ): Promise<
+    ChatCompletionResponse | void | AsyncIterable<ChatCompletionChunk>
+  > {
+    if (options.stream && (options as any).onData) {
+      await this.createCompletionImpl(options);
+    } else if (options.stream) {
+      return await this.createCompletionGenerator(options);
+    } else {
+      return await this.createCompletionImpl({ ...options, stream: false });
+    }
   }
 
   /**
    * Make (raw) completion for a given text.
    * @param options OAI-compatible completion options
-   * @returns OAI-compatible completion response (only the final result when stream=false) or an async iterator of completion chunks (when stream=true)
+   * @returns OAI-compatible completion response (stream=false), void when done (stream=true + onData), or async iterator (stream=true, no onData)
    */
   async createCompletion(
     options: RawCompletionParams & { stream?: false }
   ): Promise<RawCompletionResponse>;
   async createCompletion(
     options: RawCompletionParams & StreamParams<RawCompletionChunk>
+  ): Promise<void>;
+  async createCompletion(
+    options: RawCompletionParams & { stream: true }
   ): Promise<AsyncIterable<RawCompletionChunk>>;
   async createCompletion(
     options: RawCompletionParams
-  ): Promise<RawCompletionResponse | AsyncIterable<RawCompletionChunk>> {
-    return options.stream
-      ? await this.createCompletionGenerator(options)
-      : await this.createCompletionImpl({ ...options, stream: false });
+  ): Promise<RawCompletionResponse | void | AsyncIterable<RawCompletionChunk>> {
+    if (options.stream && (options as any).onData) {
+      await this.createCompletionImpl(options);
+    } else if (options.stream) {
+      return await this.createCompletionGenerator(options);
+    } else {
+      return await this.createCompletionImpl({ ...options, stream: false });
+    }
   }
 
   /**
@@ -828,30 +844,28 @@ export class Wllama {
       );
     }
 
-    return await this.getResponse(options as StreamParams<TChunk>, isStream);
+    return await this.getResponse(
+      options as StreamParams<TChunk> & { abortSignal?: AbortSignal },
+      isStream
+    );
   }
 
   /**
    * Same with `createCompletion`, but returns an async iterator instead.
+   * Only called when stream=true and no onData is provided.
    */
   private createCompletionGenerator<TOpt, TChunk>(
-    options: Exclude<TOpt, 'onData'>
+    options: TOpt
   ): Promise<AsyncIterable<TChunk>> {
-    return new Promise((resolve, reject) => {
-      const origOnData = (options as StreamParams<TChunk>).onData;
+    return new Promise((resolve) => {
       const createGenerator = cbToAsyncIter(
-        (callback: (val?: TChunk, done?: boolean) => void) => {
+        (callback: (val?: TChunk, done?: boolean, err?: Error) => void) => {
           this.createCompletionImpl<TOpt, TChunk>({
             ...options,
-            onData: (chunk: TChunk) => {
-              callback(chunk);
-              origOnData?.(chunk);
-            },
+            onData: (chunk: TChunk) => callback(chunk),
           })
-            .catch(reject)
-            .then(() => {
-              callback(undefined, true);
-            });
+            .then(() => callback(undefined, true))
+            .catch((err) => callback(undefined, false, err));
         }
       );
       resolve(createGenerator());
@@ -987,7 +1001,10 @@ export class Wllama {
     throw new WllamaError('No reranking result received', 'inference_error');
   }
 
-  private async getResponse(options: StreamParams<any>, isStream: boolean) {
+  private async getResponse(
+    options: StreamParams<any> & { abortSignal?: AbortSignal },
+    isStream: boolean
+  ) {
     let finalResult: any = null;
 
     while (true) {
