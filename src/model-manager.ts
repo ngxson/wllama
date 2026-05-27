@@ -115,17 +115,30 @@ export class Model {
         'load_error'
       );
     }
-    const blobs: Blob[] = [];
-    for (const file of this.files) {
-      const blob = await this.modelManager.cacheManager.open(file.name);
-      if (!blob) {
-        throw new Error(
-          `Failed to open file ${file.name}; Hint: the model may be invalid, please refresh it`
-        );
+    // Helper: attempt to open all shards; returns null on the first miss.
+    const tryOpen = async (): Promise<Blob[] | null> => {
+      const out: Blob[] = [];
+      for (const file of this.files) {
+        const blob = await this.modelManager.cacheManager.open(file.name);
+        if (!blob) return null;
+        out.push(blob);
       }
-      blobs.push(blob);
-    }
-    return blobs;
+      return out;
+    };
+
+    const blobs = await tryOpen();
+    if (blobs !== null) return blobs;
+
+    // One or more files are unavailable (e.g. evicted from COS).
+    // Re-download all shards and retry once.
+    await this.refresh();
+    const retried = await tryOpen();
+    if (retried !== null) return retried;
+
+    throw new WllamaError(
+      'Model files are unavailable even after re-download',
+      'load_error'
+    );
   }
   /**
    * Validate the model files.
@@ -169,7 +182,19 @@ export class Model {
     this.modelManager.logger.debug('Downloading model files:', urls);
     const nParallel =
       this.modelManager.params.parallelDownloads ?? DEFAULT_PARALLEL_DOWNLOADS;
-    const totalSize = await this.getTotalDownloadSize(urls);
+
+    // Pre-check Cross-Origin Storage for all shards in parallel.
+    // If every shard is already in COS we know the sizes immediately and can
+    // skip the HEAD request(s) to the origin server entirely.
+    // download() will re-check COS internally using the hash already cached in
+    // the wllama-cos-hash-cache Cache API bucket, so the second lookup is fast.
+    const cosBlobs = await Promise.all(
+      urls.map((url) => this.modelManager.cacheManager.checkCOS(url))
+    );
+    const allInCOS = cosBlobs.every((b) => b !== null);
+    const totalSize = allInCOS
+      ? cosBlobs.reduce((sum, b) => sum + b!.size, 0)
+      : await this.getTotalDownloadSize(urls);
     const loadedSize: number[] = [];
     const worker = async () => {
       while (works.length > 0) {

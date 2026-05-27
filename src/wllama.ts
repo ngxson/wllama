@@ -487,6 +487,7 @@ export class Wllama {
 
     // initialize the worker
     const workerResources = this.getWorkerResources();
+    workerResources.wasmPath = await this.cacheManager.resolveWasmUrl(workerResources.wasmPath);
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread

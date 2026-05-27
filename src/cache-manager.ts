@@ -1,6 +1,13 @@
 import type { DownloadProgressCallback } from './model-manager';
 import { createWorker, isSafariMobile } from './utils';
 import { OPFS_UTILS_WORKER_CODE } from './workers-code/generated';
+import {
+  isCrossOriginStorageAvailable,
+  resolveUrlHash,
+  setUrlHash,
+  tryReadFromCOS,
+  writeToCosByHash,
+} from './cross-origin-storage';
 
 const PREFIX_METADATA = '__metadata__';
 
@@ -59,6 +66,11 @@ export interface CacheEntryMetadata {
    * URL to mmproj file, if exists
    */
   mmprojURL?: string | undefined;
+  /**
+   * SHA-256 content hash, used as the key for Cross-Origin Storage.
+   * Present only when the file was downloaded or served via COS.
+   */
+  sha256?: string | undefined;
 }
 
 /**
@@ -93,6 +105,42 @@ export class CacheManager {
   }
 
   async download(url: string, options: DownloadOptions = {}): Promise<void> {
+    if (isCrossOriginStorageAvailable() && !options.signal?.aborted) {
+      const hash = await resolveUrlHash(url);
+      if (hash) {
+        const cosBlob = await tryReadFromCOS(hash);
+        if (cosBlob) {
+          // File already in COS – record metadata only.
+          const metadata: CacheEntryMetadata = {
+            etag: POLYFILL_ETAG,
+            originalSize: cosBlob.size,
+            originalURL: url,
+            sha256: hash,
+            ...(options.metadataAdditional ?? {}),
+          };
+          await this.writeMetadata(url, metadata);
+          options.progressCallback?.({
+            loaded: cosBlob.size,
+            total: cosBlob.size,
+          });
+          return;
+        }
+      }
+
+      // File not in COS (or hash unknown for non-HF URLs) — download directly
+      // into COS, computing the SHA-256 on-the-fly when needed.  No OPFS data
+      // is written on this path.
+      try {
+        await this.downloadToCOS(url, hash, options);
+        return;
+      } catch (e) {
+        if (options.signal?.aborted) throw e;
+        console.warn('[wllama] COS download failed, falling back to OPFS:', e);
+        // Fall through to the OPFS worker path below.
+      }
+    }
+
+    // OPFS fallback: COS unavailable or downloadToCOS failed.
     const worker = createWorker(OPFS_UTILS_WORKER_CODE);
     let aborted = false;
     if (options.signal) {
@@ -118,6 +166,7 @@ export class CacheManager {
       worker.onmessage = (e: MessageEvent<any>) => {
         if (e.data.ok) {
           worker.terminate();
+          void this.writeToCosBg(url);
           resolve();
         } else if (e.data.err) {
           worker.terminate();
@@ -126,12 +175,122 @@ export class CacheManager {
           const progress: { loaded: number; total: number } = e.data.progress;
           options.progressCallback?.(progress);
         } else {
-          // should never happen
           reject(new Error('Unknown message from worker'));
           console.error('Unknown message from worker', e.data);
         }
       };
     });
+  }
+
+  /**
+   * Download a file from the network directly into Cross-Origin Storage
+   * without writing any data to OPFS.  On success only a tiny metadata JSON
+   * is written to OPFS.
+   *
+   * When `hash` is supplied (HF LFS pointer was available) the chunks are
+   * written directly to the COS writable one-by-one — no Blob assembly.
+   * When `hash` is null (non-HF URL) the chunks are first concatenated into
+   * a single buffer so SHA-256 can be computed, then that buffer is written.
+   * Either way the data never touches OPFS.
+   */
+  private async downloadToCOS(
+    url: string,
+    hash: string | null,
+    options: DownloadOptions
+  ): Promise<void> {
+    const response = await fetch(url, {
+      headers: options.headers,
+      signal: options.signal,
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Network error: ${response.status} ${response.statusText}`);
+    }
+
+    const total = Number(response.headers.get('content-length') || '0');
+    let loaded = 0;
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.byteLength;
+      options.progressCallback?.({ loaded, total });
+    }
+
+    // For unknown-hash URLs: assemble a contiguous buffer and compute SHA-256.
+    let writeBlob: Blob;
+    if (!hash) {
+      const combined = new Uint8Array(loaded);
+      let off = 0;
+      for (const c of chunks) { combined.set(c, off); off += c.byteLength; }
+      chunks.length = 0; // release individual chunks before hashing
+      const hashBuf = await crypto.subtle.digest('SHA-256', combined.buffer);
+      hash = Array.from(new Uint8Array(hashBuf))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      await setUrlHash(url, hash);
+      writeBlob = new Blob([combined]);
+    } else {
+      // Blob constructor accepts Uint8Array[] as BlobPart[].
+      writeBlob = new Blob(chunks as any[]);
+    }
+
+    const [handle] = await navigator.crossOriginStorage.requestFileHandles(
+      [{ algorithm: 'SHA-256', value: hash }],
+      { create: true }
+    );
+    const writable = await (handle as any).createWritable();
+    await writable.write(writeBlob);
+    await writable.close();
+
+    const metadata: CacheEntryMetadata = {
+      etag: POLYFILL_ETAG,
+      originalSize: loaded,
+      originalURL: url,
+      sha256: hash,
+      ...(options.metadataAdditional ?? {}),
+    };
+    await this.writeMetadata(url, metadata);
+  }
+
+  /**
+   * Background task: write a file from OPFS to Cross-Origin Storage after a
+   * successful network download.  Errors are swallowed so a COS failure never
+   * surfaces to the caller.
+   *
+   * Hash strategy:
+   * 1. Use the hash already resolved by `resolveUrlHash` (e.g. from the LFS
+   *    pointer fetch that happened in the COS pre-check above).
+   * 2. For non-HF URLs where no LFS hash exists, skip COS – computing SHA-256
+   *    of a multi-GB model file in the browser main thread is impractical.
+   */
+  private async writeToCosBg(url: string): Promise<void> {
+    if (!isCrossOriginStorageAvailable()) return;
+    try {
+      const hash = await resolveUrlHash(url);
+      if (!hash) return;
+
+      const filename = await urlToFileName(url, '');
+      const blob = await opfsOpen(filename);
+      if (!blob) return;
+
+      await writeToCosByHash(blob, hash);
+
+      // COS write succeeded — update metadata with sha256 and persist the hash.
+      // We intentionally do NOT remove the OPFS data file here: the Worker may
+      // already hold a File handle to it and a concurrent removeEntry() would
+      // cause a NotFoundError mid-read.  The OPFS data will be cleaned up on
+      // the next clear() or deleteMany() call.
+      const meta = await this.getMetadata(url);
+      if (meta) {
+        await this.writeMetadata(url, { ...meta, sha256: hash });
+      }
+      await setUrlHash(url, hash);
+    } catch {
+      // Non-fatal – if COS write or cleanup fails, the file stays in OPFS.
+    }
   }
 
   /**
@@ -141,7 +300,124 @@ export class CacheManager {
    * @returns Blob, or null if file does not exist
    */
   async open(nameOrURL: string): Promise<Blob | null> {
-    return await opfsOpen(nameOrURL);
+    const fromOpfs = await opfsOpen(nameOrURL);
+    if (fromOpfs) return fromOpfs;
+    // COS fallback: if the data file is absent but the metadata records a
+    // sha256, serve the blob directly from Cross-Origin Storage.
+    // The metadata file is stored as PREFIX_METADATA + OPFS data filename.
+    if (isCrossOriginStorageAvailable()) {
+      const metaFile = await opfsOpen(PREFIX_METADATA + nameOrURL);
+      if (metaFile) {
+        try {
+          const meta: CacheEntryMetadata = await new Response(
+            metaFile.stream()
+          ).json();
+          if (meta.sha256) {
+            const cosBlob = await tryReadFromCOS(meta.sha256);
+            if (cosBlob) return cosBlob;
+            // COS resource was evicted — remove stale metadata so the next
+            // validate() returns INVALID and triggers a fresh download.
+            try {
+              const cacheDir = await getCacheDir();
+              await cacheDir.removeEntry(PREFIX_METADATA + nameOrURL);
+            } catch {}
+          }
+        } catch {}
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Check whether a file is available in Cross-Origin Storage without downloading it.
+   *
+   * Resolves the SHA-256 hash for the URL (via the HF Git LFS pointer file or a
+   * previously-cached hash entry) and queries `navigator.crossOriginStorage`.
+   *
+   * Returns the `Blob` if found in COS, `null` if the API is unavailable, the
+   * file is not cached cross-origin, or the hash cannot be determined.
+   *
+   * Callers can use the returned size to calculate total download size without
+   * making a HEAD request to the origin server.
+   */
+  async checkCOS(url: string): Promise<Blob | null> {
+    if (!isCrossOriginStorageAvailable()) return null;
+    const hash = await resolveUrlHash(url);
+    if (!hash) return null;
+    return tryReadFromCOS(hash);
+  }
+
+  /**
+   * Resolve a WASM URL through Cross-Origin Storage, avoiding a network
+   * round-trip when the binary is already cached cross-origin.
+   *
+   * Strategy:
+   * 1. If COS is unavailable, return the original URL unchanged.
+   * 2. If the SHA-256 hash is already in the hash cache (from a previous
+   *    load), attempt a COS lookup. On hit, return a `blob:` object URL
+   *    so the Worker never touches the network.
+   * 3. On COS miss, or when no hash is cached yet, fetch the WASM
+   *    normally, compute its SHA-256, write it to COS in the background,
+   *    and return a `blob:` object URL so the caller skips a second fetch.
+   * 4. On any error, return the original URL as a safe fallback.
+   *
+   * WASM files have no HF LFS pointer, so the hash is computed from
+   * content on first load and then persisted in the hash cache. WASM
+   * files are small enough (a few MB) that buffering them is fine.
+   *
+   * Note: the returned `blob:` URL is never explicitly revoked; it lives
+   * until the page is unloaded, consistent with other blob URLs in wllama.
+   */
+  async resolveWasmUrl(wasmUrl: string): Promise<string> {
+    if (!isCrossOriginStorageAvailable()) return wasmUrl;
+
+    // COS path is non-fatal: any failure falls through to the network fetch.
+    let hash: string | null = null;
+    try {
+      hash = await resolveUrlHash(wasmUrl);
+      if (hash) {
+        const cosBlob = await tryReadFromCOS(hash);
+        if (cosBlob) {
+          // Re-wrap to guarantee the correct MIME type for
+          // WebAssembly.instantiateStreaming() in the Worker.
+          const blob =
+            cosBlob.type === 'application/wasm'
+              ? cosBlob
+              : new Blob([cosBlob], { type: 'application/wasm' });
+          return URL.createObjectURL(blob);
+        }
+      }
+    } catch {
+      hash = null;
+    }
+
+    // COS miss — fetch from the network.
+    // This is intentionally outside the try/catch: a 404 or network error
+    // here means the WASM is genuinely unavailable.  Returning wasmUrl as a
+    // fallback would only cause the Worker to make the same failing request
+    // and crash with a cryptic "expected magic word" error.
+    const response = await fetch(wasmUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch WASM (${response.status} ${response.statusText}): ${wasmUrl}`
+      );
+    }
+    const buf = await response.arrayBuffer();
+
+    if (!hash) {
+      // Compute and persist the hash so future loads can skip this fetch.
+      const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+      hash = Array.from(new Uint8Array(hashBuf))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      await setUrlHash(wasmUrl, hash);
+    }
+
+    // Write to COS in the background; return a blob: URL from the
+    // already-fetched buffer so the Worker doesn't fetch it again.
+    const blob = new Blob([buf], { type: 'application/wasm' });
+    void writeToCosByHash(blob, hash);
+    return URL.createObjectURL(blob);
   }
 
   /**
@@ -187,35 +463,37 @@ export class CacheManager {
    */
   async list(): Promise<CacheEntry[]> {
     const cacheDir = await getCacheDir();
-    const result: CacheEntry[] = [];
     const metadataMap: Record<string, CacheEntryMetadata> = {};
+    const dataSizeMap: Record<string, number> = {};
     // @ts-ignore
-    for await (let [name, handler] of cacheDir.entries()) {
-      if (handler.kind === 'file' && name.startsWith(PREFIX_METADATA)) {
-        const stream = (
-          await (handler as FileSystemFileHandle).getFile()
-        ).stream();
-        const meta = await new Response(stream).json().catch((_) => null);
-        metadataMap[name.replace(PREFIX_METADATA, '')] = meta;
+    for await (const [name, handler] of cacheDir.entries()) {
+      if (handler.kind !== 'file') continue;
+      const file = await (handler as FileSystemFileHandle).getFile();
+      if (name.startsWith(PREFIX_METADATA)) {
+        const meta = await new Response(file.stream()).json().catch(() => null);
+        if (meta) metadataMap[name.slice(PREFIX_METADATA.length)] = meta;
+      } else {
+        dataSizeMap[name] = file.size;
       }
     }
-    // @ts-ignore
-    for await (let [name, handler] of cacheDir.entries()) {
-      if (handler.kind === 'file' && !name.startsWith(PREFIX_METADATA)) {
-        result.push({
-          name,
-          size: await (handler as FileSystemFileHandle)
-            .getFile()
-            .then((f) => f.size),
-          metadata: metadataMap[name] || {
-            // try to polyfill for old versions
-            originalSize: (await (handler as FileSystemFileHandle).getFile())
-              .size,
-            originalURL: '',
-            etag: '',
-          },
-        });
-      }
+    const result: CacheEntry[] = [];
+    const allNames = new Set([
+      ...Object.keys(metadataMap),
+      ...Object.keys(dataSizeMap),
+    ]);
+    for (const name of allNames) {
+      const meta = metadataMap[name];
+      const opfsSize = dataSizeMap[name];
+      result.push({
+        name,
+        // COS-backed entries have no OPFS data file; use the recorded size.
+        size: opfsSize ?? meta?.originalSize ?? 0,
+        metadata: meta ?? {
+          etag: POLYFILL_ETAG,
+          originalSize: opfsSize ?? 0,
+          originalURL: '',
+        },
+      });
     }
     return result;
   }
@@ -249,7 +527,13 @@ export class CacheManager {
     const list = await this.list();
     for (const item of list) {
       if (predicate(item)) {
-        cacheDir.removeEntry(item.name);
+        // Data file may be absent for COS-backed entries; swallow the error.
+        try {
+          await cacheDir.removeEntry(item.name);
+        } catch {}
+        try {
+          await cacheDir.removeEntry(PREFIX_METADATA + item.name);
+        } catch {}
       }
     }
   }
@@ -293,6 +577,7 @@ async function opfsWrite(
     console.error('opfsWrite', e);
   }
 }
+
 
 /**
  * Opens a file in OPFS for reading
@@ -369,32 +654,29 @@ async function opfsWriteViaWorker(fileName: string): Promise<{
     if (e.data.ok) pResolve(null);
     else if (e.data.err) pReject(e.data.err);
   };
-  const workerExec = (data: {
-    open?: string;
-    value?: Uint8Array;
-    done?: boolean;
-  }) =>
+  const workerExec = (
+    data: Record<string, unknown>,
+    transferBuf?: ArrayBuffer
+  ) =>
     new Promise<void>((resolve, reject) => {
       pResolve = resolve;
       pReject = reject;
       // TODO @ngxson : Safari mobile doesn't support transferable ArrayBuffer
       worker.postMessage(
         data,
-        isSafariMobile()
+        isSafariMobile() || !transferBuf
           ? undefined
-          : {
-              transfer: data.value ? [data.value.buffer] : [],
-            }
+          : { transfer: [transferBuf] }
       );
     });
-  await workerExec({ open: fileName });
+  await workerExec({ action: 'open', filename: fileName });
   return {
     truncate: async () => {
       /* noop */
     },
-    write: (value) => workerExec({ value }),
+    write: (value) => workerExec({ action: 'write', buf: value }, value.buffer),
     close: async () => {
-      await workerExec({ done: true });
+      await workerExec({ action: 'close' });
       worker.terminate();
     },
   };
