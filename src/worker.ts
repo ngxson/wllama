@@ -218,12 +218,14 @@ export class ProxyToWorker {
 
   async wllamaExit(): Promise<void> {
     if (this.worker) {
-      const result = await this.pushTask({
-        verb: 'wllama.exit',
-        args: [],
-        callbackId: this.taskId++,
-      });
-      this.parseResult(result); // only check for exceptions
+      // we don't actually need to send exit
+      // terminating the worker is faster and resources will be cleaned up by the browser
+      // const result = await this.pushTask({
+      //   verb: 'wllama.exit',
+      //   args: [],
+      //   callbackId: this.taskId++,
+      // });
+      // this.parseResult(result); // only check for exceptions
       this.worker.terminate();
     }
   }
