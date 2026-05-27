@@ -322,7 +322,7 @@ function handleError(err) {
   const stack = err instanceof Error && err.stack ? String(err.stack) : '';
   msg({
     verb: 'signal.abort',
-    args: ['exception', message, stack],
+    args: ['exception', message, stack, err],
   });
 }
 
