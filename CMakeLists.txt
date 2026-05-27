@@ -11,6 +11,7 @@ set(WLLAMA_COMPILE_OPTIONS
     -O3 -msimd128 -DNDEBUG
     -flto=full -frtti
     -pthread
+    -gsource-map
 )
 set(WLLAMA_LINK_OPTIONS
     -flto=full
@@ -28,11 +29,14 @@ set(WLLAMA_LINK_OPTIONS
     -sPTHREAD_POOL_SIZE=Module[\"pthreadPoolSize\"]
     -sUSE_PTHREADS=1
     -pthread
+    -gsource-map
+    --emit-symbol-map
     -Wl,--wrap,fopen
     -Wl,--wrap,fclose
     -Wl,--wrap,fread
     -Wl,--wrap,fseek
     -Wl,--wrap,ftell
+    -Wl,--wrap,abort
 )
 
 if (WLLAMA_COMPAT)

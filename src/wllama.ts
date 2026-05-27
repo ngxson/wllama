@@ -141,6 +141,19 @@ export class WllamaAbortError extends Error {
 }
 
 /**
+ * RuntimeError is thrown when there is an error in the WASM runtime, such as stack overflow, OOM, etc.
+ * Stack trace of the error in the WASM runtime can be included in the error object for debugging purpose.
+ */
+export class WllamaRuntimeError extends Error {
+  override name: string = 'RuntimeError';
+  override stack: string;
+  constructor(message: string, stack: string) {
+    super(message);
+    this.stack = stack;
+  }
+}
+
+/**
  * Set compatibility options for Wllama.
  * By default, these are set to URL of the latest builds on CDN, which requires internet to download. If you want to use local assets or have your own CDN, follow the instruction from @wllama/wllama-compat package.
  */

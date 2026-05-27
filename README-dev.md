@@ -98,6 +98,66 @@ These steps are performed:
 
 The main downside of this approach is that on WebGPU, even though some tensors can be offloaded to the GPU, we still need to allocate the full model in main memory. For example, a 4GB model will still occupy 4GB of main memory, even if half of the layers (~2GB) are offloaded to the GPU.
 
+## Compressed source map
+
+The standard `.wasm.map` produced by emscripten maps every wasm byte offset to a source file and line. For wllama's purposes — resolving a stack-trace function index like `wasm-function[2436]` to a file and line — this is far more data than needed, and it includes noise from emsdk/libc/libc++ that is never actionable.
+
+`scripts/build_source_map.js` post-processes one or more `.wasm.map` files into a single TypeScript file (`src/wasm/source_map.ts`) containing a compact binary source map per build, gzip-compressed and base64-encoded. The corresponding `.wasm` file must be next to each `.map` file (same base name, minus `.map`).
+
+```sh
+node scripts/build_source_map.js \
+  --input default:build/wllama.wasm.map \
+  --input compat:build-compat/wllama.wasm.map \
+  --output src/wasm/source_map.ts
+```
+
+### What it does
+
+- Parses the wasm binary to find the byte offset of every function body
+- Looks up each offset in the source map to get `(file, line)`
+- Drops all emsdk/libc/libc++ functions (marked as no-mapping)
+- Shortens source file paths to minimal disambiguating suffixes (e.g. `models/qwen3vl.cpp` instead of the full path)
+- Encodes the result as a compact binary, then gzip-compresses and base64-encodes it
+
+### Size
+
+| | Standard `.wasm.map` | Compressed output |
+|---|---|---|
+| Raw size | ~5 MB | ~22 KB binary |
+| Shipped size | — | ~9 KB (gzipped) / ~12 KB (base64 in TS) |
+| Granularity | per instruction | per function |
+| emsdk entries | included | dropped |
+
+### Binary format (before gzip)
+
+All integers are little-endian.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ HEADER (12 bytes)                                       │
+│   u32  first_func_id   — wasm function index of entry 0 │
+│   u32  num_funcs       — number of functions            │
+│   u32  num_sources     — number of source files         │
+├─────────────────────────────────────────────────────────┤
+│ SOURCE NAME TABLE                                       │
+│   for each source (num_sources entries):                │
+│     u8   length        — byte length of name            │
+│     u8[] name          — UTF-8 filename (no null term)  │
+├─────────────────────────────────────────────────────────┤
+│ FILE INDEX STREAM  (RLE)                                │
+│   repeated until num_funcs values decoded:              │
+│     u16  run_length    — how many consecutive functions │
+│     u16  file_idx      — index into source name table   │
+│                          0xFFFF = no mapping            │
+├─────────────────────────────────────────────────────────┤
+│ LINE NUMBER STREAM                                      │
+│   u16[num_funcs]       — source line per function       │
+│                          (0 when file_idx == 0xFFFF)    │
+└─────────────────────────────────────────────────────────┘
+```
+
+To decode at runtime: base64-decode → `DecompressionStream('gzip')` → parse binary. Given a function index `id`, the entry is at position `id - first_func_id` in both streams.
+
 ## Build process
 
 The build process uses emscripten in docker to compile the project.

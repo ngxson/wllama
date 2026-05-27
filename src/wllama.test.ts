@@ -329,6 +329,23 @@ test.sequential('generates chat completion using async iterator', async () => {
   await wllama.exit();
 });
 
+test.sequential('stack trace (abort)', async () => {
+  const wllama = createWllama();
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    pooling_type: 'test_stack_trace_abort' as any,
+  });
+  expect(wllama.isModelLoaded()).toBe(true);
+
+  try {
+    await wllama.createCompletion({ prompt: 'test', max_tokens: 1 });
+  } catch (e) {
+    expect((e as Error).name).toBe('RuntimeError');
+    expect((e as Error).stack).toMatch(/server_response::send/);
+  }
+
+  await wllama.exit();
+});
+
 test.sequential('cleans up resources', async () => {
   const wllama = createWllama();
   await wllama.loadModelFromUrl(TINY_MODEL);

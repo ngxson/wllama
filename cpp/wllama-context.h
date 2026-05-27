@@ -27,6 +27,29 @@
   glue_inbuf inbuf(req_raw);    \
   req.handler.deserialize(inbuf);
 
+// for debugging
+enum TEST_STACK_TRACE
+{
+  TEST_STACK_TRACE_NONE = 0,
+  TEST_STACK_TRACE_ABORT = 1,
+  TEST_STACK_TRACE_OOB = 2,
+};
+static TEST_STACK_TRACE test_stack_trace = TEST_STACK_TRACE_NONE;
+extern "C" void __real_abort(void);
+extern "C" void __wrap_abort(void)
+{
+  char buf[4096];
+  emscripten_get_callstack(EM_LOG_JS_STACK | EM_LOG_DEMANGLE | EM_LOG_NO_PATHS, buf, sizeof(buf));
+  for (size_t i = 0; i < sizeof(buf); i++)
+  {
+    if (buf[i] == '\n')
+      buf[i] = '|';
+  }
+  fprintf(stderr, "@@STACK@@%s\n", buf);
+  fflush(stderr);
+  __real_abort();
+}
+
 inline std::vector<char> convert_string_to_buf(std::string &input)
 {
   std::vector<char> output;
@@ -78,6 +101,17 @@ inline static enum llama_pooling_type pooling_type_from_str(const std::string &s
     return LLAMA_POOLING_TYPE_LAST;
   if (s == "rank")
     return LLAMA_POOLING_TYPE_RANK;
+  // for internal wllama testing
+  if (s == "test_stack_trace_abort")
+  {
+    test_stack_trace = TEST_STACK_TRACE_ABORT;
+    return LLAMA_POOLING_TYPE_NONE;
+  }
+  if (s == "test_stack_trace_oob")
+  {
+    test_stack_trace = TEST_STACK_TRACE_OOB;
+    return LLAMA_POOLING_TYPE_NONE;
+  }
   throw std::runtime_error("Invalid pooling type: " + s);
 }
 
@@ -389,8 +423,8 @@ struct wllama_context
       params.swa_full = req.swa_full.value;
     if (req.n_ctx_checkpoints.not_null())
       params.n_ctx_checkpoints = req.n_ctx_checkpoints.value;
-    if (req.checkpoint_every_nt.not_null())
-      params.checkpoint_every_nt = req.checkpoint_every_nt.value;
+    if (req.checkpoint_min_step.not_null())
+      params.checkpoint_min_step = req.checkpoint_min_step.value;
 
     // template params
     if (req.chat_template.not_null())
@@ -799,6 +833,17 @@ void server_queue::pop_deferred_task(int id_slot)
 
 void server_response::send(server_task_result_ptr &&result)
 {
+  if (test_stack_trace == TEST_STACK_TRACE_ABORT)
+  {
+    LOG_DBG("%s: force abort for testing\n", __func__);
+    abort();
+  }
+  else if (test_stack_trace == TEST_STACK_TRACE_OOB)
+  {
+    LOG_DBG("%s: force out-of-bounds for testing\n", __func__);
+    int *ptr = reinterpret_cast<int *>(0x40000000); // 1GB
+    *ptr = 0;
+  }
   LOG_DBG("%s\n", __func__);
   queue_results.push_back(std::move(result));
 }
@@ -1042,4 +1087,17 @@ std::pair<long, std::vector<char>> common_remote_get_content(const std::string &
                                                              const common_remote_params &params)
 {
   throw std::runtime_error("common_remote_get_content is not implemented in wllama");
+}
+
+std::vector<llama_device_memory_data> common_get_device_memory_data(
+    const char *path_model,
+    const struct llama_model_params *mparams,
+    const struct llama_context_params *cparams,
+    std::vector<ggml_backend_dev_t> &devs,
+    uint32_t &hp_ngl,
+    uint32_t &hp_n_ctx_train,
+    uint32_t &hp_n_expert,
+    enum ggml_log_level log_level)
+{
+  throw std::runtime_error("common_get_device_memory_data is not implemented in wllama");
 }

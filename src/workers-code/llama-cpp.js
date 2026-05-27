@@ -7,6 +7,7 @@ let wllamaDebug;
 
 let Module = null;
 let isCompat = false;
+let lastStack = '';
 
 //////////////////////////////////////////////////////////////
 // UTILS
@@ -56,6 +57,10 @@ const getWModuleConfig = (_argMainScriptBlob) => {
     printErr: function (text) {
       if (arguments.length > 1)
         text = Array.prototype.slice.call(arguments).join(' ');
+      if (text.startsWith('@@STACK@@')) {
+        lastStack = text.slice('@@STACK@@'.length);
+        return;
+      }
       const logLine = cppLogToJSLog(text);
       msg({ verb: 'console.' + logLine.level, args: [logLine.text] });
     },
@@ -81,8 +86,8 @@ const getWModuleConfig = (_argMainScriptBlob) => {
     mainScriptUrlOrBlob: argMainScriptBlob,
     pthreadPoolSize,
     wasmMemory: pthreadPoolSize > 1 ? getWasmMemory() : null,
-    onAbort: function (text) {
-      msg({ verb: 'signal.abort', args: [text] });
+    onAbort: function (message) {
+      msg({ verb: 'signal.abort', args: ['abort', message, lastStack] });
     },
   };
 };
@@ -302,6 +307,13 @@ const callWrapper = (name, ret, args, isAsync) => {
   };
 };
 
+function handleError(err) {
+  msg({
+    verb: 'signal.abort',
+    args: ['exception', err.message || 'Unknown error', err.stack.toString()],
+  });
+}
+
 onmessage = async (e) => {
   if (!e.data) return;
   const { verb, args, callbackId } = e.data;
@@ -364,7 +376,7 @@ onmessage = async (e) => {
       };
       wModuleInit();
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -388,7 +400,7 @@ onmessage = async (e) => {
       const fileId = heapfsAlloc(argFilename, argSize, argAllocBuffer);
       msg({ callbackId, result: { fileId } });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -401,7 +413,7 @@ onmessage = async (e) => {
       const writtenBytes = heapfsWrite(argFileId, argBuffer, argOffset);
       msg({ callbackId, result: { writtenBytes } });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -411,7 +423,7 @@ onmessage = async (e) => {
       const result = await wllamaStart();
       msg({ callbackId, result });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -445,7 +457,7 @@ onmessage = async (e) => {
       outputBuffer.set(outputSrcView, 0); // copy it
       msg({ callbackId, result: outputBuffer }, [outputBuffer.buffer]);
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -455,7 +467,7 @@ onmessage = async (e) => {
       const result = await wllamaExit();
       msg({ callbackId, result });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -465,7 +477,7 @@ onmessage = async (e) => {
       const result = await wllamaDebug();
       msg({ callbackId, result });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
