@@ -8,6 +8,7 @@ let wllamaDebug;
 let Module = null;
 let isCompat = false;
 let lastStack = '';
+let isAborted = false;
 
 //////////////////////////////////////////////////////////////
 // UTILS
@@ -87,6 +88,7 @@ const getWModuleConfig = (_argMainScriptBlob) => {
     pthreadPoolSize,
     wasmMemory: pthreadPoolSize > 1 ? getWasmMemory() : null,
     onAbort: function (message) {
+      isAborted = true;
       msg({ verb: 'signal.abort', args: ['abort', message, lastStack] });
     },
   };
@@ -308,6 +310,9 @@ const callWrapper = (name, ret, args, isAsync) => {
 };
 
 function handleError(err) {
+  // If WASM already aborted, onAbort already sent signal.abort; skip to avoid
+  // re-reporting the resulting WebAssembly.RuntimeError as a JS exception.
+  if (isAborted) return;
   const message =
     err instanceof Error
       ? err.message

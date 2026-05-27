@@ -6,7 +6,7 @@ declare const __GITHUB_CI__: boolean;
 // typeof guard handles the case where vitest define is not configured.
 if (typeof __GITHUB_CI__ !== 'undefined' && __GITHUB_CI__) {
   beforeEach(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   });
 }
 import { Wllama, type WllamaConfig } from './wllama';
