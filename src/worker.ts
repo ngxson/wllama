@@ -425,8 +425,7 @@ export class ProxyToWorker {
   }
 
   private abort(text: string, stack: string) {
-    return; // TEST
-    /*const error = new WllamaRuntimeError(
+    const error = new WllamaRuntimeError(
       text.length == 0 ? '(unknown error)' : text,
       stack
     );
@@ -439,6 +438,6 @@ export class ProxyToWorker {
       const pendingTask = this.taskQueue.pop();
       if (!pendingTask) break;
       pendingTask.reject(error);
-    }*/
+    }
   }
 }
