@@ -12,6 +12,9 @@ const chromeArgsWebGPU = [
 ];
 
 export default defineConfig({
+  define: {
+    __GITHUB_CI__: JSON.stringify(!!process.env.GITHUB_ACTIONS),
+  },
   test: {
     exclude: [
       '**/node_modules/**',

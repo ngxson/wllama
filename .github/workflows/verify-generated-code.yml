@@ -3,6 +3,8 @@ name: Verify generated worker code is up-to-date
 on:
   # Runs on pushes and PRs
   push:
+    branches:
+      - master
   pull_request:
     branches:
       - master

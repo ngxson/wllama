@@ -1,8 +1,11 @@
-import { test, expect, afterEach } from 'vitest';
+import { test, expect, beforeEach } from 'vitest';
 
-// Add a 2s delay between tests on GitHub CI to avoid rate limits
-if (import.meta.env.GITHUB_ACTIONS) {
-  afterEach(async () => {
+declare const __GITHUB_CI__: boolean;
+
+// Add a 2s delay before each test on GitHub CI to avoid HuggingFace rate limits.
+// typeof guard handles the case where vitest define is not configured.
+if (typeof __GITHUB_CI__ !== 'undefined' && __GITHUB_CI__) {
+  beforeEach(async () => {
     await new Promise((resolve) => setTimeout(resolve, 2000));
   });
 }
