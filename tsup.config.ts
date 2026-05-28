@@ -15,7 +15,7 @@ const baseConfig: Options = {
 const browserConfig: Options = {
   ...baseConfig,
   platform: 'browser',
-  target: 'es2015',
+  target: 'es2020',
   splitting: false,
   outDir: 'esm',
 };
