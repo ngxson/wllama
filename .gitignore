@@ -10,6 +10,7 @@ node_modules
 /wasm
 /esm
 /models
+/test-results
 _tmp
 
 /scripts/_tmp_hf_space

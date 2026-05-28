@@ -363,6 +363,7 @@ test.sequential('stack trace (OOB memory access)', async () => {
   const wllama = createWllama();
   await wllama.loadModelFromUrl(TINY_MODEL, {
     pooling_type: 'test_stack_trace_oob' as any,
+    n_threads: 1, // multithread stucks on github CI but not on local run, why?
   });
   expect(wllama.isModelLoaded()).toBe(true);
 
