@@ -199,8 +199,8 @@ export class CacheManager {
     options: DownloadOptions
   ): Promise<void> {
     const response = await fetch(url, {
-      headers: options.headers,
-      signal: options.signal,
+      ...(options.headers !== undefined && { headers: options.headers }),
+      ...(options.signal !== undefined && { signal: options.signal }),
     });
     if (!response.ok || !response.body) {
       throw new Error(`Network error: ${response.status} ${response.statusText}`);
