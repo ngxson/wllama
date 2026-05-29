@@ -9,12 +9,13 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 set(WLLAMA_COMPILE_OPTIONS
     -O3 -msimd128 -DNDEBUG
-    -flto=full -frtti
+    # -flto=full # note: this breaks things, better to disable
+    -frtti
     -pthread
     -gsource-map
 )
 set(WLLAMA_LINK_OPTIONS
-    -flto=full
+    # -flto=full # note: this breaks things, better to disable
     --no-entry
     -sEXPORT_ES6=0
     -sMODULARIZE=0
