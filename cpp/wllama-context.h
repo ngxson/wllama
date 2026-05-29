@@ -389,8 +389,8 @@ struct wllama_context
       params.swa_full = req.swa_full.value;
     if (req.n_ctx_checkpoints.not_null())
       params.n_ctx_checkpoints = req.n_ctx_checkpoints.value;
-    if (req.checkpoint_every_nt.not_null())
-      params.checkpoint_every_nt = req.checkpoint_every_nt.value;
+    // if (req.checkpoint_every_nt.not_null())
+    //   params.checkpoint_every_nt = req.checkpoint_every_nt.value;
 
     // template params
     if (req.chat_template.not_null())
@@ -1043,3 +1043,15 @@ std::pair<long, std::vector<char>> common_remote_get_content(const std::string &
 {
   throw std::runtime_error("common_remote_get_content is not implemented in wllama");
 }
+
+std::vector<llama_device_memory_data> common_get_device_memory_data(
+        const char * path_model,
+        const llama_model_params * mparams,
+        const llama_context_params * cparams,
+        std::vector<ggml_backend_dev_t> & devs,
+        uint32_t & hp_ngl,
+        uint32_t & hp_n_ctx_train,
+        uint32_t & hp_n_expert,
+        ggml_log_level log_level) {
+          throw std::runtime_error("common_get_device_memory_data is not implemented in wllama");
+        }
