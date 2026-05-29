@@ -9,6 +9,7 @@ let Module = null;
 let isCompat = false;
 let lastStack = '';
 let isAborted = false;
+let hasMultithread = false;
 
 //////////////////////////////////////////////////////////////
 // UTILS
@@ -44,6 +45,14 @@ const getWModuleConfig = (_argMainScriptBlob) => {
   var argMainScriptBlob = _argMainScriptBlob;
 
   isCompat = RUN_OPTIONS.compat;
+  hasMultithread = pthreadPoolSize > 1;
+
+  msg({
+    verb: 'console.debug',
+    args: [
+      `Multithread enabled: ${hasMultithread}, pthreadPoolSize: ${pthreadPoolSize}`,
+    ],
+  });
 
   if (!pathConfig['wllama.wasm']) {
     throw new Error('"wllama.wasm" is missing in pathConfig');
@@ -84,9 +93,11 @@ const getWModuleConfig = (_argMainScriptBlob) => {
         return p;
       }
     },
-    mainScriptUrlOrBlob: argMainScriptBlob,
-    pthreadPoolSize,
-    wasmMemory: pthreadPoolSize > 1 ? getWasmMemory() : null,
+    mainScriptUrlOrBlob: hasMultithread
+      ? argMainScriptBlob
+      : 'throw new Error("Multithreading is not enabled")',
+    pthreadPoolSize: hasMultithread ? pthreadPoolSize : 0,
+    wasmMemory: hasMultithread ? getWasmMemory() : null,
     onAbort: function (message) {
       isAborted = true;
       msg({ verb: 'signal.abort', args: ['abort', message, lastStack, null] });

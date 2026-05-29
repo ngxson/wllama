@@ -1027,6 +1027,10 @@ export class Wllama {
         }
       }
 
+      if (jsonString == 'null') {
+        continue; // this is the "is_begin = true" chunk on server side, we can ignore it
+      }
+
       let jsonData = this.jsonDecode(jsonString);
       finalResult = jsonData;
       if (result_chunk.is_error) {
