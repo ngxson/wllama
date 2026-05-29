@@ -191,6 +191,10 @@ export class Wllama {
   private hasEncoder: boolean = false;
   private decoderStartToken: number = -1;
 
+  // note: we overlay instead of using llama-server default_template_kwargs, because we cannot transfer complex data structure via GLUE
+  // overlay allow mixed data type or nested structure for kwargs
+  private chatTemplateKwargs: Record<string, any> = {};
+
   constructor(pathConfig: AssetsPathConfig, wllamaConfig: WllamaConfig = {}) {
     checkEnvironmentCompatible();
     if (!pathConfig) throw new WllamaError('AssetsPathConfig is required');
@@ -648,6 +652,7 @@ export class Wllama {
     this.loadedContextInfo = loadedCtxInfo;
     this.eogTokens = new Set(loadedCtxInfo.list_tokens_eog);
     this.mediaMarker = loadedCtxInfo.media_marker;
+    this.chatTemplateKwargs = params.default_template_kwargs ?? {};
     this.logger().debug({ loadedCtxInfo });
   }
 
@@ -770,6 +775,18 @@ export class Wllama {
   ): Promise<
     ChatCompletionResponse | void | AsyncIterable<ChatCompletionChunk>
   > {
+    // first, try to overlay chatTemplateKwargs
+    if (Object.keys(this.chatTemplateKwargs).length > 0) {
+      options = {
+        ...options,
+        chat_template_kwargs: {
+          ...this.chatTemplateKwargs,
+          ...(options.chat_template_kwargs ?? {}),
+        },
+      };
+    }
+
+    // then, call the corresponding overloaded function
     if (options.stream && (options as any).onData) {
       await this.createCompletionImpl(options);
     } else if (options.stream) {

@@ -111,9 +111,9 @@ export type ChatCompletionParams = {
   max_tokens?: number;
   // stop?: string | string[];
   // n?: number;
-  // logprobs?: boolean;
-  // top_logprobs?: number;
-  // logit_bias?: Record<string, number>;
+  logprobs?: boolean;
+  top_logprobs?: number;
+  logit_bias?: Record<string, number>;
   // tools
   tools?: ChatCompletionTool[];
   tool_choice?: ChatCompletionToolChoice;
@@ -125,6 +125,11 @@ export type ChatCompletionParams = {
   };
   // user-facing
   user?: string;
+  // llama-server-specific
+  chat_template_kwargs?: Record<string, any>;
+  cache_prompt?: boolean;
+  return_tokens?: boolean;
+  timings_per_token?: boolean;
 } & SamplingParams;
 
 // Response types----------

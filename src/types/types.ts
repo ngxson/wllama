@@ -68,6 +68,7 @@ export interface LoadModelParams {
   reasoning_format?: 'none' | 'deepseek-legacy' | 'deepseek';
   skip_chat_parsing?: boolean;
   prefill_assistant?: boolean;
+  default_template_kwargs?: Record<string, any>;
 }
 
 // Note: snake_case is used to match llama.cpp's naming convention
@@ -116,6 +117,7 @@ export interface SamplingParams {
   typ_p?: number | undefined;
   typical_p?: number | undefined;
   logit_bias?: { token: number; bias: number }[] | undefined;
+  ignore_eos?: boolean | undefined;
 }
 
 export interface StreamParams<T> {
