@@ -48,6 +48,7 @@
   },
   "homepage": "https://github.com/ngxson/wllama#readme",
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@vitest/browser": "^2.1.6",
     "express": "^4.18.3",
     "mime-types": "^2.1.35",

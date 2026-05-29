@@ -105,6 +105,7 @@ export type ChatCompletionParams = {
   messages: ChatCompletionMessage[];
   stream?: boolean;
   model?: string;
+  abortSignal?: AbortSignal;
   // sampling
   temperature?: number;
   max_tokens?: number;
@@ -225,6 +226,7 @@ export type RawCompletionParams = {
   prompt: string | string[];
   stream?: boolean;
   model?: string;
+  abortSignal?: AbortSignal;
   suffix?: string;
   max_tokens?: number;
   temperature?: number;

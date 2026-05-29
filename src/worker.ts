@@ -13,6 +13,7 @@
 
 import { glueDeserialize, glueSerialize } from './glue/glue';
 import type { GlueMsg } from './glue/messages';
+import { Debug } from './debug';
 import {
   canUseAsyncFileRead,
   createWorker,
@@ -23,6 +24,7 @@ import {
   LLAMA_CPP_WORKER_CODE,
   WLLAMA_EMSCRIPTEN_CODE,
 } from './workers-code/generated';
+import { WllamaRuntimeError } from './wllama';
 
 interface Logger {
   debug: typeof console.debug;
@@ -216,12 +218,14 @@ export class ProxyToWorker {
 
   async wllamaExit(): Promise<void> {
     if (this.worker) {
-      const result = await this.pushTask({
-        verb: 'wllama.exit',
-        args: [],
-        callbackId: this.taskId++,
-      });
-      this.parseResult(result); // only check for exceptions
+      // we don't actually need to send exit
+      // terminating the worker is faster and resources will be cleaned up by the browser
+      // const result = await this.pushTask({
+      //   verb: 'wllama.exit',
+      //   args: [],
+      //   callbackId: this.taskId++,
+      // });
+      // this.parseResult(result); // only check for exceptions
       this.worker.terminate();
     }
   }
@@ -297,7 +301,7 @@ export class ProxyToWorker {
       this.logger.error('fileReadResponse failed, terminating worker:', err);
       this.worker?.terminate();
       this.worker = undefined;
-      this.abort(`File read failed: ${err}`);
+      this.abort(`File read failed: ${err}`, (err as Error).stack || '');
     }
   }
 
@@ -310,7 +314,7 @@ export class ProxyToWorker {
   private parseResult(result: any): any {
     const parsedResult = JSON.parse(result);
     if (parsedResult && parsedResult['error']) {
-      throw new Error('Unknown error, please see console.log');
+      throw new WllamaRuntimeError('Unknown error, please see console.log', '');
     }
     return parsedResult;
   }
@@ -356,6 +360,7 @@ export class ProxyToWorker {
   private onRecvMsg(e: MessageEvent<any>) {
     if (!e.data) return; // ignore
     const { verb, args } = e.data;
+    const isCompatBuild = this.resources.compat;
     if (verb && verb.startsWith('console.')) {
       if (this.suppressNativeLog) {
         return;
@@ -366,7 +371,32 @@ export class ProxyToWorker {
       if (verb.endsWith('error')) this.logger.error(...args);
       return;
     } else if (verb === 'signal.abort') {
-      this.abort(args[0]);
+      const [signalType, message, rawStack, originalErr] = args as [
+        string,
+        string,
+        string,
+        any,
+      ];
+      if (originalErr) {
+        this.logger.error(originalErr);
+      }
+      (async () => {
+        let stack = '';
+        let newMsg = message.replace(
+          'Build with -sASSERTIONS for more info.',
+          ''
+        );
+        if (signalType === 'abort') {
+          newMsg = `(ABORT) ${newMsg}`;
+          stack = rawStack.replace(/\|/g, '\n');
+        } else if (signalType === 'exception') {
+          stack = rawStack;
+        }
+        const decoded = await Debug.decodeStackTrace(stack, isCompatBuild);
+        this.logger.error(`Stack trace (${signalType}):\n` + decoded);
+        this.abort(newMsg, decoded);
+      })();
+      return;
     }
 
     // handle fs.read_req signal from wasm (JSPI-suspended worker)
@@ -394,15 +424,20 @@ export class ProxyToWorker {
     }
   }
 
-  private abort(text: string) {
+  private abort(text: string, stack: string) {
+    const error = new WllamaRuntimeError(
+      text.length == 0 ? '(unknown error)' : text,
+      stack
+    );
     while (this.resultQueue.length > 0) {
       const waitingTask = this.resultQueue.pop();
       if (!waitingTask) break;
-      waitingTask.reject(
-        new Error(
-          `Received abort signal from llama.cpp; Message: ${text || '(empty)'}`
-        )
-      );
+      waitingTask.reject(error);
+    }
+    while (this.taskQueue.length > 0) {
+      const pendingTask = this.taskQueue.pop();
+      if (!pendingTask) break;
+      pendingTask.reject(error);
     }
   }
 }

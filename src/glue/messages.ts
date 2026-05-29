@@ -175,7 +175,7 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "int",
-        "name": "checkpoint_every_nt",
+        "name": "checkpoint_min_step",
         "isNullable": true
       },
       {
@@ -613,7 +613,7 @@ export interface GlueMsgLoadReq {
   flash_attn?: boolean | undefined;
   swa_full?: boolean | undefined;
   n_ctx_checkpoints?: number | undefined;
-  checkpoint_every_nt?: number | undefined;
+  checkpoint_min_step?: number | undefined;
   chat_template?: string | undefined;
   jinja?: boolean | undefined;
   default_template_kwargs_keys?: string[] | undefined;

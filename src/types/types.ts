@@ -121,7 +121,6 @@ export interface SamplingParams {
 export interface StreamParams<T> {
   stream: true;
   onData: (data: T) => void;
-  abortSignal?: AbortSignal;
 }
 
 export enum LogLevel {

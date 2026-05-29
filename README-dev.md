@@ -26,10 +26,10 @@ GLUE is a home-grown binary protocol inspired by Protobuf. It is used internally
 The main goal of GLUE is to allow a type-safe interface with low overhead. It works by serializing messages into `ArrayBuffer` and transferring them using [Transferable objects](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects), which avoids copying.
 
 **Wire format:**
-- 4 bytes — magic number (`GLUE`)
-- 4 bytes — version number (`GLUE_VERSION`)
-- 8 bytes — message prototype ID
-- 4 bytes — message length (unsigned)
+- 4 bytes - magic number (`GLUE`)
+- 4 bytes - version number (`GLUE_VERSION`)
+- 8 bytes - message prototype ID
+- 4 bytes - message length (unsigned)
 - message fields, each encoded as:
   - 4 bytes data type (e.g. `int`, `float`, `str`, `raw`, and array variants)
   - 4 bytes size (only for arrays and strings)
@@ -97,6 +97,59 @@ These steps are performed:
 - The model load is then triggered with `mmap = true`, and `mmap()` is wrapped to return a pointer to the correct data in the buffer allocated in step 1
 
 The main downside of this approach is that on WebGPU, even though some tensors can be offloaded to the GPU, we still need to allocate the full model in main memory. For example, a 4GB model will still occupy 4GB of main memory, even if half of the layers (~2GB) are offloaded to the GPU.
+
+## Compressed source map
+
+Emscripten's `--emit-symbol-map` flag produces a `.js.symbols` file mapping each wasm function index to its demangled C++ name. `scripts/build_source_map.js` reads this file alongside the `.wasm` binary and produces a single TypeScript file (`src/wasm/source-map.ts`) containing a compact deduplicated name table per build, gzip-compressed and base64-encoded.
+
+The script runs automatically as part of the docker build (see `scripts/docker-compose.yml`). It can also be run manually:
+
+```sh
+# uses build/ and build-compat/ by default
+node scripts/build_source_map.js
+
+# or with explicit paths
+node scripts/build_source_map.js \
+  --input default:build \
+  --input compat:build-compat \
+  --output src/wasm/source-map.ts
+```
+
+### Name cleaning rules
+
+Raw demangled names can be hundreds of characters. The following rules are applied in order:
+
+1. **std:: collapse** - any name starting with `std::` is replaced with the single hint `std::...`
+2. **Lambda/closure extraction** - names containing `::$_N` or `::'lambda'` are replaced with the nearest enclosing context (the segment inside the last `<…>` before the marker)
+3. **Parameter stripping** - parameter lists are dropped; empty `()` is kept, non-empty is removed entirely
+4. **libc++ internals** - `::__1::`, `::__2::`, etc. are collapsed to `::`
+5. **ABI tags** - `[abi:…]` annotations are removed
+6. **Template truncation** - template argument content longer than 10 characters is truncated to `<first10chars...>`
+7. **Final cleanup** - double `::::` collapsed, whitespace normalised
+
+### Binary format (before gzip)
+
+All integers are little-endian.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ HEADER (12 bytes)                                        │
+│   u32  first_func_id  - wasm function index of entry 0  │
+│   u32  num_funcs      - number of functions              │
+│   u32  num_names      - number of unique names           │
+├──────────────────────────────────────────────────────────┤
+│ NAME TABLE  (num_names entries)                          │
+│   for each name:                                         │
+│     u8   length       - byte length of name (max 254)   │
+│     u8[] name         - UTF-8 string (no null term)      │
+├──────────────────────────────────────────────────────────┤
+│ INDEX ARRAY  (num_funcs × u16)                           │
+│   u16  name_idx       - index into name table            │
+│                         0xFFFF = no name / unknown       │
+└──────────────────────────────────────────────────────────┘
+```
+
+To decode at runtime: base64-decode -> `DecompressionStream('gzip')` -> parse binary. Given a wasm function index `id`, look up `index_array[id - first_func_id]` to get the name table slot.
 
 ## Build process
 

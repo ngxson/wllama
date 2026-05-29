@@ -1,4 +1,14 @@
-import { test, expect } from 'vitest';
+import { test, expect, beforeEach } from 'vitest';
+
+declare const __GITHUB_CI__: boolean;
+
+// Add a small delay before each test on GitHub CI to avoid HuggingFace rate limits.
+// typeof guard handles the case where vitest define is not configured.
+if (typeof __GITHUB_CI__ !== 'undefined' && __GITHUB_CI__) {
+  beforeEach(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+}
 import { Wllama, type WllamaConfig } from './wllama';
 
 const CONFIG_PATHS = {
@@ -151,16 +161,19 @@ test.sequential('abort signal', async () => {
     top_k: 40,
     seed: 42,
     stream: true,
-    onData: () => {},
     abortSignal: abortController.signal,
   });
 
   let i = 0;
-  for await (const _ of stream) {
-    if (i === 2) {
-      abortController.abort();
+  try {
+    for await (const _ of stream) {
+      if (i === 2) {
+        abortController.abort();
+      }
+      i++;
     }
-    i++;
+  } catch (e) {
+    expect((e as Error).name).toBe('AbortError');
   }
 
   expect(i).toBe(4);
@@ -310,7 +323,6 @@ test.sequential('generates chat completion using async iterator', async () => {
     max_tokens: 10,
     temperature: 0.0,
     stream: true,
-    onData: () => {},
   });
 
   let finalText = '';
@@ -325,6 +337,43 @@ test.sequential('generates chat completion using async iterator', async () => {
 
   expect(finalText.length).toBeGreaterThan(10);
   expect(finalText).toMatch(/(Sudden|big|scary)+/);
+
+  await wllama.exit();
+});
+
+test.sequential('stack trace (abort)', async () => {
+  const wllama = createWllama();
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    pooling_type: 'test_stack_trace_abort' as any,
+  });
+  expect(wllama.isModelLoaded()).toBe(true);
+
+  const err1: unknown = await wllama
+    .createCompletion({ prompt: 'test', max_tokens: 1 })
+    .catch((e: unknown) => e);
+  expect(err1).toBeInstanceOf(Error);
+  expect((err1 as Error).name).toBe('RuntimeError');
+  expect((err1 as Error).stack).toMatch(/__wrap_abort/);
+  expect((err1 as Error).stack).toMatch(/server_response::send/);
+
+  await wllama.exit();
+});
+
+// TODO @ngxson : this stucks on github CI but not on local run, investigate why and re-enable
+test.skip('stack trace (OOB memory access)', async () => {
+  const wllama = createWllama();
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    pooling_type: 'test_stack_trace_oob' as any,
+    n_threads: 1, // multithread stucks on github CI but not on local run, why?
+  });
+  expect(wllama.isModelLoaded()).toBe(true);
+
+  const err2: unknown = await wllama
+    .createCompletion({ prompt: 'test', max_tokens: 1 })
+    .catch((e: unknown) => e);
+  expect(err2).toBeInstanceOf(Error);
+  expect((err2 as Error).name).toBe('RuntimeError');
+  expect((err2 as Error).stack).toMatch(/server_response::send/);
 
   await wllama.exit();
 });

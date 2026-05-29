@@ -229,7 +229,6 @@ export const WllamaProvider = ({ children }: any) => {
         temperature: currParams.temperature,
         stream: true,
         abortSignal: abortController.signal,
-        onData: () => {},
       });
       for await (const chunk of stream) {
         if (stopSignal) {
