@@ -4,6 +4,11 @@
 /llama.cpp
 /models
 /build
+/build-compat
 /cache
+/compat
 /.github
 /.vscode
+/.claude
+a.out.js
+a.out.wasm

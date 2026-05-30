@@ -1,11 +1,12 @@
 {
   "name": "@wllama/wllama-compat",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "description": "Optional package providing compatibility with older browsers for @wllama/wllama",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "upload": "npm publish --access public"
+    "upload": "npm publish --access public",
+    "prepublishOnly": "node ../scripts/check_package_size.js"
   },
   "repository": {
     "type": "git",
