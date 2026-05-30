@@ -1,6 +1,7 @@
 node_modules
 .DS_Store
 .vscode
+.claude
 /cache
 /build
 /build-compat
