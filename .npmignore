@@ -4,7 +4,7 @@
 /llama.cpp
 /models
 /build
-/build-compat
+/build-*
 /cache
 /compat
 /.github
