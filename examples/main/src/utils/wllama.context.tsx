@@ -6,7 +6,11 @@ import {
   WllamaStorage,
 } from './utils';
 import { Model, ModelManager, Wllama } from '@wllama/wllama';
-import { DEFAULT_INFERENCE_PARAMS, WLLAMA_CONFIG_PATHS } from '../config';
+import {
+  DEFAULT_INFERENCE_PARAMS,
+  WLLAMA_COMPAT_CONFIG,
+  WLLAMA_CONFIG_PATHS,
+} from '../config';
 import {
   InferenceParams,
   Message,
@@ -59,11 +63,17 @@ interface WllamaContextValue {
 
 const WllamaContext = createContext<WllamaContextValue>({} as any);
 
+const createWllamaInstance = () => {
+  const instance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
+  instance.setCompat(WLLAMA_COMPAT_CONFIG);
+  return instance;
+};
+
 const modelManager = new ModelManager();
-let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
+let wllamaInstance = createWllamaInstance();
 let stopSignal = false;
 const resetWllamaInstance = () => {
-  wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
+  wllamaInstance = createWllamaInstance();
 };
 
 export const WllamaProvider = ({ children }: any) => {
@@ -219,7 +229,6 @@ export const WllamaProvider = ({ children }: any) => {
         temperature: currParams.temperature,
         stream: true,
         abortSignal: abortController.signal,
-        onData: () => {},
       });
       for await (const chunk of stream) {
         if (stopSignal) {

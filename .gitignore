@@ -1,14 +1,17 @@
 node_modules
 .DS_Store
 .vscode
+.claude
 /cache
 /build
+/build-compat
 /build-wasm
 /docs
 /dist
 /wasm
 /esm
 /models
+/test-results
 _tmp
 
 /scripts/_tmp_hf_space
@@ -18,3 +21,5 @@ tmp.patch
 
 a.out.js
 a.out.wasm
+
+/compat/wasm/*.wasm

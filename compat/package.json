@@ -1,0 +1,31 @@
+{
+  "name": "@wllama/wllama-compat",
+  "version": "3.4.1",
+  "description": "Optional package providing compatibility with older browsers for @wllama/wllama",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "upload": "npm publish --access public",
+    "prepublishOnly": "node ../scripts/check_package_size.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ngxson/wllama.git"
+  },
+  "keywords": [
+    "wasm",
+    "webassembly",
+    "llama",
+    "llm",
+    "ai",
+    "rag",
+    "embeddings",
+    "generation"
+  ],
+  "author": "Xuan Son NGUYEN <contact@ngxson.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ngxson/wllama/issues"
+  },
+  "homepage": "https://github.com/ngxson/wllama#readme"
+}

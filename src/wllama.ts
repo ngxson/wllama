@@ -1,4 +1,4 @@
-import { ProxyToWorker } from './worker';
+import { ProxyToWorker, type WllamaWorkerResources } from './worker';
 import {
   absoluteUrl,
   canUseAsyncFileRead,
@@ -10,6 +10,7 @@ import {
   isSupportMultiThread,
   isSupportWebGPU,
   MMPROJ_FILE_NAME,
+  needCompat,
   prepareBlobs,
 } from './utils';
 import CacheManager, { type DownloadOptions } from './cache-manager';
@@ -17,6 +18,7 @@ import { ModelManager, Model, type ModelSource } from './model-manager';
 import type {
   GlueMsgCompletionRes,
   GlueMsgEmbeddingRes,
+  GlueMsgRerankRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
   GlueMsgTestBackendOpsRes,
@@ -37,9 +39,12 @@ import type {
   RawCompletionChunk,
   RawCompletionParams,
   RawCompletionResponse,
+  RerankParams,
+  RerankResponse,
 } from './types/oai-compat';
 import { LogLevel } from './types/types';
 import { getHFModelSource, type HuggingFaceParams } from './huggingface';
+import { WasmCompatFromCDN } from './wasm-from-cdn';
 
 export interface WllamaLogger {
   debug: typeof console.debug;
@@ -136,17 +141,42 @@ export class WllamaAbortError extends Error {
   }
 }
 
+/**
+ * RuntimeError is thrown when there is an error in the WASM runtime, such as stack overflow, OOM, etc.
+ * Stack trace of the error in the WASM runtime can be included in the error object for debugging purpose.
+ */
+export class WllamaRuntimeError extends Error {
+  override name: string = 'RuntimeError';
+  override stack: string;
+  constructor(message: string, stack: string) {
+    super(message);
+    this.stack = stack;
+  }
+}
+
+/**
+ * Set compatibility options for Wllama.
+ * By default, these are set to URL of the latest builds on CDN, which requires internet to download. If you want to use local assets or have your own CDN, follow the instruction from @wllama/wllama-compat package.
+ */
+export interface WllamaCompat {
+  worker: string | { code: string };
+  wasm: string;
+}
+
 export class Wllama {
   // The CacheManager and ModelManager are singleton, can be accessed by user
   public cacheManager: CacheManager;
   public modelManager: ModelManager;
+
+  private compat: WllamaCompat | null = null;
 
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
   private nbThreads: number = 1;
-  // private useEmbeddings: boolean = false;
+  private useEmbeddings: boolean = false;
+  private useRerank: boolean = false;
   // available when loaded
   private loadedContextInfo: LoadedContextInfo = null as any;
   private seed: number | undefined = undefined;
@@ -162,6 +192,10 @@ export class Wllama {
   private hasEncoder: boolean = false;
   private decoderStartToken: number = -1;
 
+  // note: we overlay instead of using llama-server default_template_kwargs, because we cannot transfer complex data structure via GLUE
+  // overlay allow mixed data type or nested structure for kwargs
+  private chatTemplateKwargs: Record<string, any> = {};
+
   constructor(pathConfig: AssetsPathConfig, wllamaConfig: WllamaConfig = {}) {
     checkEnvironmentCompatible();
     if (!pathConfig) throw new WllamaError('AssetsPathConfig is required');
@@ -176,13 +210,7 @@ export class Wllama {
         parallelDownloads: wllamaConfig.parallelDownloads,
         allowOffline: wllamaConfig.allowOffline,
       });
-
-    // warn user to enable JSPI on firefox
-    if (isFirefox() && !isSupportJSPI()) {
-      this.logger().warn(
-        'WebGPU is disabled on Firefox due to missing JSPI support. Please enable "javascript.options.wasm_js_promise_integration" in "about:config" to allow WebGPU support.'
-      );
-    }
+    this.setCompat('default');
   }
 
   private logger() {
@@ -205,6 +233,24 @@ export class Wllama {
    */
   static getLibllamaVersion(): string {
     return LIBLLAMA_VERSION;
+  }
+
+  /**
+   * Set compatibility options for Wllama.
+   * @param compat Set to null to disable compatibility, or 'default' to use the default compat resources from CDN.
+   * @param mode 'safari' by default; If set to 'firefox_safari', the compat mode will **also** be enabled on Firefox, which will significantly degrade the performance but allow using WebGPU on Firefox.
+   */
+  setCompat(
+    compat: WllamaCompat | null | 'default',
+    mode: 'safari' | 'firefox_safari' = 'safari'
+  ) {
+    if (mode === 'safari') {
+      if (isFirefox()) {
+        this.compat = null;
+        return;
+      }
+    }
+    this.compat = compat === 'default' ? WasmCompatFromCDN : compat;
   }
 
   /**
@@ -438,13 +484,54 @@ export class Wllama {
     const nbThreads = params.n_threads ?? hwConccurency;
     this.nbThreads = nbThreads;
     this.useMultiThread = supportMultiThread && nbThreads > 1;
-    const mPathConfig = {
-      'wllama.wasm': absoluteUrl(this.pathConfig['default']),
+
+    // prepare worker resources
+    const workerResources: WllamaWorkerResources = {
+      wasmPath: absoluteUrl(this.pathConfig['default']),
+      compat: false,
     };
+    if (needCompat()) {
+      if (!this.compat) {
+        this.logger().warn(
+          'Not using compat mode' +
+            (isFirefox()
+              ? ' (expected on Firefox - WebGPU will be disabled)'
+              : '')
+        );
+      } else {
+        const isUsingDefault =
+          this.compat.worker === WasmCompatFromCDN.worker &&
+          this.compat.wasm === WasmCompatFromCDN.wasm;
+        if (isUsingDefault) {
+          this.logger().warn(
+            'Compatibility mode is activated, using resources from CDN. To use local resources, please refer to @wllama/wllama-compat package.'
+          );
+          this.logger().warn(
+            'IMPORTANT: Performance will be significantly degraded in compatibility mode.'
+          );
+        }
+
+        workerResources.wasmPath = absoluteUrl(this.compat.wasm);
+        workerResources.jsPath = this.compat.worker;
+        workerResources.compat = true;
+      }
+    }
+
+    if (isFirefox()) {
+      if (workerResources.compat) {
+        this.logger().warn(
+          'Using compat mode on Firefox, performance will be significantly degraded; Consider enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
+        );
+      } else if (!isSupportJSPI()) {
+        this.logger().warn(
+          'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat mode, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
+        );
+      }
+    }
 
     // initialize the worker
     this.proxy = new ProxyToWorker(
-      mPathConfig,
+      workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
       this.config.suppressNativeLog ?? false,
       this.logger()
@@ -471,7 +558,8 @@ export class Wllama {
     const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
       _name: 'load_req',
       log_level: logLevel,
-      use_mmap: !canUseAsyncFileRead(), // if async read is not supported, use mmap; refer to README-dev.md for more details
+      // if async read is not supported, use mmap; refer to README-dev.md for more details
+      use_mmap: !canUseAsyncFileRead(workerResources.compat),
       use_mlock: false,
       n_gpu_layers: params.n_gpu_layers ?? 99999,
       n_ctx: params.n_ctx ?? 1024,
@@ -501,6 +589,38 @@ export class Wllama {
       swa_full: params.swa_full,
       chat_template: params.chat_template,
       jinja: params.jinja,
+      reasoning: params.reasoning,
+      image_min_tokens: params.image_min_tokens,
+      image_max_tokens: params.image_max_tokens,
+      warmup: params.warmup,
+      no_kv_offload: params.no_kv_offload,
+      mmproj_offload: params.mmproj_offload,
+      cont_batching: params.cont_batching,
+      n_keep: params.n_keep,
+      ctx_shift: params.ctx_shift,
+      cache_idle_slots: params.cache_idle_slots,
+      n_cache_reuse: params.n_cache_reuse,
+      lora_paths: params.lora_adapters?.map((a) => a.path),
+      lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
+      lora_init_without_apply: params.lora_init_without_apply,
+      spec_draft_model: params.spec_draft_model,
+      spec_draft_ngl: params.spec_draft_ngl,
+      spec_draft_n_max: params.spec_draft_n_max,
+      spec_draft_n_min: params.spec_draft_n_min,
+      spec_draft_p_min: params.spec_draft_p_min,
+      spec_draft_threads: params.spec_draft_threads,
+      spec_draft_threads_batch: params.spec_draft_threads_batch,
+      kv_overrides_keys: params.kv_overrides
+        ? Object.keys(params.kv_overrides)
+        : undefined,
+      kv_overrides_vals: params.kv_overrides
+        ? Object.values(params.kv_overrides)
+        : undefined,
+      reasoning_budget_tokens: params.reasoning_budget_tokens,
+      reasoning_budget_message: params.reasoning_budget_message,
+      reasoning_format: params.reasoning_format,
+      skip_chat_parsing: params.skip_chat_parsing,
+      prefill_assistant: params.prefill_assistant,
     });
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
@@ -514,7 +634,8 @@ export class Wllama {
     this.bosToken = loadedCtxInfo.token_bos;
     this.eosToken = loadedCtxInfo.token_eos;
     this.eotToken = loadedCtxInfo.token_eot;
-    // this.useEmbeddings = !!params.embeddings;
+    this.useEmbeddings = !!params.embeddings;
+    this.useRerank = params.pooling_type == 'rank';
     this.metadata = {
       hparams: {
         nVocab: loadedCtxInfo.n_vocab,
@@ -532,6 +653,7 @@ export class Wllama {
     this.loadedContextInfo = loadedCtxInfo;
     this.eogTokens = new Set(loadedCtxInfo.list_tokens_eog);
     this.mediaMarker = loadedCtxInfo.media_marker;
+    this.chatTemplateKwargs = params.default_template_kwargs ?? {};
     this.logger().debug({ loadedCtxInfo });
   }
 
@@ -558,6 +680,12 @@ export class Wllama {
   ): Promise<CreateEmbeddingResponse> {
     this.checkModelLoaded();
 
+    if (!this.useEmbeddings) {
+      throw new WllamaError(
+        'Embeddings is not enabled. Please set it via LoadModelParams.embeddings'
+      );
+    }
+
     const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
       'embedding',
       {
@@ -574,7 +702,59 @@ export class Wllama {
       );
     }
 
-    return await this.getRespose(options as any, false);
+    return await this.getResponse(options as any, false);
+  }
+
+  /**
+   * Rerank a list of documents against a query.
+   * Requires the model to be loaded with embeddings: true and pooling_type: 'rank'.
+   * @param options Reranking options (query, documents, top_n)
+   * @returns Reranking response with relevance scores sorted highest first
+   */
+  async createRerank(options: RerankParams): Promise<RerankResponse> {
+    this.checkModelLoaded();
+
+    if (!this.useEmbeddings || !this.useRerank) {
+      throw new WllamaError(
+        'Rerank is not enabled. Please set it via LoadModelParams: embeddings = true and pooling_type = rank'
+      );
+    }
+
+    const top_n = options.top_n ?? options.documents.length;
+    let totalTokens = 0;
+    const rawResults: Array<{ index: number; score: number }> = [];
+
+    for (let i = 0; i < options.documents.length; i++) {
+      const result = await this.proxy.wllamaAction<GlueMsgRerankRes>('rerank', {
+        _name: 'rrnk_req',
+        data_json: JSON.stringify({
+          query: options.query,
+          document: options.documents[i],
+        }),
+      });
+
+      if (!result.success) {
+        throw new WllamaError(
+          'Model failed to start reranking',
+          'inference_error'
+        );
+      }
+
+      const { score, tokens_evaluated } = await this.getRerankResult();
+      totalTokens += tokens_evaluated;
+      rawResults.push({ index: i, score });
+    }
+
+    rawResults.sort((a, b) => b.score - a.score);
+    return {
+      model: this.getModelMetadata().meta['general.name'] ?? '',
+      object: 'list',
+      usage: { prompt_tokens: totalTokens, total_tokens: totalTokens },
+      results: rawResults.slice(0, top_n).map(({ index, score }) => ({
+        index,
+        relevance_score: score,
+      })),
+    };
   }
 
   /**
@@ -587,32 +767,60 @@ export class Wllama {
   ): Promise<ChatCompletionResponse>;
   async createChatCompletion(
     options: ChatCompletionParams & StreamParams<ChatCompletionChunk>
+  ): Promise<void>;
+  async createChatCompletion(
+    options: ChatCompletionParams & { stream: true }
   ): Promise<AsyncIterable<ChatCompletionChunk>>;
   async createChatCompletion(
     options: ChatCompletionParams
-  ): Promise<ChatCompletionResponse | AsyncIterable<ChatCompletionChunk>> {
-    return options.stream
-      ? await this.createCompletionGenerator(options)
-      : await this.createCompletionImpl({ ...options, stream: false });
+  ): Promise<
+    ChatCompletionResponse | void | AsyncIterable<ChatCompletionChunk>
+  > {
+    // first, try to overlay chatTemplateKwargs
+    if (Object.keys(this.chatTemplateKwargs).length > 0) {
+      options = {
+        ...options,
+        chat_template_kwargs: {
+          ...this.chatTemplateKwargs,
+          ...(options.chat_template_kwargs ?? {}),
+        },
+      };
+    }
+
+    // then, call the corresponding overloaded function
+    if (options.stream && (options as any).onData) {
+      await this.createCompletionImpl(options);
+    } else if (options.stream) {
+      return await this.createCompletionGenerator(options);
+    } else {
+      return await this.createCompletionImpl({ ...options, stream: false });
+    }
   }
 
   /**
    * Make (raw) completion for a given text.
    * @param options OAI-compatible completion options
-   * @returns OAI-compatible completion response (only the final result when stream=false) or an async iterator of completion chunks (when stream=true)
+   * @returns OAI-compatible completion response (stream=false), void when done (stream=true + onData), or async iterator (stream=true, no onData)
    */
   async createCompletion(
     options: RawCompletionParams & { stream?: false }
   ): Promise<RawCompletionResponse>;
   async createCompletion(
     options: RawCompletionParams & StreamParams<RawCompletionChunk>
+  ): Promise<void>;
+  async createCompletion(
+    options: RawCompletionParams & { stream: true }
   ): Promise<AsyncIterable<RawCompletionChunk>>;
   async createCompletion(
     options: RawCompletionParams
-  ): Promise<RawCompletionResponse | AsyncIterable<RawCompletionChunk>> {
-    return options.stream
-      ? await this.createCompletionGenerator(options)
-      : await this.createCompletionImpl({ ...options, stream: false });
+  ): Promise<RawCompletionResponse | void | AsyncIterable<RawCompletionChunk>> {
+    if (options.stream && (options as any).onData) {
+      await this.createCompletionImpl(options);
+    } else if (options.stream) {
+      return await this.createCompletionGenerator(options);
+    } else {
+      return await this.createCompletionImpl({ ...options, stream: false });
+    }
   }
 
   /**
@@ -654,30 +862,28 @@ export class Wllama {
       );
     }
 
-    return await this.getRespose(options as StreamParams<TChunk>, isStream);
+    return await this.getResponse(
+      options as StreamParams<TChunk> & { abortSignal?: AbortSignal },
+      isStream
+    );
   }
 
   /**
    * Same with `createCompletion`, but returns an async iterator instead.
+   * Only called when stream=true and no onData is provided.
    */
   private createCompletionGenerator<TOpt, TChunk>(
-    options: Exclude<TOpt, 'onData'>
+    options: TOpt
   ): Promise<AsyncIterable<TChunk>> {
-    return new Promise((resolve, reject) => {
-      const origOnData = (options as StreamParams<TChunk>).onData;
+    return new Promise((resolve) => {
       const createGenerator = cbToAsyncIter(
-        (callback: (val?: TChunk, done?: boolean) => void) => {
+        (callback: (val?: TChunk, done?: boolean, err?: Error) => void) => {
           this.createCompletionImpl<TOpt, TChunk>({
             ...options,
-            onData: (chunk: TChunk) => {
-              callback(chunk);
-              origOnData?.(chunk);
-            },
+            onData: (chunk: TChunk) => callback(chunk),
           })
-            .catch(reject)
-            .then(() => {
-              callback(undefined, true);
-            });
+            .then(() => callback(undefined, true))
+            .catch((err) => callback(undefined, false, err));
         }
       );
       resolve(createGenerator());
@@ -841,7 +1047,38 @@ export class Wllama {
     };
   }
 
-  private async getRespose(options: StreamParams<any>, isStream: boolean) {
+  private async getRerankResult(): Promise<{
+    score: number;
+    tokens_evaluated: number;
+  }> {
+    while (true) {
+      const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+        'get_result',
+        { _name: 'gres_req' }
+      );
+
+      const jsonString = chunk.data_json;
+      if (jsonString && jsonString.length > 0) {
+        if (chunk.is_error) {
+          const jsonData = this.jsonDecode(jsonString);
+          throw new WllamaError(
+            jsonData.message || 'Unknown reranking error',
+            'inference_error'
+          );
+        }
+        return this.jsonDecode(jsonString);
+      }
+
+      if (!chunk.has_more) break;
+    }
+
+    throw new WllamaError('No reranking result received', 'inference_error');
+  }
+
+  private async getResponse(
+    options: StreamParams<any> & { abortSignal?: AbortSignal },
+    isStream: boolean
+  ) {
     let finalResult: any = null;
 
     while (true) {
@@ -862,6 +1099,10 @@ export class Wllama {
         } else {
           continue;
         }
+      }
+
+      if (jsonString == 'null') {
+        continue; // this is the "is_begin = true" chunk on server side, we can ignore it
       }
 
       let jsonData = this.jsonDecode(jsonString);

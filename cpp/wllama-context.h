@@ -37,6 +37,29 @@ int main_test_backend_ops(int, char **)
   glue_inbuf inbuf(req_raw);    \
   req.handler.deserialize(inbuf);
 
+// for debugging
+enum TEST_STACK_TRACE
+{
+  TEST_STACK_TRACE_NONE = 0,
+  TEST_STACK_TRACE_ABORT = 1,
+  TEST_STACK_TRACE_OOB = 2,
+};
+static TEST_STACK_TRACE test_stack_trace = TEST_STACK_TRACE_NONE;
+extern "C" void __real_abort(void);
+extern "C" void __wrap_abort(void)
+{
+  char buf[4096];
+  emscripten_get_callstack(EM_LOG_JS_STACK | EM_LOG_NO_PATHS, buf, sizeof(buf));
+  for (size_t i = 0; i < sizeof(buf); i++)
+  {
+    if (buf[i] == '\n')
+      buf[i] = '|';
+  }
+  fprintf(stderr, "@@STACK@@%s\n", buf);
+  fflush(stderr);
+  __real_abort();
+}
+
 inline std::vector<char> convert_string_to_buf(std::string &input)
 {
   std::vector<char> output;
@@ -66,6 +89,7 @@ inline static ggml_type kv_cache_type_from_str(const std::string &s)
 
 inline static enum llama_pooling_type pooling_type_from_str(const std::string &s)
 {
+  // legacy values
   if (s == "LLAMA_POOLING_TYPE_UNSPECIFIED")
     return LLAMA_POOLING_TYPE_UNSPECIFIED;
   if (s == "LLAMA_POOLING_TYPE_NONE")
@@ -74,6 +98,30 @@ inline static enum llama_pooling_type pooling_type_from_str(const std::string &s
     return LLAMA_POOLING_TYPE_MEAN;
   if (s == "LLAMA_POOLING_TYPE_CLS")
     return LLAMA_POOLING_TYPE_CLS;
+  // new values
+  if (s == "unspecified")
+    return LLAMA_POOLING_TYPE_UNSPECIFIED;
+  if (s == "none")
+    return LLAMA_POOLING_TYPE_NONE;
+  if (s == "mean")
+    return LLAMA_POOLING_TYPE_MEAN;
+  if (s == "cls")
+    return LLAMA_POOLING_TYPE_CLS;
+  if (s == "last")
+    return LLAMA_POOLING_TYPE_LAST;
+  if (s == "rank")
+    return LLAMA_POOLING_TYPE_RANK;
+  // for internal wllama testing
+  if (s == "test_stack_trace_abort")
+  {
+    test_stack_trace = TEST_STACK_TRACE_ABORT;
+    return LLAMA_POOLING_TYPE_NONE;
+  }
+  if (s == "test_stack_trace_oob")
+  {
+    test_stack_trace = TEST_STACK_TRACE_OOB;
+    return LLAMA_POOLING_TYPE_NONE;
+  }
   throw std::runtime_error("Invalid pooling type: " + s);
 }
 
@@ -88,6 +136,66 @@ inline static llama_rope_scaling_type rope_scaling_type_from_str(const std::stri
   if (s == "LLAMA_ROPE_SCALING_TYPE_YARN")
     return LLAMA_ROPE_SCALING_TYPE_YARN;
   throw std::runtime_error("Invalid RoPE scaling type: " + s);
+}
+
+inline static common_reasoning_format reasoning_format_from_str(const std::string &s)
+{
+  if (s == "none")
+    return COMMON_REASONING_FORMAT_NONE;
+  if (s == "deepseek-legacy")
+    return COMMON_REASONING_FORMAT_DEEPSEEK_LEGACY;
+  if (s == "deepseek")
+    return COMMON_REASONING_FORMAT_DEEPSEEK;
+  throw std::runtime_error("Invalid reasoning format: " + s);
+}
+
+inline static llama_model_kv_override parse_kv_override(const std::string &key, const std::string &val_str)
+{
+  llama_model_kv_override kvo;
+  strncpy(kvo.key, key.c_str(), sizeof(kvo.key) - 1);
+  kvo.key[sizeof(kvo.key) - 1] = '\0';
+  auto colon = val_str.find(':');
+  if (colon == std::string::npos)
+    throw std::runtime_error("Invalid kv_override value, expected TYPE:value: " + val_str);
+  const std::string type_str = val_str.substr(0, colon);
+  const std::string value_str = val_str.substr(colon + 1);
+  if (type_str == "int")
+  {
+    kvo.tag = LLAMA_KV_OVERRIDE_TYPE_INT;
+    kvo.val_i64 = std::stoll(value_str);
+  }
+  else if (type_str == "float")
+  {
+    kvo.tag = LLAMA_KV_OVERRIDE_TYPE_FLOAT;
+    kvo.val_f64 = std::stod(value_str);
+  }
+  else if (type_str == "bool")
+  {
+    kvo.tag = LLAMA_KV_OVERRIDE_TYPE_BOOL;
+    if (value_str == "true" || value_str == "1")
+    {
+      kvo.val_bool = true;
+    }
+    else if (value_str == "false" || value_str == "0")
+    {
+      kvo.val_bool = false;
+    }
+    else
+    {
+      throw std::runtime_error("Invalid bool value for kv_override: " + value_str);
+    }
+  }
+  else if (type_str == "str")
+  {
+    kvo.tag = LLAMA_KV_OVERRIDE_TYPE_STR;
+    strncpy(kvo.val_str, value_str.c_str(), sizeof(kvo.val_str) - 1);
+    kvo.val_str[sizeof(kvo.val_str) - 1] = '\0';
+  }
+  else
+  {
+    throw std::runtime_error("Invalid kv_override type: " + type_str);
+  }
+  return kvo;
 }
 
 class app_exception : public std::exception
@@ -311,6 +419,8 @@ struct wllama_context
       params.yarn_beta_slow = req.yarn_beta_slow.value;
     if (req.yarn_orig_ctx.not_null())
       params.yarn_orig_ctx = req.yarn_orig_ctx.value;
+    if (req.warmup.not_null())
+      params.warmup = req.warmup.value;
 
     // optimizations
     if (req.cache_type_k.not_null())
@@ -323,8 +433,8 @@ struct wllama_context
       params.swa_full = req.swa_full.value;
     if (req.n_ctx_checkpoints.not_null())
       params.n_ctx_checkpoints = req.n_ctx_checkpoints.value;
-    if (req.checkpoint_every_nt.not_null())
-      params.checkpoint_every_nt = req.checkpoint_every_nt.value;
+    if (req.checkpoint_min_step.not_null())
+      params.checkpoint_min_step = req.checkpoint_min_step.value;
 
     // template params
     if (req.chat_template.not_null())
@@ -357,6 +467,83 @@ struct wllama_context
         params.default_template_kwargs[keys[i]] = vals[i];
       }
     }
+
+    // GPU
+    if (req.no_kv_offload.not_null())
+      params.no_kv_offload = req.no_kv_offload.value;
+    if (req.mmproj_offload.not_null())
+      params.mmproj_use_gpu = req.mmproj_offload.value;
+
+    // batch / context scheduling
+    if (req.cont_batching.not_null())
+      params.cont_batching = req.cont_batching.value;
+    if (req.n_keep.not_null())
+      params.n_keep = req.n_keep.value;
+    if (req.ctx_shift.not_null())
+      params.ctx_shift = req.ctx_shift.value;
+    if (req.cache_idle_slots.not_null())
+      params.cache_idle_slots = req.cache_idle_slots.value;
+    if (req.n_cache_reuse.not_null())
+      params.n_cache_reuse = req.n_cache_reuse.value;
+
+    // lora
+    if (req.lora_paths.not_null())
+    {
+      const auto &paths = req.lora_paths.arr;
+      const auto &scales = req.lora_scales.arr;
+      if (!scales.empty() && scales.size() != paths.size())
+        throw app_exception("lora_paths and lora_scales must have the same length");
+      for (size_t i = 0; i < paths.size(); i++)
+      {
+        common_adapter_lora_info info;
+        info.path = paths[i];
+        info.scale = scales.empty() ? 1.0f : scales[i];
+        params.lora_adapters.push_back(std::move(info));
+      }
+    }
+    if (req.lora_init_without_apply.not_null())
+      params.lora_init_without_apply = req.lora_init_without_apply.value;
+
+    // speculative decoding
+    if (req.spec_draft_model.not_null())
+      params.speculative.draft.mparams.path = req.spec_draft_model.value;
+    if (req.spec_draft_ngl.not_null())
+      params.speculative.draft.n_gpu_layers = req.spec_draft_ngl.value;
+    if (req.spec_draft_n_max.not_null())
+      params.speculative.draft.n_max = req.spec_draft_n_max.value;
+    if (req.spec_draft_n_min.not_null())
+      params.speculative.draft.n_min = req.spec_draft_n_min.value;
+    if (req.spec_draft_p_min.not_null())
+      params.speculative.draft.p_min = req.spec_draft_p_min.value;
+    if (req.spec_draft_threads.not_null())
+      params.speculative.draft.cpuparams.n_threads = req.spec_draft_threads.value;
+    if (req.spec_draft_threads_batch.not_null())
+      params.speculative.draft.cpuparams_batch.n_threads = req.spec_draft_threads_batch.value;
+
+    // kv overrides
+    if (req.kv_overrides_keys.not_null() && req.kv_overrides_vals.not_null())
+    {
+      const auto &keys = req.kv_overrides_keys.arr;
+      const auto &vals = req.kv_overrides_vals.arr;
+      if (keys.size() != vals.size())
+        throw app_exception("kv_overrides_keys and kv_overrides_vals must have the same length");
+      for (size_t i = 0; i < keys.size(); i++)
+        params.kv_overrides.push_back(parse_kv_override(keys[i], vals[i]));
+    }
+
+    // reasoning
+    if (req.reasoning_budget_tokens.not_null())
+      params.sampling.reasoning_budget_tokens = req.reasoning_budget_tokens.value;
+    if (req.reasoning_budget_message.not_null())
+      params.sampling.reasoning_budget_message = req.reasoning_budget_message.value;
+    if (req.reasoning_format.not_null())
+      params.reasoning_format = reasoning_format_from_str(req.reasoning_format.value);
+
+    // other
+    if (req.skip_chat_parsing.not_null())
+      params.force_pure_content_parser = req.skip_chat_parsing.value;
+    if (req.prefill_assistant.not_null())
+      params.prefill_assistant = req.prefill_assistant.value;
 
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);
@@ -501,6 +688,37 @@ struct wllama_context
     return res;
   }
 
+  glue_msg_rerank_res action_rerank(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_rerank_req);
+    glue_msg_rerank_res res;
+
+    json body = json::parse(req.data_json.value);
+    if (!body.contains("query") || !body.at("query").is_string())
+    {
+      throw app_exception("\"query\" must be a string");
+    }
+    if (!body.contains("document") || !body.at("document").is_string())
+    {
+      throw app_exception("\"document\" must be a string");
+    }
+    std::string query = body.at("query");
+    std::string document = body.at("document");
+
+    rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
+    last_error = "";
+
+    auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document);
+    server_task task = server_task(SERVER_TASK_TYPE_RERANK);
+    task.id = rd->get_new_id();
+    task.index = 0;
+    task.tokens = std::move(tokens);
+    rd->post_task(std::move(task));
+
+    res.success.value = true;
+    return res;
+  }
+
   glue_msg_get_result_res action_get_result(const char *req_raw)
   {
     PARSE_REQ(glue_msg_get_result_req);
@@ -512,9 +730,9 @@ struct wllama_context
     json data_json;
     if (result)
     {
-      auto *res = dynamic_cast<server_task_result_embd *>(result.get());
-      if (res)
+      if (auto *embd = dynamic_cast<server_task_result_embd *>(result.get()))
       {
+        (void)embd;
         // special handling for embeddings OAI-compat
         json body = {{"model", meta->model_name}};
         json responses = json::array();
@@ -522,9 +740,16 @@ struct wllama_context
         // TODO: support base64 output
         data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
       }
+      else if (auto *rerank = dynamic_cast<server_task_result_rerank *>(result.get()))
+      {
+        data_json = json{
+            {"score", rerank->score},
+            {"tokens_evaluated", rerank->n_tokens},
+        };
+      }
       else
       {
-        // otherwise, it should be a completion result, nothing special to do
+        // completion result
         data_json = result->to_json();
       }
     }
@@ -643,6 +868,17 @@ void server_queue::pop_deferred_task(int id_slot)
 
 void server_response::send(server_task_result_ptr &&result)
 {
+  if (test_stack_trace == TEST_STACK_TRACE_ABORT)
+  {
+    LOG_DBG("%s: force abort for testing\n", __func__);
+    abort();
+  }
+  else if (test_stack_trace == TEST_STACK_TRACE_OOB)
+  {
+    LOG_DBG("%s: force out-of-bounds for testing\n", __func__);
+    int *ptr = reinterpret_cast<int *>(0x40000000); // 1GB
+    *ptr = 0;
+  }
   LOG_DBG("%s\n", __func__);
   queue_results.push_back(std::move(result));
 }
@@ -886,4 +1122,17 @@ std::pair<long, std::vector<char>> common_remote_get_content(const std::string &
                                                              const common_remote_params &params)
 {
   throw std::runtime_error("common_remote_get_content is not implemented in wllama");
+}
+
+std::vector<llama_device_memory_data> common_get_device_memory_data(
+    const char *path_model,
+    const struct llama_model_params *mparams,
+    const struct llama_context_params *cparams,
+    std::vector<ggml_backend_dev_t> &devs,
+    uint32_t &hp_ngl,
+    uint32_t &hp_n_ctx_train,
+    uint32_t &hp_n_expert,
+    enum ggml_log_level log_level)
+{
+  throw std::runtime_error("common_get_device_memory_data is not implemented in wllama");
 }

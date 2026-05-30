@@ -20,7 +20,7 @@
 #include <vector>
 #include <functional>
 
-// increase when messages change
+// reserved for future, do not edit the version number for now
 #define GLUE_VERSION 1
 
 #define GLUE_MAGIC 0x45554c47 // "GLUE"
@@ -525,8 +525,8 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(bool, kv_unified)
   GLUE_FIELD_NULLABLE(bool, flash_attn)
   GLUE_FIELD_NULLABLE(bool, swa_full)
-  GLUE_FIELD_NULLABLE(bool, n_ctx_checkpoints)
-  GLUE_FIELD_NULLABLE(int, checkpoint_every_nt)
+  GLUE_FIELD_NULLABLE(int, n_ctx_checkpoints)
+  GLUE_FIELD_NULLABLE(int, checkpoint_min_step)
   GLUE_FIELD_NULLABLE(str, chat_template)
   GLUE_FIELD_NULLABLE(bool, jinja)
   GLUE_FIELD_NULLABLE(arr_str, default_template_kwargs_keys)
@@ -534,6 +534,31 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(bool, reasoning)
   GLUE_FIELD_NULLABLE(int, image_min_tokens)
   GLUE_FIELD_NULLABLE(int, image_max_tokens)
+  GLUE_FIELD_NULLABLE(bool, warmup)
+  GLUE_FIELD_NULLABLE(bool, no_kv_offload)
+  GLUE_FIELD_NULLABLE(bool, mmproj_offload)
+  GLUE_FIELD_NULLABLE(bool, cont_batching)
+  GLUE_FIELD_NULLABLE(int, n_keep)
+  GLUE_FIELD_NULLABLE(bool, ctx_shift)
+  GLUE_FIELD_NULLABLE(bool, cache_idle_slots)
+  GLUE_FIELD_NULLABLE(int, n_cache_reuse)
+  GLUE_FIELD_NULLABLE(arr_str, lora_paths)
+  GLUE_FIELD_NULLABLE(arr_float, lora_scales)
+  GLUE_FIELD_NULLABLE(bool, lora_init_without_apply)
+  GLUE_FIELD_NULLABLE(str, spec_draft_model)
+  GLUE_FIELD_NULLABLE(int, spec_draft_ngl)
+  GLUE_FIELD_NULLABLE(int, spec_draft_n_max)
+  GLUE_FIELD_NULLABLE(int, spec_draft_n_min)
+  GLUE_FIELD_NULLABLE(float, spec_draft_p_min)
+  GLUE_FIELD_NULLABLE(int, spec_draft_threads)
+  GLUE_FIELD_NULLABLE(int, spec_draft_threads_batch)
+  GLUE_FIELD_NULLABLE(arr_str, kv_overrides_keys)
+  GLUE_FIELD_NULLABLE(arr_str, kv_overrides_vals)
+  GLUE_FIELD_NULLABLE(int, reasoning_budget_tokens)
+  GLUE_FIELD_NULLABLE(str, reasoning_budget_message)
+  GLUE_FIELD_NULLABLE(str, reasoning_format)
+  GLUE_FIELD_NULLABLE(bool, skip_chat_parsing)
+  GLUE_FIELD_NULLABLE(bool, prefill_assistant)
 };
 
 struct glue_msg_load_res
@@ -590,6 +615,20 @@ struct glue_msg_embedding_req
 struct glue_msg_embedding_res
 {
   GLUE_HANDLER("embd_res")
+  GLUE_FIELD(bool, success)
+};
+
+/////////
+
+struct glue_msg_rerank_req
+{
+  GLUE_HANDLER("rrnk_req")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_rerank_res
+{
+  GLUE_HANDLER("rrnk_res")
   GLUE_FIELD(bool, success)
 };
 

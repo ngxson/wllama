@@ -30,12 +30,15 @@ const testFunc = async (wllama: WllamaMJS) => {
   await wllama.exit();
 };
 
+// TODO: enable compat mode in tests once test infrastructure supports Safari/asyncify
 test.sequential('(mjs) generates completion', async () => {
   const wllama = new WllamaMJS(CONFIG_PATHS);
+  wllama.setCompat(null);
   await testFunc(wllama);
 });
 
 test.sequential('(mjs/minified) generates completion', async () => {
   const wllama = new WllamaMJSMinified(CONFIG_PATHS);
+  wllama.setCompat(null);
   await testFunc(wllama as unknown as WllamaMJS);
 });

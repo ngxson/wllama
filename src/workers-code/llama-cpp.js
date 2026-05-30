@@ -6,6 +6,10 @@ let wllamaExit;
 let wllamaDebug;
 
 let Module = null;
+let isCompat = false;
+let lastStack = '';
+let isAborted = false;
+let hasMultithread = false;
 
 //////////////////////////////////////////////////////////////
 // UTILS
@@ -30,11 +34,25 @@ const getHeapU8 = () => {
   return new Uint8Array(buffer);
 };
 
+const toSizeT = (num) => {
+  return isCompat ? Number(num) : BigInt(num);
+};
+
 // Get module config that forwards stdout/err to main thread
 const getWModuleConfig = (_argMainScriptBlob) => {
   var pathConfig = RUN_OPTIONS.pathConfig;
   var pthreadPoolSize = RUN_OPTIONS.nbThread;
   var argMainScriptBlob = _argMainScriptBlob;
+
+  isCompat = RUN_OPTIONS.compat;
+  hasMultithread = pthreadPoolSize > 1;
+
+  msg({
+    verb: 'console.debug',
+    args: [
+      `Multithread enabled: ${hasMultithread}, pthreadPoolSize: ${pthreadPoolSize}`,
+    ],
+  });
 
   if (!pathConfig['wllama.wasm']) {
     throw new Error('"wllama.wasm" is missing in pathConfig');
@@ -49,6 +67,10 @@ const getWModuleConfig = (_argMainScriptBlob) => {
     printErr: function (text) {
       if (arguments.length > 1)
         text = Array.prototype.slice.call(arguments).join(' ');
+      if (text.startsWith('@@STACK@@')) {
+        lastStack = text.slice('@@STACK@@'.length);
+        return;
+      }
       const logLine = cppLogToJSLog(text);
       msg({ verb: 'console.' + logLine.level, args: [logLine.text] });
     },
@@ -71,11 +93,22 @@ const getWModuleConfig = (_argMainScriptBlob) => {
         return p;
       }
     },
-    mainScriptUrlOrBlob: argMainScriptBlob,
-    pthreadPoolSize,
-    wasmMemory: pthreadPoolSize > 1 ? getWasmMemory() : null,
-    onAbort: function (text) {
-      msg({ verb: 'signal.abort', args: [text] });
+    mainScriptUrlOrBlob: hasMultithread
+      ? argMainScriptBlob
+      : 'throw new Error("Multithreading is not enabled")',
+    pthreadPoolSize: hasMultithread ? pthreadPoolSize : 0,
+    wasmMemory: hasMultithread ? getWasmMemory() : null,
+    onAbort: function (message) {
+      isAborted = true;
+      msg({ verb: 'signal.abort', args: ['abort', message, lastStack, null] });
+    },
+    onExit: function (code) {
+      isAborted = true;
+      const callstack = new Error().stack.toString();
+      msg({
+        verb: 'signal.abort',
+        args: ['abort', 'exit(' + code + ')', callstack, null],
+      });
     },
   };
 };
@@ -91,10 +124,10 @@ const getWasmMemory = () => {
   while (maxBytes > minBytes) {
     try {
       const wasmMemory = new WebAssembly.Memory({
-        initial: BigInt(minBytes / 65536),
-        maximum: BigInt(maxBytes / 65536),
+        initial: toSizeT(minBytes / 65536),
+        maximum: toSizeT(maxBytes / 65536),
         shared: true,
-        address: 'i64',
+        address: isCompat ? undefined : 'i64',
       });
       return wasmMemory;
     } catch (e) {
@@ -180,7 +213,7 @@ const patchHeapFS = () => {
     const name = stream.node.name;
     if (fsNameToFile[name]) {
       const f = fsNameToFile[name];
-      const mmapPtr = f.ptr + BigInt(position);
+      const mmapPtr = f.ptr + toSizeT(position);
       return {
         ptr: mmapPtr,
         allocated: false,
@@ -202,7 +235,7 @@ const heapfsAlloc = (name, size, allocBuffer) => {
     throw new Error('File size must be bigger than 0');
   }
   const m = Module;
-  const ptr = BigInt(allocBuffer ? m.mmapAlloc(size) : 0);
+  const ptr = toSizeT(allocBuffer ? m.mmapAlloc(size) : 0);
   const file = {
     ptr: ptr,
     size: size,
@@ -264,7 +297,7 @@ const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
 
   const bytes = new Uint8Array(data);
   getHeapU8().set(bytes, out_ptr);
-  return BigInt(bytes.length);
+  return toSizeT(bytes.length);
 };
 
 //////////////////////////////////////////////////////////////
@@ -294,6 +327,19 @@ const callWrapper = (name, ret, args, isAsync) => {
     return result;
   };
 };
+
+function handleError(err) {
+  // If WASM already aborted, onAbort already sent signal.abort; skip to avoid
+  // re-reporting the resulting WebAssembly.RuntimeError as a JS exception.
+  if (isAborted) return;
+
+  const message = err ? err.message || String(err) : 'Unknown error';
+  const stack = err ? err.stack || String(err) : '';
+  msg({
+    verb: 'signal.abort',
+    args: ['exception', message, stack, err],
+  });
+}
 
 onmessage = async (e) => {
   if (!e.data) return;
@@ -338,7 +384,7 @@ onmessage = async (e) => {
         // init FS
         patchHeapFS();
         // init cwrap
-        const pointer = 'bigint';
+        const pointer = isCompat ? 'number' : 'bigint';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument
         wllamaMalloc = callWrapper('wllama_malloc', pointer, [
           'number',
@@ -357,7 +403,7 @@ onmessage = async (e) => {
       };
       wModuleInit();
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -381,7 +427,7 @@ onmessage = async (e) => {
       const fileId = heapfsAlloc(argFilename, argSize, argAllocBuffer);
       msg({ callbackId, result: { fileId } });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -394,7 +440,7 @@ onmessage = async (e) => {
       const writtenBytes = heapfsWrite(argFileId, argBuffer, argOffset);
       msg({ callbackId, result: { writtenBytes } });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -404,7 +450,7 @@ onmessage = async (e) => {
       const result = await wllamaStart();
       msg({ callbackId, result });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -413,7 +459,7 @@ onmessage = async (e) => {
     const argAction = args[0];
     const argEncodedMsg = args[1];
     try {
-      const inputPtr = await wllamaMalloc(BigInt(argEncodedMsg.byteLength), 0);
+      const inputPtr = await wllamaMalloc(toSizeT(argEncodedMsg.byteLength), 0);
       // copy data to wasm heap
       const inputBuffer = new Uint8Array(
         getHeapU8().buffer,
@@ -438,7 +484,7 @@ onmessage = async (e) => {
       outputBuffer.set(outputSrcView, 0); // copy it
       msg({ callbackId, result: outputBuffer }, [outputBuffer.buffer]);
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -448,7 +494,7 @@ onmessage = async (e) => {
       const result = await wllamaExit();
       msg({ callbackId, result });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }
@@ -458,7 +504,7 @@ onmessage = async (e) => {
       const result = await wllamaDebug();
       msg({ callbackId, result });
     } catch (err) {
-      msg({ callbackId, err });
+      handleError(err);
     }
     return;
   }

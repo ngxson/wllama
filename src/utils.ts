@@ -262,10 +262,25 @@ export const isSupportJSPI = () => {
 };
 
 /**
- * @returns true if brower support WebGPU and JSPI (required by emscripten build)
+ * @returns true if brower support WebGPU. Note: for browser without JSPI support, compat mode will be used.
  */
 export const isSupportWebGPU = () => {
-  return !!(navigator as any).gpu && isSupportJSPI();
+  return !!(navigator as any).gpu;
+};
+
+/**
+ * @returns true if browser support WASM Memory64
+ */
+export const isSupportMem64 = (): boolean => {
+  try {
+    new WebAssembly.Memory({
+      address: 'i64',
+      initial: 1n, // 1 page (64 KiB)
+    } as any);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -339,22 +354,32 @@ export const createWorker = (workerCode: string | Blob): Worker => {
 export const cbToAsyncIter =
   <A extends any[], T>(
     fn: (
-      ...args: [...args: A, callback: (val?: T, done?: boolean) => void]
+      ...args: [
+        ...args: A,
+        callback: (val?: T, done?: boolean, err?: Error) => void,
+      ]
     ) => void
   ) =>
   (...args: A): AsyncIterable<T> => {
     let values: Promise<[T, boolean]>[] = [];
     let resolve: (x: [T, boolean]) => void;
+    let reject: (e: Error) => void;
     values.push(
-      new Promise((r) => {
-        resolve = r;
+      new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
       })
     );
-    fn(...args, (val?: T, done?: boolean) => {
+    fn(...args, (val?: T, done?: boolean, err?: Error) => {
+      if (err) {
+        reject(err);
+        return;
+      }
       resolve([val!, done!]);
       values.push(
-        new Promise((r) => {
-          resolve = r;
+        new Promise((res, rej) => {
+          resolve = res;
+          reject = rej;
         })
       );
     });
@@ -372,4 +397,7 @@ export const cbToAsyncIter =
  * Check if we can use async file read, where the wasm env can asynchronously read a Blob.
  * Please refer to README-dev.md for more details.
  */
-export const canUseAsyncFileRead = () => isSupportJSPI();
+export const canUseAsyncFileRead = (compat: boolean) =>
+  isSupportJSPI() || compat;
+
+export const needCompat = () => !isSupportJSPI() || !isSupportMem64();

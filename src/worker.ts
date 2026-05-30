@@ -13,11 +13,18 @@
 
 import { glueDeserialize, glueSerialize } from './glue/glue';
 import type { GlueMsg } from './glue/messages';
-import { canUseAsyncFileRead, createWorker, isSafariMobile } from './utils';
+import { Debug } from './debug';
+import {
+  canUseAsyncFileRead,
+  createWorker,
+  isSafariMobile,
+  isString,
+} from './utils';
 import {
   LLAMA_CPP_WORKER_CODE,
   WLLAMA_EMSCRIPTEN_CODE,
 } from './workers-code/generated';
+import { WllamaRuntimeError } from './wllama';
 
 interface Logger {
   debug: typeof console.debug;
@@ -70,7 +77,16 @@ if (!WebAssembly.Suspending) {
 }
 `;
 
+export interface WllamaWorkerResources {
+  wasmPath: string;
+  // if jsPath is not provided, use WLLAMA_EMSCRIPTEN_CODE
+  jsPath?: string | { code: string } | undefined;
+  // in compat mode, mem64 must be disabled
+  compat: boolean;
+}
+
 export class ProxyToWorker {
+  resources: WllamaWorkerResources;
   logger: Logger;
   suppressNativeLog: boolean;
   taskQueue: Task[] = [];
@@ -78,35 +94,57 @@ export class ProxyToWorker {
   resultQueue: Task[] = [];
   busy = false; // is the work loop is running?
   worker?: Worker | undefined;
-  pathConfig: any;
   multiThread: boolean;
   nbThread: number;
   useAsyncFile: boolean;
   fileBlobs: Map<string, Blob> = new Map(); // filename -> Blob for async reads
 
   constructor(
-    pathConfig: any,
+    resources: WllamaWorkerResources,
     nbThread: number,
     suppressNativeLog: boolean,
     logger: Logger
   ) {
-    this.pathConfig = pathConfig;
+    this.resources = resources;
     this.nbThread = nbThread;
     this.multiThread = nbThread > 0;
     this.logger = logger;
     this.suppressNativeLog = suppressNativeLog;
-    this.useAsyncFile = canUseAsyncFileRead();
+    this.useAsyncFile = canUseAsyncFileRead(resources.compat);
+  }
+
+  async getModuleCode(): Promise<string> {
+    if (!this.resources.jsPath) {
+      if (this.resources.compat) {
+        throw new Error(
+          'compat mode is enabled but no jsPath was provided. Pass a worker JS via setCompat() or install @wllama/wllama-compat.'
+        );
+      }
+      return WLLAMA_EMSCRIPTEN_CODE;
+    } else if ((this.resources.jsPath as { code: string }).code) {
+      return (this.resources.jsPath as { code: string }).code;
+    } else if (isString(this.resources.jsPath)) {
+      const response = await fetch(this.resources.jsPath as string);
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch worker code from ${this.resources.jsPath}`
+        );
+      }
+      return await response.text();
+    } else {
+      throw new Error('No JS code provided for worker');
+    }
   }
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
-    if (!this.pathConfig['wllama.wasm']) {
-      throw new Error('"wllama.wasm" is missing from pathConfig');
-    }
-    let moduleCode = JSPI_STUB + WLLAMA_EMSCRIPTEN_CODE;
+    let moduleCode = JSPI_STUB + (await this.getModuleCode());
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
-      pathConfig: this.pathConfig,
+      pathConfig: {
+        'wllama.wasm': this.resources.wasmPath,
+      },
       nbThread: this.nbThread,
+      compat: this.resources.compat,
     };
     const completeCode: string = [
       `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,
@@ -180,12 +218,14 @@ export class ProxyToWorker {
 
   async wllamaExit(): Promise<void> {
     if (this.worker) {
-      const result = await this.pushTask({
-        verb: 'wllama.exit',
-        args: [],
-        callbackId: this.taskId++,
-      });
-      this.parseResult(result); // only check for exceptions
+      // we don't actually need to send exit
+      // terminating the worker is faster and resources will be cleaned up by the browser
+      // const result = await this.pushTask({
+      //   verb: 'wllama.exit',
+      //   args: [],
+      //   callbackId: this.taskId++,
+      // });
+      // this.parseResult(result); // only check for exceptions
       this.worker.terminate();
     }
   }
@@ -261,7 +301,7 @@ export class ProxyToWorker {
       this.logger.error('fileReadResponse failed, terminating worker:', err);
       this.worker?.terminate();
       this.worker = undefined;
-      this.abort(`File read failed: ${err}`);
+      this.abort(`File read failed: ${err}`, (err as Error).stack || '');
     }
   }
 
@@ -274,7 +314,7 @@ export class ProxyToWorker {
   private parseResult(result: any): any {
     const parsedResult = JSON.parse(result);
     if (parsedResult && parsedResult['error']) {
-      throw new Error('Unknown error, please see console.log');
+      throw new WllamaRuntimeError('Unknown error, please see console.log', '');
     }
     return parsedResult;
   }
@@ -320,6 +360,7 @@ export class ProxyToWorker {
   private onRecvMsg(e: MessageEvent<any>) {
     if (!e.data) return; // ignore
     const { verb, args } = e.data;
+    const isCompatBuild = this.resources.compat;
     if (verb && verb.startsWith('console.')) {
       if (this.suppressNativeLog) {
         return;
@@ -330,7 +371,32 @@ export class ProxyToWorker {
       if (verb.endsWith('error')) this.logger.error(...args);
       return;
     } else if (verb === 'signal.abort') {
-      this.abort(args[0]);
+      const [signalType, message, rawStack, originalErr] = args as [
+        string,
+        string,
+        string,
+        any,
+      ];
+      if (originalErr) {
+        this.logger.error(originalErr);
+      }
+      (async () => {
+        let stack = '';
+        let newMsg = message.replace(
+          'Build with -sASSERTIONS for more info.',
+          ''
+        );
+        if (signalType === 'abort') {
+          newMsg = `(ABORT) ${newMsg}`;
+          stack = rawStack.replace(/\|/g, '\n');
+        } else if (signalType === 'exception') {
+          stack = rawStack;
+        }
+        const decoded = await Debug.decodeStackTrace(stack, isCompatBuild);
+        this.logger.error(`Stack trace (${signalType}):\n` + decoded);
+        this.abort(newMsg, decoded);
+      })();
+      return;
     }
 
     // handle fs.read_req signal from wasm (JSPI-suspended worker)
@@ -358,15 +424,20 @@ export class ProxyToWorker {
     }
   }
 
-  private abort(text: string) {
+  private abort(text: string, stack: string) {
+    const error = new WllamaRuntimeError(
+      text.length == 0 ? '(unknown error)' : text,
+      stack
+    );
     while (this.resultQueue.length > 0) {
       const waitingTask = this.resultQueue.pop();
       if (!waitingTask) break;
-      waitingTask.reject(
-        new Error(
-          `Received abort signal from llama.cpp; Message: ${text || '(empty)'}`
-        )
-      );
+      waitingTask.reject(error);
+    }
+    while (this.taskQueue.length > 0) {
+      const pendingTask = this.taskQueue.pop();
+      if (!pendingTask) break;
+      pendingTask.reject(error);
     }
   }
 }

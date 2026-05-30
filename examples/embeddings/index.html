@@ -35,6 +35,15 @@
     async function main() {
       let res, tokens, elapsed, buffer;
       const wllama = new Wllama(CONFIG_PATHS);
+      // when running demo locally, we want to point the compat to local for debugging; when deployed, we point it to CDN
+      if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
+        wllama.setCompat({
+          wasm: '../../compat/wasm/wllama.wasm',
+          worker: '../../compat/wasm/wllama.js',
+        });
+      } else {
+        wllama.setCompat('default');
+      }
 
       print(`DEMO EMBEDDINGS`);
       print(`Loading model ${MODEL}`);

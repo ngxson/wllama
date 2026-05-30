@@ -1,6 +1,7 @@
 // See: https://vitejs.dev/guide/assets#explicit-url-imports
 import wllamaWasm from '@wllama/wllama/src/wasm/wllama.wasm?url';
 import wllamaPackageJson from '@wllama/wllama/package.json';
+import compatConfig from 'virtual:wllama-compat';
 import { InferenceParams } from './utils/types';
 
 export const WLLAMA_VERSION = wllamaPackageJson.version;
@@ -8,6 +9,9 @@ export const WLLAMA_VERSION = wllamaPackageJson.version;
 export const WLLAMA_CONFIG_PATHS = {
   default: wllamaWasm,
 };
+
+// Either a local { wasm, worker } object (when compat package is built) or 'default' (CDN fallback)
+export const WLLAMA_COMPAT_CONFIG = compatConfig;
 
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 

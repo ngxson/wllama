@@ -87,6 +87,17 @@
     async function startCompletions(modelUrl, files) {
       const wllama = new Wllama(CONFIG_PATHS);
       // await wllama.cacheManager.clear();
+
+      // note: this is optional
+      if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
+        wllama.setCompat({
+          wasm: '../../compat/wasm/wllama.wasm',
+          worker: '../../compat/wasm/wllama.js',
+        });
+      } else {
+        wllama.setCompat('default');
+      }
+
       if (files) {
         await wllama.loadModel(files);
       } else {
@@ -97,18 +108,24 @@
       elemBtnCompletions.onclick = async () => {
         setCmplDisable(true);
         elemOutputCmpl.textContent = '';
-        await wllama.createCompletion({
-          prompt: elemInput.value,
-          max_tokens: parseInt(elemNPredict.value),
-          temperature: 0.5,
-          top_k: 40,
-          top_p: 0.9,
-          stream: true,
-          onData: (chunk) => {
-            const txt = chunk.choices[0].text;
-            elemOutputCmpl.textContent += txt;
-          },
-        });
+        try {
+          await wllama.createCompletion({
+            prompt: elemInput.value,
+            max_tokens: parseInt(elemNPredict.value),
+            temperature: 0.5,
+            top_k: 40,
+            top_p: 0.9,
+            stream: true,
+            onData: (chunk) => {
+              const txt = chunk.choices[0].text;
+              elemOutputCmpl.textContent += txt;
+            },
+          });
+        } catch (ex) {
+          console.error(ex);
+          console.error(ex.stack);
+          alert('Error: ' + ex.message);
+        }
         setCmplDisable(false);
       };
     }

@@ -1,6 +1,6 @@
 {
   "name": "@wllama/wllama",
-  "version": "3.1.1",
+  "version": "3.4.1",
   "description": "WebAssembly binding for llama.cpp - Enabling on-browser LLM inference",
   "main": "index.js",
   "type": "module",
@@ -21,12 +21,13 @@
     "build": "npm run clean && npm run build:worker && npm run build:tsup && npm run build:minified && npm run build:typedef",
     "postbuild": "./scripts/post_build.sh && npm run docs",
     "docs": "typedoc --tsconfig tsconfig.build.json src/index.ts",
-    "upload": "npm run format && npm run build && npm publish --access public",
+    "upload": "npm run format && npm run build && npm publish --access public && (cd compat && npm publish --access public)",
     "format": "prettier --write .",
     "test": "vitest",
     "test:firefox": "BROWSER=firefox vitest",
     "test:safari": "BROWSER=safari vitest",
-    "test:wgpu": "WEBGPU=1 vitest"
+    "test:wgpu": "WEBGPU=1 vitest",
+    "prepublishOnly": "node scripts/check_package_size.js"
   },
   "repository": {
     "type": "git",
@@ -49,6 +50,7 @@
   },
   "homepage": "https://github.com/ngxson/wllama#readme",
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@vitest/browser": "^2.1.6",
     "express": "^4.18.3",
     "mime-types": "^2.1.35",
@@ -66,8 +68,5 @@
     "semi": true,
     "singleQuote": true,
     "bracketSameLine": false
-  },
-  "dependencies": {
-    "@huggingface/jinja": "^0.5.8"
   }
 }

@@ -25,6 +25,8 @@
 /src/wasm-from-cdn.ts
 /src/glue/messages.ts
 
+/compat/wasm
+
 *.md
 *.mdx
 *.json

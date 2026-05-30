@@ -169,13 +169,13 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": true
       },
       {
-        "type": "bool",
+        "type": "int",
         "name": "n_ctx_checkpoints",
         "isNullable": true
       },
       {
         "type": "int",
-        "name": "checkpoint_every_nt",
+        "name": "checkpoint_min_step",
         "isNullable": true
       },
       {
@@ -211,6 +211,131 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "int",
         "name": "image_max_tokens",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "warmup",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "no_kv_offload",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "mmproj_offload",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "cont_batching",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "n_keep",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "ctx_shift",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "cache_idle_slots",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "n_cache_reuse",
+        "isNullable": true
+      },
+      {
+        "type": "arr_str",
+        "name": "lora_paths",
+        "isNullable": true
+      },
+      {
+        "type": "arr_float",
+        "name": "lora_scales",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "lora_init_without_apply",
+        "isNullable": true
+      },
+      {
+        "type": "str",
+        "name": "spec_draft_model",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_draft_ngl",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_draft_n_max",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_draft_n_min",
+        "isNullable": true
+      },
+      {
+        "type": "float",
+        "name": "spec_draft_p_min",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_draft_threads",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_draft_threads_batch",
+        "isNullable": true
+      },
+      {
+        "type": "arr_str",
+        "name": "kv_overrides_keys",
+        "isNullable": true
+      },
+      {
+        "type": "arr_str",
+        "name": "kv_overrides_vals",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "reasoning_budget_tokens",
+        "isNullable": true
+      },
+      {
+        "type": "str",
+        "name": "reasoning_budget_message",
+        "isNullable": true
+      },
+      {
+        "type": "str",
+        "name": "reasoning_format",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "skip_chat_parsing",
+        "isNullable": true
+      },
+      {
+        "type": "bool",
+        "name": "prefill_assistant",
         "isNullable": true
       }
     ]
@@ -390,6 +515,30 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       }
     ]
   },
+  "rrnk_req": {
+    "name": "rrnk_req",
+    "structName": "glue_msg_rerank_req",
+    "className": "GlueMsgRerankReq",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
+  "rrnk_res": {
+    "name": "rrnk_res",
+    "structName": "glue_msg_rerank_res",
+    "className": "GlueMsgRerankRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
+  },
   "gres_req": {
     "name": "gres_req",
     "structName": "glue_msg_get_result_req",
@@ -492,8 +641,8 @@ export interface GlueMsgLoadReq {
   kv_unified?: boolean | undefined;
   flash_attn?: boolean | undefined;
   swa_full?: boolean | undefined;
-  n_ctx_checkpoints?: boolean | undefined;
-  checkpoint_every_nt?: number | undefined;
+  n_ctx_checkpoints?: number | undefined;
+  checkpoint_min_step?: number | undefined;
   chat_template?: string | undefined;
   jinja?: boolean | undefined;
   default_template_kwargs_keys?: string[] | undefined;
@@ -501,6 +650,31 @@ export interface GlueMsgLoadReq {
   reasoning?: boolean | undefined;
   image_min_tokens?: number | undefined;
   image_max_tokens?: number | undefined;
+  warmup?: boolean | undefined;
+  no_kv_offload?: boolean | undefined;
+  mmproj_offload?: boolean | undefined;
+  cont_batching?: boolean | undefined;
+  n_keep?: number | undefined;
+  ctx_shift?: boolean | undefined;
+  cache_idle_slots?: boolean | undefined;
+  n_cache_reuse?: number | undefined;
+  lora_paths?: string[] | undefined;
+  lora_scales?: number[] | undefined;
+  lora_init_without_apply?: boolean | undefined;
+  spec_draft_model?: string | undefined;
+  spec_draft_ngl?: number | undefined;
+  spec_draft_n_max?: number | undefined;
+  spec_draft_n_min?: number | undefined;
+  spec_draft_p_min?: number | undefined;
+  spec_draft_threads?: number | undefined;
+  spec_draft_threads_batch?: number | undefined;
+  kv_overrides_keys?: string[] | undefined;
+  kv_overrides_vals?: string[] | undefined;
+  reasoning_budget_tokens?: number | undefined;
+  reasoning_budget_message?: string | undefined;
+  reasoning_format?: string | undefined;
+  skip_chat_parsing?: boolean | undefined;
+  prefill_assistant?: boolean | undefined;
 }
 
 // struct glue_msg_load_res
@@ -556,6 +730,18 @@ export interface GlueMsgEmbeddingRes {
   success: boolean;
 }
 
+// struct glue_msg_rerank_req
+export interface GlueMsgRerankReq {
+  _name: "rrnk_req";
+  data_json: string;
+}
+
+// struct glue_msg_rerank_res
+export interface GlueMsgRerankRes {
+  _name: "rrnk_res";
+  success: boolean;
+}
+
 // struct glue_msg_get_result_req
 export interface GlueMsgGetResultReq {
   _name: "gres_req";
@@ -576,12 +762,4 @@ export interface GlueMsgTestBackendOpsReq {
   args: string[];
 }
 
-// struct glue_msg_test_backend_ops_res
-export interface GlueMsgTestBackendOpsRes {
-  _name: "tbop_res";
-  retcode: number;
-  success: boolean;
-}
-
-
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgGetResultReq | GlueMsgGetResultRes;
