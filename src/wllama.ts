@@ -21,6 +21,7 @@ import type {
   GlueMsgRerankRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
+  GlueMsgTestBackendOpsRes,
 } from './glue/messages';
 import { LIBLLAMA_VERSION } from './workers-code/generated';
 import type {
@@ -484,51 +485,8 @@ export class Wllama {
     this.nbThreads = nbThreads;
     this.useMultiThread = supportMultiThread && nbThreads > 1;
 
-    // prepare worker resources
-    const workerResources: WllamaWorkerResources = {
-      wasmPath: absoluteUrl(this.pathConfig['default']),
-      compat: false,
-    };
-    if (needCompat()) {
-      if (!this.compat) {
-        this.logger().warn(
-          'Not using compat mode' +
-            (isFirefox()
-              ? ' (expected on Firefox - WebGPU will be disabled)'
-              : '')
-        );
-      } else {
-        const isUsingDefault =
-          this.compat.worker === WasmCompatFromCDN.worker &&
-          this.compat.wasm === WasmCompatFromCDN.wasm;
-        if (isUsingDefault) {
-          this.logger().warn(
-            'Compatibility mode is activated, using resources from CDN. To use local resources, please refer to @wllama/wllama-compat package.'
-          );
-          this.logger().warn(
-            'IMPORTANT: Performance will be significantly degraded in compatibility mode.'
-          );
-        }
-
-        workerResources.wasmPath = absoluteUrl(this.compat.wasm);
-        workerResources.jsPath = this.compat.worker;
-        workerResources.compat = true;
-      }
-    }
-
-    if (isFirefox()) {
-      if (workerResources.compat) {
-        this.logger().warn(
-          'Using compat mode on Firefox, performance will be significantly degraded; Consider enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
-        );
-      } else if (!isSupportJSPI()) {
-        this.logger().warn(
-          'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat mode, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
-        );
-      }
-    }
-
     // initialize the worker
+    const workerResources = this.getWorkerResources();
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
@@ -918,6 +876,60 @@ export class Wllama {
     this.proxy = null as any;
   }
 
+  /**
+   * [FOR DEBUGGING ONLY] Run ggml backend ops tests without loading any model.
+   *
+   * Initializes the wasm runtime, executes `test-backend-ops` with the given args, then shuts down.
+   *
+   * For more info, please refer to guides/debug.md
+   *
+   * @param args Arguments forwarded to test-backend-ops (e.g. ["-o", "ADD"])
+   * @returns retcode (0 = all tests passed) and success flag
+   */
+  async testBackendOps(
+    args: string[] = []
+  ): Promise<{ retcode: number; success: boolean }> {
+    if (!this.pathConfig['default']) {
+      throw new WllamaError(
+        '"default" is missing from pathConfig',
+        'load_error'
+      );
+    }
+
+    if (!(await isSupportMultiThread())) {
+      throw new WllamaError(
+        'Multi-threading is required to run backend ops tests, but it is not supported in the current environment.'
+      );
+    }
+
+    const tmpProxy = new ProxyToWorker(
+      this.getWorkerResources(),
+      0, // single-thread; no model needed
+      this.config.suppressNativeLog ?? false,
+      this.logger()
+    );
+
+    try {
+      await tmpProxy.moduleInit([]);
+
+      const startResult: any = await tmpProxy.wllamaStart();
+      if (!startResult.success) {
+        throw new WllamaError(
+          `Error while calling start function, result = ${startResult}`
+        );
+      }
+
+      const result = await tmpProxy.wllamaAction<GlueMsgTestBackendOpsRes>(
+        'test_backend_ops',
+        { _name: 'tbop_req', args: ['test-backend-ops', ...args] }
+      );
+
+      return { retcode: result.retcode, success: result.success };
+    } finally {
+      await tmpProxy.wllamaExit();
+    }
+  }
+
   //////////////////////////////////////////////
   // Low level API
 
@@ -1075,5 +1087,52 @@ export class Wllama {
     }
 
     return finalResult;
+  }
+
+  getWorkerResources(): WllamaWorkerResources {
+    const workerResources: WllamaWorkerResources = {
+      wasmPath: absoluteUrl(this.pathConfig['default']),
+      compat: false,
+    };
+    if (needCompat()) {
+      if (!this.compat) {
+        this.logger().warn(
+          'Not using compat mode' +
+            (isFirefox()
+              ? ' (expected on Firefox - WebGPU will be disabled)'
+              : '')
+        );
+      } else {
+        const isUsingDefault =
+          this.compat.worker === WasmCompatFromCDN.worker &&
+          this.compat.wasm === WasmCompatFromCDN.wasm;
+        if (isUsingDefault) {
+          this.logger().warn(
+            'Compatibility mode is activated, using resources from CDN. To use local resources, please refer to @wllama/wllama-compat package.'
+          );
+          this.logger().warn(
+            'IMPORTANT: Performance will be significantly degraded in compatibility mode.'
+          );
+        }
+
+        workerResources.wasmPath = absoluteUrl(this.compat.wasm);
+        workerResources.jsPath = this.compat.worker;
+        workerResources.compat = true;
+      }
+    }
+
+    if (isFirefox()) {
+      if (workerResources.compat) {
+        this.logger().warn(
+          'Using compat mode on Firefox, performance will be significantly degraded; Consider enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
+        );
+      } else if (!isSupportJSPI()) {
+        this.logger().warn(
+          'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat mode, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
+        );
+      }
+    }
+
+    return workerResources;
   }
 }

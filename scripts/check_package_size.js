@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
+import { checkDebugBuild } from './check_debug_build.js';
+
+checkDebugBuild();
 
 const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
 const MAX_FILES = 90;

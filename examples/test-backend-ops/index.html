@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wllama test-backend-ops</title>
+    <style>
+      body {
+        background-color: rgb(30, 30, 30);
+        color: rgb(220, 220, 220);
+        font-family: 'Courier New', Courier, monospace;
+        padding: 1em;
+      }
+      #controls {
+        margin-bottom: 1em;
+      }
+      label {
+        display: block;
+        margin-bottom: 0.3em;
+      }
+      input[type='text'] {
+        background: rgb(50, 50, 50);
+        color: inherit;
+        border: 1px solid #666;
+        border-radius: 3px;
+        padding: 0.3em 0.5em;
+        font-family: inherit;
+        width: 30em;
+      }
+      button {
+        font-family: inherit;
+        padding: 0.4em 1em;
+        cursor: pointer;
+      }
+      #output {
+        margin-top: 1em;
+        border: 1px solid #555;
+        border-radius: 4px;
+        padding: 0.7em;
+        min-height: 6em;
+        max-height: 80vh;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+        font-size: 0.9em;
+        background: rgb(20, 20, 20);
+      }
+      .line-debug {
+        color: #aaa;
+      }
+      .line-info {
+        color: #8cf;
+      }
+      .line-warn {
+        color: #fc8;
+      }
+      .line-error {
+        color: #f66;
+      }
+      .line-result-ok {
+        color: #6f6;
+        font-weight: bold;
+      }
+      .line-result-err {
+        color: #f66;
+        font-weight: bold;
+      }
+      #spinner {
+        display: none;
+        margin-top: 0.5em;
+        align-items: center;
+        gap: 0.5em;
+        color: #aaa;
+        font-size: 0.85em;
+      }
+      #spinner.visible {
+        display: flex;
+      }
+      #spinner::before {
+        content: '';
+        width: 0.9em;
+        height: 0.9em;
+        border: 2px solid #555;
+        border-top-color: #8cf;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h2>test-backend-ops</h2>
+
+    <div id="controls">
+      <label for="input_args">
+        Arguments (space-separated, e.g. <code>-o ADD</code> or leave blank for
+        all tests):
+      </label>
+      <input type="text" id="input_args" placeholder="Example: -o ADD" />
+      <br /><br />
+      <button id="btn_run">Run test-backend-ops</button>
+    </div>
+
+    <div>Output:</div>
+    <div id="output"></div>
+    <div id="spinner">Running…</div>
+    <br /><br /><br /><br /><br /><br />
+
+    <script type="module">
+      import { Wllama, WllamaError } from '../../esm/index.js';
+
+      const CONFIG_PATHS = {
+        default: '../../esm/wasm/wllama.wasm',
+      };
+
+      const CONFIG_COMPAT_PATHS = {
+        wasm: '../../compat/wasm/wllama.wasm',
+        worker: '../../compat/wasm/wllama.js',
+      };
+
+      const elemOutput = document.getElementById('output');
+      const elemArgs = document.getElementById('input_args');
+      const elemBtn = document.getElementById('btn_run');
+      const elemSpinner = document.getElementById('spinner');
+
+      const STORAGE_KEY = 'wllama-test-backend-ops-args';
+      elemArgs.value = localStorage.getItem(STORAGE_KEY) ?? '';
+      elemArgs.addEventListener('input', () =>
+        localStorage.setItem(STORAGE_KEY, elemArgs.value)
+      );
+
+      const ANSI_RE = /\x1B\[[\d;]*[A-Za-z]/g;
+
+      let shouldFollow = true;
+      let programmaticScroll = false;
+      elemOutput.addEventListener('scroll', () => {
+        if (programmaticScroll) return;
+        const distFromBottom =
+          elemOutput.scrollHeight -
+          elemOutput.scrollTop -
+          elemOutput.clientHeight;
+        shouldFollow = distFromBottom < 40;
+      });
+
+      function appendLine(text, cssClass) {
+        const line = document.createElement('span');
+        line.className = cssClass;
+        line.textContent = text.replace(ANSI_RE, '') + '\n';
+        elemOutput.appendChild(line);
+        if (shouldFollow) {
+          programmaticScroll = true;
+          elemOutput.scrollTop = elemOutput.scrollHeight;
+          requestAnimationFrame(() => {
+            programmaticScroll = false;
+          });
+        }
+      }
+
+      // Logger that tees to both console and the DOM output element.
+      function makeTeeLogger(domOutput) {
+        function tee(level, cssClass, consoleFn) {
+          return (...args) => {
+            consoleFn(...args);
+            const text = args
+              .map((a) =>
+                typeof a === 'object' ? JSON.stringify(a) : String(a)
+              )
+              .join(' ');
+            appendLine(text, cssClass);
+          };
+        }
+        return {
+          debug: tee('debug', 'line-debug', console.debug.bind(console)),
+          log: tee('log', 'line-info', console.log.bind(console)),
+          warn: tee('warn', 'line-warn', console.warn.bind(console)),
+          error: tee('error', 'line-error', console.error.bind(console)),
+        };
+      }
+
+      elemBtn.onclick = async () => {
+        elemBtn.disabled = true;
+        elemOutput.textContent = '';
+        shouldFollow = true;
+        elemSpinner.classList.add('visible');
+
+        const rawArgs = elemArgs.value.trim();
+        const args = rawArgs.length > 0 ? rawArgs.split(/\s+/) : [];
+
+        appendLine(
+          `Running test-backend-ops ${args.length ? 'with args: ' + args.join(' ') : '(no args — all tests)'}`,
+          'line-info'
+        );
+
+        const wllama = new Wllama(CONFIG_PATHS, {
+          logger: makeTeeLogger(elemOutput),
+        });
+
+        // always use local compat version for debugging
+        wllama.setCompat(CONFIG_COMPAT_PATHS);
+
+        try {
+          const { retcode, success } = await wllama.testBackendOps(args);
+          const msg = `\nDone — retcode: ${retcode}, success: ${success}`;
+          appendLine(msg, success ? 'line-result-ok' : 'line-result-err');
+        } catch (err) {
+          if (err instanceof WllamaError) {
+            appendLine(
+              `\nWllamaError [${err.type}]: ${err.message}`,
+              'line-error'
+            );
+          } else {
+            appendLine(`\nError: ${err?.message ?? String(err)}`, 'line-error');
+          }
+          console.error(err);
+        } finally {
+          elemSpinner.classList.remove('visible');
+          elemBtn.disabled = false;
+        }
+      };
+    </script>
+  </body>
+</html>
