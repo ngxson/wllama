@@ -762,4 +762,12 @@ export interface GlueMsgTestBackendOpsReq {
   args: string[];
 }
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgGetResultReq | GlueMsgGetResultRes;
+// struct glue_msg_test_backend_ops_res
+export interface GlueMsgTestBackendOpsRes {
+  _name: "tbop_res";
+  retcode: number;
+  success: boolean;
+}
+
+
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;

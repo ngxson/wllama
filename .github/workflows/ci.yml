@@ -36,6 +36,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check for debug build
+        run: |
+          if [ -f "IS_DEBUG_BUILD" ]; then
+            echo "ERROR: IS_DEBUG_BUILD file exists - this is a debug build and cannot be merged"
+            exit 1
+          fi
+
       - name: Set node version to ${{ inputs.node-version }}
         uses: actions/setup-node@v4
         with:

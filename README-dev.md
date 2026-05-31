@@ -151,6 +151,22 @@ All integers are little-endian.
 
 To decode at runtime: base64-decode -> `DecompressionStream('gzip')` -> parse binary. Given a wasm function index `id`, look up `index_array[id - first_func_id]` to get the name table slot.
 
+## Debugging backend ops
+
+> [!IMPORTANT]
+>
+> By default, the build does NOT include `test-backend-ops` to save space. If you need to run it, please clone the repo and build it yourself, instructions below
+
+Requirements:
+- You have Docker installed and running on your machine
+- On Windows, please use WSL
+
+1. Clone this repo locally: `git clone --recurse-submodules https://github.com/ngxson/wllama.git`
+2. `npm run build:test && npm run build`
+3. `npm run serve` and open http://localhost:8080/examples/test-backend-ops/
+
+Note: A debugging build cannot be merged to `master` or publish to npm
+
 ## Build process
 
 The build process uses emscripten in docker to compile the project.
