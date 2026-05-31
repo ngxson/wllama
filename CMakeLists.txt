@@ -40,6 +40,7 @@ set(WLLAMA_LINK_OPTIONS
     -Wl,--wrap,fseek
     -Wl,--wrap,ftell
     -Wl,--wrap,abort
+    -Wl,--wrap,ggml_graph_plan # for test-backend-ops
 )
 
 if (WLLAMA_COMPAT)

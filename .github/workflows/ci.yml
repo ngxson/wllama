@@ -36,6 +36,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check for debug build
+        run: node scripts/check_debug_build.js
+
       - name: Set node version to ${{ inputs.node-version }}
         uses: actions/setup-node@v4
         with:

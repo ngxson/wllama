@@ -20,6 +20,9 @@
 #include "server-context.h"
 #include "server-queue.h"
 
+#include "ggml-cpu.h"
+#include "ggml-backend.h"
+
 #include "glue.hpp"
 
 #ifdef WLLAMA_TEST_BACKEND
@@ -27,7 +30,7 @@ int main_test_backend_ops(int argc, char **argv);
 #else
 int main_test_backend_ops(int, char **)
 {
-  SVR_ERR("WLLAMA_TEST_BACKEND is not set");
+  fprintf(stderr, "@@ERROR@@test-backend-ops is not enabled, please refer to README-dev.md for how to build it\n");
   return -1000;
 }
 #endif
@@ -58,6 +61,20 @@ extern "C" void __wrap_abort(void)
   fprintf(stderr, "@@STACK@@%s\n", buf);
   fflush(stderr);
   __real_abort();
+}
+
+static bool force_single_thread = false;
+extern "C" struct ggml_cplan __real_ggml_graph_plan(
+    const struct ggml_cgraph *cgraph,
+    int n_threads,
+    struct ggml_threadpool *threadpool);
+
+extern "C" struct ggml_cplan __wrap_ggml_graph_plan(
+    const struct ggml_cgraph *cgraph,
+    int n_threads,
+    struct ggml_threadpool *threadpool)
+{
+  return __real_ggml_graph_plan(cgraph, force_single_thread ? 1 : n_threads, threadpool);
 }
 
 inline std::vector<char> convert_string_to_buf(std::string &input)
@@ -777,8 +794,10 @@ struct wllama_context
 
     auto curr_log_lvl = log_level;
     log_level = GGML_LOG_LEVEL_DEBUG;
+    force_single_thread = true;
     int retcode = main_test_backend_ops((int)argv.size(), argv.data());
-    log_level = curr_log_lvl; // restore log level
+    log_level = curr_log_lvl;    // restore log level
+    force_single_thread = false; // restore threading
 
     res.retcode.value = retcode;
     res.success.value = retcode == 0;
