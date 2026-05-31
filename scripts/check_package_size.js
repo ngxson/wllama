@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
+import { existsSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+if (existsSync(resolve(__dirname, '../IS_DEBUG_BUILD'))) {
+  console.error('ERROR: IS_DEBUG_BUILD file exists - this is a debug build and cannot be published');
+  process.exit(1);
+}
 
 const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
 const MAX_FILES = 90;

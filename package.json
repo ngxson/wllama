@@ -14,6 +14,7 @@
     "build:worker": "./scripts/build_worker.sh",
     "build:glue": "node ./cpp/generate_glue_prototype.js",
     "build:wasm": "./scripts/build_wasm.sh && npm run build:glue",
+    "build:test": "WLLAMA_TEST_BACKEND=1 npm run build:wasm",
     "build:tsup": "tsup src/index.ts --format cjs,esm --clean",
     "build:minified": "terser esm/index.js -o esm/index.min.js --compress --mangle --source-map",
     "build:typedef": "tsc --emitDeclarationOnly --declaration -p tsconfig.build.json",

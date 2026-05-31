@@ -16,4 +16,10 @@ if [[ $(uname -m) == "arm64" ]]; then
   export EMSDK_IMAGE_TAG="${EMSDK_IMAGE_TAG}-arm64"
 fi
 
+if [[ "${WLLAMA_TEST_BACKEND}" == "1" ]]; then
+  touch "$CURRENT_PATH/../IS_DEBUG_BUILD"
+else
+  rm -f "$CURRENT_PATH/../IS_DEBUG_BUILD"
+fi
+
 docker compose up llamacpp-wasm-builder --exit-code-from llamacpp-wasm-builder
