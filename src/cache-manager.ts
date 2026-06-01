@@ -1,5 +1,6 @@
 import type { DownloadProgressCallback } from './model-manager';
-import type { StorageBackend } from './storage/index';
+import { COSBackend } from './storage/cos';
+import type { StorageBackend, StorageFileHint } from './storage/index';
 import { OPFSBackend } from './storage/opfs';
 
 const PREFIX_METADATA = '__metadata__';
@@ -69,8 +70,19 @@ export interface CacheEntryMetadata {
 export class CacheManager {
   private sb: StorageBackend;
 
-  constructor(backend: StorageBackend = new OPFSBackend()) {
-    this.sb = backend;
+  /**
+   * @param backends Array of storage backends to use, in order of preference ; if first is available, use it, otherwise try the next one.
+   */
+  constructor(
+    backends: StorageBackend[] = [new COSBackend(), new OPFSBackend()]
+  ) {
+    for (const backend of backends) {
+      if (backend.isSupported()) {
+        this.sb = backend;
+        return;
+      }
+    }
+    throw new Error('No supported storage backend found');
   }
 
   /**
@@ -139,14 +151,26 @@ export class CacheManager {
       },
     });
 
-    await this.sb.write(fileKey, response.body.pipeThrough(progressStream));
-
-    await this.writeMetadata(fileKey, {
+    const metadata: CacheEntryMetadata = {
       originalURL: url,
       originalSize: total,
       etag,
       ...(options.metadataAdditional ?? {}),
-    });
+    };
+    const hint = sha256FromEtag(etag);
+
+    if (hint && (await this.sb.getSize(fileKey, hint)) !== -1) {
+      response.body?.cancel();
+      await this.writeMetadata(fileKey, metadata);
+      return;
+    }
+
+    await this.sb.write(
+      fileKey,
+      response.body.pipeThrough(progressStream),
+      hint
+    );
+    await this.writeMetadata(fileKey, metadata);
   }
 
   /**
@@ -156,11 +180,15 @@ export class CacheManager {
    * @returns Blob, or null if file does not exist
    */
   async open(nameOrURL: string): Promise<Blob | null> {
-    const direct = await this.sb.read(nameOrURL);
+    const hint1 = sha256FromEtag(
+      (await this.getMetadata(nameOrURL))?.etag ?? ''
+    );
+    const direct = await this.sb.read(nameOrURL, hint1);
     if (direct) return direct;
     // also accept the original URL
     const key = await urlToFileName(nameOrURL, '');
-    return this.sb.read(key);
+    const hint2 = sha256FromEtag((await this.getMetadata(key))?.etag ?? '');
+    return this.sb.read(key, hint2);
   }
 
   /**
@@ -172,7 +200,8 @@ export class CacheManager {
    * @returns number of bytes, or -1 if file does not exist
    */
   async getSize(name: string): Promise<number> {
-    return this.sb.getSize(name);
+    const hint = sha256FromEtag((await this.getMetadata(name))?.etag ?? '');
+    return this.sb.getSize(name, hint);
   }
 
   /**
@@ -281,6 +310,11 @@ export class CacheManager {
 }
 
 export default CacheManager;
+
+function sha256FromEtag(etag: string): StorageFileHint | undefined {
+  if (/^[0-9a-f]{64}$/.test(etag)) return { sha256: etag };
+  return undefined;
+}
 
 async function urlToFileName(url: string, prefix: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest(
