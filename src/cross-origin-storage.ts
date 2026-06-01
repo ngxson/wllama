@@ -13,6 +13,18 @@
 const COS_HASH_CACHE_NAME = 'wllama-cos-hash-cache';
 const HASH_ALGORITHM = 'SHA-256';
 
+/**
+ * Cached metadata for a locally-computed WASM hash entry.
+ * Storing HTTP validation headers alongside the hash allows a future load to
+ * issue a cheap conditional GET (If-None-Match / If-Modified-Since) and get
+ * a 304 instead of re-downloading the whole file.
+ */
+export interface WasmCacheEntry {
+  hash: string;
+  etag?: string;
+  lastModified?: string;
+}
+
 function makeHashDescriptor(
   value: string
 ): CrossOriginStorageRequestFileHandleHash {
@@ -114,7 +126,15 @@ async function getHashFromCache(url: string): Promise<string | null> {
   try {
     const cache = await caches.open(COS_HASH_CACHE_NAME);
     const resp = await cache.match(url);
-    return resp ? resp.text() : null;
+    if (!resp) return null;
+    const text = await resp.text();
+    // Handle both legacy plain-string entries and newer JSON entries.
+    try {
+      const parsed = JSON.parse(text);
+      return typeof parsed.hash === 'string' ? parsed.hash : null;
+    } catch {
+      return text || null;
+    }
   } catch {
     return null;
   }
@@ -124,6 +144,39 @@ async function setHashInCache(url: string, hash: string): Promise<void> {
   try {
     const cache = await caches.open(COS_HASH_CACHE_NAME);
     await cache.put(url, new Response(hash));
+  } catch {
+    // Cache API may be unavailable in some contexts (e.g. non-secure origins).
+  }
+}
+
+export async function getWasmCacheEntry(
+  url: string
+): Promise<WasmCacheEntry | null> {
+  try {
+    const cache = await caches.open(COS_HASH_CACHE_NAME);
+    const resp = await cache.match(url);
+    if (!resp) return null;
+    const text = await resp.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed.hash === 'string') return parsed as WasmCacheEntry;
+    } catch {
+      // Legacy plain-string entry — no validation headers available.
+      if (text) return { hash: text };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setWasmCacheEntry(
+  url: string,
+  entry: WasmCacheEntry
+): Promise<void> {
+  try {
+    const cache = await caches.open(COS_HASH_CACHE_NAME);
+    await cache.put(url, new Response(JSON.stringify(entry)));
   } catch {
     // Cache API may be unavailable in some contexts (e.g. non-secure origins).
   }

@@ -7,6 +7,8 @@ import {
   setUrlHash,
   tryReadFromCOS,
   writeToCosByHash,
+  getWasmCacheEntry,
+  setWasmCacheEntry,
 } from './cross-origin-storage';
 
 const PREFIX_METADATA = '__metadata__';
@@ -371,31 +373,52 @@ export class CacheManager {
   async resolveWasmUrl(wasmUrl: string): Promise<string> {
     if (!isCrossOriginStorageAvailable()) return wasmUrl;
 
-    // COS path is non-fatal: any failure falls through to the network fetch.
-    let hash: string | null = null;
+    // Try to validate the cached entry with a conditional GET, then serve
+    // from COS if the content hasn't changed.  All failures are non-fatal and
+    // fall through to an unconditional network fetch.
     try {
-      hash = await resolveUrlHash(wasmUrl);
-      if (hash) {
-        const cosBlob = await tryReadFromCOS(hash);
-        if (cosBlob) {
-          // Re-wrap to guarantee the correct MIME type for
-          // WebAssembly.instantiateStreaming() in the Worker.
-          const blob =
-            cosBlob.type === 'application/wasm'
-              ? cosBlob
-              : new Blob([cosBlob], { type: 'application/wasm' });
+      const entry = await getWasmCacheEntry(wasmUrl);
+      if (entry?.etag || entry?.lastModified) {
+        const headers: Record<string, string> = {};
+        if (entry.etag) headers['If-None-Match'] = entry.etag;
+        else if (entry.lastModified) headers['If-Modified-Since'] = entry.lastModified;
+
+        const resp = await fetch(wasmUrl, { headers });
+        if (resp.status === 304) {
+          // Server confirmed the content is unchanged — the cached hash is valid.
+          const cosBlob = await tryReadFromCOS(entry.hash);
+          if (cosBlob) {
+            const blob =
+              cosBlob.type === 'application/wasm'
+                ? cosBlob
+                : new Blob([cosBlob], { type: 'application/wasm' });
+            return URL.createObjectURL(blob);
+          }
+          // COS miss after a valid 304: fall through to re-fetch and re-populate.
+        } else if (resp.ok) {
+          // Content changed — compute new hash and update the cache entry.
+          const buf = await resp.arrayBuffer();
+          const hash = await computeSha256(buf);
+          const newEntry = { hash } as { hash: string; etag?: string; lastModified?: string };
+          const respEtag = resp.headers.get('etag');
+          const respLastMod = resp.headers.get('last-modified');
+          if (respEtag) newEntry.etag = respEtag;
+          if (respLastMod) newEntry.lastModified = respLastMod;
+          await setWasmCacheEntry(wasmUrl, newEntry);
+          const blob = new Blob([buf], { type: 'application/wasm' });
+          void writeToCosByHash(blob, hash);
           return URL.createObjectURL(blob);
         }
+        // Any other status falls through to the unconditional fetch below.
       }
     } catch {
-      hash = null;
+      // Non-fatal — fall through to unconditional fetch.
     }
 
-    // COS miss — fetch from the network.
-    // This is intentionally outside the try/catch: a 404 or network error
-    // here means the WASM is genuinely unavailable.  Returning wasmUrl as a
-    // fallback would only cause the Worker to make the same failing request
-    // and crash with a cryptic "expected magic word" error.
+    // First visit or no usable validation headers: fetch unconditionally.
+    // A 404 or network error here means the WASM is genuinely unavailable;
+    // returning wasmUrl as a fallback would only cause the Worker to crash
+    // with a cryptic "expected magic word" error.
     const response = await fetch(wasmUrl);
     if (!response.ok) {
       throw new Error(
@@ -403,18 +426,13 @@ export class CacheManager {
       );
     }
     const buf = await response.arrayBuffer();
-
-    if (!hash) {
-      // Compute and persist the hash so future loads can skip this fetch.
-      const hashBuf = await crypto.subtle.digest('SHA-256', buf);
-      hash = Array.from(new Uint8Array(hashBuf))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-      await setUrlHash(wasmUrl, hash);
-    }
-
-    // Write to COS in the background; return a blob: URL from the
-    // already-fetched buffer so the Worker doesn't fetch it again.
+    const hash = await computeSha256(buf);
+    const entry = { hash } as { hash: string; etag?: string; lastModified?: string };
+    const etag = response.headers.get('etag');
+    const lastMod = response.headers.get('last-modified');
+    if (etag) entry.etag = etag;
+    if (lastMod) entry.lastModified = lastMod;
+    await setWasmCacheEntry(wasmUrl, entry);
     const blob = new Blob([buf], { type: 'application/wasm' });
     void writeToCosByHash(blob, hash);
     return URL.createObjectURL(blob);
@@ -553,6 +571,13 @@ export class CacheManager {
 }
 
 export default CacheManager;
+
+async function computeSha256(buf: ArrayBuffer): Promise<string> {
+  const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 /**
  * Write to OPFS file from ReadableStream
