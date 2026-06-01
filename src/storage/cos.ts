@@ -111,11 +111,7 @@ export class COSBackend implements StorageBackend {
     hint?: StorageFileHint
   ): Promise<void> {
     if (hint?.sha256 && this.cos.isSupported()) {
-      const [s1, s2] = stream.tee();
-      await Promise.all([
-        this.cos.write(hint.sha256, s1),
-        this.priv.write(key, s2),
-      ]);
+      await this.cos.write(hint.sha256, stream);
     } else {
       await this.priv.write(key, stream);
     }
@@ -136,4 +132,43 @@ export class COSBackend implements StorageBackend {
   async delete(key: string): Promise<void> {
     return this.priv.delete(key);
   }
+}
+
+// used for testing only
+export function mockCOS(): void {
+  const store = new Map<string, Blob>();
+
+  (navigator as any).crossOriginStorage = {
+    async requestFileHandles(
+      hashes: CrossOriginStorageRequestFileHandleHash[],
+      options?: { create?: boolean }
+    ): Promise<FileSystemFileHandle[]> {
+      return hashes.map(({ value }) => {
+        if (!options?.create && !store.has(value)) {
+          throw new DOMException('File not found', 'NotFoundError');
+        }
+        return {
+          getFile() {
+            const blob = store.get(value);
+            if (!blob)
+              throw new DOMException('File not found', 'NotFoundError');
+            return Promise.resolve(new File([blob], value));
+          },
+          createWritable() {
+            const chunks: BlobPart[] = [];
+            return Promise.resolve({
+              write(chunk: BlobPart) {
+                chunks.push(chunk);
+                return Promise.resolve();
+              },
+              close() {
+                store.set(value, new Blob(chunks));
+                return Promise.resolve();
+              },
+            });
+          },
+        } as unknown as FileSystemFileHandle;
+      });
+    },
+  } satisfies CrossOriginStorageManager;
 }

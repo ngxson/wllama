@@ -23,7 +23,7 @@ export default defineConfig({
       '**/examples/**',
       ...(!WEBGPU ? ['**/src/*.wgpu.test.*'] : []),
     ],
-    include: WEBGPU ? ['**/src/*.wgpu.test.*'] : ['**/src/*.test.*'],
+    include: WEBGPU ? ['**/src/*.wgpu.test.*'] : ['**/src/**/*.test.*'],
     browser: {
       enabled: true,
       name: process.env.BROWSER ?? 'chromium',
