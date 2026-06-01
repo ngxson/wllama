@@ -54,8 +54,12 @@ export class OPFSBackend implements StorageBackend {
   }
 
   async delete(key: string): Promise<void> {
-    const cacheDir = await getCacheDir();
-    await cacheDir.removeEntry(key);
+    try {
+      const cacheDir = await getCacheDir();
+      await cacheDir.removeEntry(key);
+    } catch (e: any) {
+      if (e?.name !== 'NotFoundError') throw e;
+    }
   }
 }
 
@@ -76,6 +80,7 @@ async function openWritable(fileName: string): Promise<{
     if (e.data.ok) pResolve(null);
     else if (e.data.err) pReject(e.data.err);
   };
+  worker.onerror = (e) => pReject?.(e.message ?? e);
   const workerExec = (
     data:
       | { action: 'open'; filename: string }

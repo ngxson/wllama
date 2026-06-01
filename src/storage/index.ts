@@ -24,7 +24,7 @@ export interface StorageBackend {
   list(): Promise<Array<{ key: string; size: number }>>;
 
   /**
-   * Delete a single entry by key.
+   * Delete a single entry by key. No-op if the key does not exist.
    */
   delete(key: string): Promise<void>;
 }

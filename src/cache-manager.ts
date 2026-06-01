@@ -135,7 +135,7 @@ export class CacheManager {
         controller.enqueue(chunk);
       },
       flush() {
-        progressCallback?.({ loaded: total, total });
+        progressCallback?.({ loaded, total: total || loaded });
       },
     });
 
@@ -263,6 +263,7 @@ export class CacheManager {
     for (const item of list) {
       if (predicate(item)) {
         await this.sb.delete(item.name);
+        await this.sb.delete(`${PREFIX_METADATA}${item.name}`);
       }
     }
   }
