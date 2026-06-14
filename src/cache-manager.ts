@@ -85,9 +85,7 @@ export class CacheManager {
   /**
    * @param backends Array of storage backends to use, in order of preference ; if first is available, use it, otherwise try the next one.
    */
-  constructor(
-    backends: StorageBackend[] = [new COSBackend()]
-  ) {
+  constructor(backends: StorageBackend[] = [new COSBackend()]) {
     for (const backend of backends) {
       if (backend.isSupported()) {
         this.sb = backend;
