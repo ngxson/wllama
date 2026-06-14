@@ -143,7 +143,7 @@ export async function getHFFileSHA256(
   const rawUrl = url.replace('/resolve/', '/raw/');
   try {
     const text = await fetch(rawUrl, { headers }).then((r) => r.text());
-    const match = text.match(/^oid sha256:([0-9a-f]+)$/m);
+    const match = text.match(/^oid sha256:([0-9a-f]{64})$/m);
     return match ? match[1] : undefined;
   } catch {
     return undefined;
