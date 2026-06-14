@@ -312,7 +312,8 @@ export class CacheManager {
 export default CacheManager;
 
 function sha256FromEtag(etag: string): StorageFileHint | undefined {
-  if (/^[0-9a-f]{64}$/.test(etag)) return { sha256: etag };
+  const normalized = etag.toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(normalized)) return { sha256: normalized };
   return undefined;
 }
 

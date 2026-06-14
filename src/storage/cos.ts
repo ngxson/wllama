@@ -15,7 +15,7 @@ interface CrossOriginStorageManager {
 
 declare global {
   interface Navigator {
-    readonly crossOriginStorage: CrossOriginStorageManager;
+    readonly crossOriginStorage?: CrossOriginStorageManager;
   }
 }
 
@@ -34,7 +34,7 @@ class COSInternalBackend implements StorageBackend {
   // IMPORTANT: key must be SHA-256 hash of the data
   async read(key: string): Promise<Blob | null> {
     try {
-      const [handle] = await navigator.crossOriginStorage.requestFileHandles([
+      const [handle] = await navigator.crossOriginStorage!.requestFileHandles([
         makeHash(key),
       ]);
       return handle.getFile();
@@ -45,7 +45,7 @@ class COSInternalBackend implements StorageBackend {
 
   // IMPORTANT: key must be SHA-256 hash of the data
   async write(key: string, stream: ReadableStream): Promise<void> {
-    const [handle] = await navigator.crossOriginStorage.requestFileHandles(
+    const [handle] = await navigator.crossOriginStorage!.requestFileHandles(
       [makeHash(key)],
       { create: true }
     );
@@ -65,7 +65,7 @@ class COSInternalBackend implements StorageBackend {
   // IMPORTANT: key must be SHA-256 hash of the data
   async getSize(key: string): Promise<number> {
     try {
-      const [handle] = await navigator.crossOriginStorage.requestFileHandles([
+      const [handle] = await navigator.crossOriginStorage!.requestFileHandles([
         makeHash(key),
       ]);
       const file = await handle.getFile();

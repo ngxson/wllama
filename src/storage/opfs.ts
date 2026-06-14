@@ -4,7 +4,11 @@ import type { StorageBackend } from './index';
 
 export class OPFSBackend implements StorageBackend {
   isSupported(): boolean {
-    return 'storage' in navigator && !!navigator.storage.getDirectory;
+    return (
+      typeof navigator !== 'undefined' &&
+      'storage' in navigator &&
+      !!navigator.storage?.getDirectory
+    );
   }
 
   async read(key: string): Promise<Blob | null> {
