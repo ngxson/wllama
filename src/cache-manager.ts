@@ -1,3 +1,4 @@
+import { getHFFileSHA256 } from './huggingface';
 import type { DownloadProgressCallback } from './model-manager';
 import { COSBackend } from './storage/cos';
 import type { StorageBackend, StorageFileHint } from './storage/index';
@@ -60,6 +61,18 @@ export interface CacheEntryMetadata {
    * URL to mmproj file, if exists
    */
   mmprojURL?: string | undefined;
+  /**
+   * Optional SHA256, mostly used by COS backend
+   */
+  sha256?: string | undefined;
+}
+
+function hintFromMetadata(
+  metadata: CacheEntryMetadata | null
+): StorageFileHint | undefined {
+  if (!metadata) return undefined;
+  if (metadata.sha256) return { sha256: metadata.sha256 };
+  return undefined;
 }
 
 /**
@@ -151,14 +164,20 @@ export class CacheManager {
       },
     });
 
+    // for COS backend, we also fetch the sha256 from git LFS pointer
+    const sha256 = await getHFFileSHA256(url, options.headers ?? {});
+
     const metadata: CacheEntryMetadata = {
       originalURL: url,
       originalSize: total,
       etag,
       ...(options.metadataAdditional ?? {}),
     };
-    const hint = sha256FromEtag(etag);
+    if (sha256) {
+      metadata.sha256 = sha256;
+    }
 
+    const hint = hintFromMetadata(metadata);
     if (hint && (await this.sb.getSize(fileKey, hint)) !== -1) {
       response.body?.cancel();
       await this.writeMetadata(fileKey, metadata);
@@ -180,14 +199,12 @@ export class CacheManager {
    * @returns Blob, or null if file does not exist
    */
   async open(nameOrURL: string): Promise<Blob | null> {
-    const hint1 = sha256FromEtag(
-      (await this.getMetadata(nameOrURL))?.etag ?? ''
-    );
+    const hint1 = hintFromMetadata(await this.getMetadata(nameOrURL));
     const direct = await this.sb.read(nameOrURL, hint1);
     if (direct) return direct;
     // also accept the original URL
     const key = await urlToFileName(nameOrURL, '');
-    const hint2 = sha256FromEtag((await this.getMetadata(key))?.etag ?? '');
+    const hint2 = hintFromMetadata(await this.getMetadata(key));
     return this.sb.read(key, hint2);
   }
 
@@ -200,7 +217,7 @@ export class CacheManager {
    * @returns number of bytes, or -1 if file does not exist
    */
   async getSize(name: string): Promise<number> {
-    const hint = sha256FromEtag((await this.getMetadata(name))?.etag ?? '');
+    const hint = hintFromMetadata(await this.getMetadata(name));
     return this.sb.getSize(name, hint);
   }
 
@@ -310,12 +327,6 @@ export class CacheManager {
 }
 
 export default CacheManager;
-
-function sha256FromEtag(etag: string): StorageFileHint | undefined {
-  const normalized = etag.toLowerCase();
-  if (/^[0-9a-f]{64}$/.test(normalized)) return { sha256: normalized };
-  return undefined;
-}
 
 async function urlToFileName(url: string, prefix: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest(

@@ -134,3 +134,18 @@ export async function getHFModelSource(
 
   return source;
 }
+
+export async function getHFFileSHA256(
+  url: string,
+  headers: Record<string, string>
+): Promise<string | undefined> {
+  if (!url.includes('/resolve/')) return undefined;
+  const rawUrl = url.replace('/resolve/', '/raw/');
+  try {
+    const text = await fetch(rawUrl, { headers }).then((r) => r.text());
+    const match = text.match(/^oid sha256:([0-9a-f]+)$/m);
+    return match ? match[1] : undefined;
+  } catch {
+    return undefined;
+  }
+}
