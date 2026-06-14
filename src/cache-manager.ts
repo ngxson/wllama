@@ -2,7 +2,6 @@ import { getHFFileSHA256 } from './huggingface';
 import type { DownloadProgressCallback } from './model-manager';
 import { COSBackend } from './storage/cos';
 import type { StorageBackend, StorageFileHint } from './storage/index';
-import { OPFSBackend } from './storage/opfs';
 
 const PREFIX_METADATA = '__metadata__';
 
@@ -87,7 +86,7 @@ export class CacheManager {
    * @param backends Array of storage backends to use, in order of preference ; if first is available, use it, otherwise try the next one.
    */
   constructor(
-    backends: StorageBackend[] = [new COSBackend(), new OPFSBackend()]
+    backends: StorageBackend[] = [new COSBackend()]
   ) {
     for (const backend of backends) {
       if (backend.isSupported()) {
@@ -127,6 +126,16 @@ export class CacheManager {
   async download(url: string, options: DownloadOptions = {}): Promise<void> {
     const fileKey = await urlToFileName(url, '');
 
+    // Fetch sha256 before the GET so we can skip the download entirely if the
+    // file is already in COS (avoids opening a connection just to cancel it).
+    const sha256 = await getHFFileSHA256(url, options.headers ?? {});
+    const hint = sha256 ? { sha256 } : undefined;
+
+    if (hint && (await this.sb.getSize(fileKey, hint)) !== -1) {
+      // File already in COS; metadata was written on the original download.
+      return;
+    }
+
     const response = await fetch(url, {
       ...(options.headers ? { headers: options.headers } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -164,9 +173,6 @@ export class CacheManager {
       },
     });
 
-    // for COS backend, we also fetch the sha256 from git LFS pointer
-    const sha256 = await getHFFileSHA256(url, options.headers ?? {});
-
     const metadata: CacheEntryMetadata = {
       originalURL: url,
       originalSize: total,
@@ -175,13 +181,6 @@ export class CacheManager {
     };
     if (sha256) {
       metadata.sha256 = sha256;
-    }
-
-    const hint = hintFromMetadata(metadata);
-    if (hint && (await this.sb.getSize(fileKey, hint)) !== -1) {
-      response.body?.cancel();
-      await this.writeMetadata(fileKey, metadata);
-      return;
     }
 
     await this.sb.write(

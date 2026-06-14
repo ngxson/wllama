@@ -1,6 +1,5 @@
 import { test, expect, beforeEach } from 'vitest';
 import { COSBackend, mockCOS } from './cos';
-import CacheManager from '../cache-manager';
 
 async function randomBufAndHash(): Promise<{
   buf: Uint8Array;
