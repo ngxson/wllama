@@ -1,6 +1,7 @@
+import { getHFFileSHA256 } from './huggingface';
 import type { DownloadProgressCallback } from './model-manager';
-import type { StorageBackend } from './storage/index';
-import { OPFSBackend } from './storage/opfs';
+import { COSBackend } from './storage/cos';
+import type { StorageBackend, StorageFileHint } from './storage/index';
 
 const PREFIX_METADATA = '__metadata__';
 
@@ -59,6 +60,18 @@ export interface CacheEntryMetadata {
    * URL to mmproj file, if exists
    */
   mmprojURL?: string | undefined;
+  /**
+   * Optional SHA256, mostly used by COS backend
+   */
+  sha256?: string | undefined;
+}
+
+function hintFromMetadata(
+  metadata: CacheEntryMetadata | null
+): StorageFileHint | undefined {
+  if (!metadata) return undefined;
+  if (metadata.sha256) return { sha256: metadata.sha256 };
+  return undefined;
 }
 
 /**
@@ -69,8 +82,17 @@ export interface CacheEntryMetadata {
 export class CacheManager {
   private sb: StorageBackend;
 
-  constructor(backend: StorageBackend = new OPFSBackend()) {
-    this.sb = backend;
+  /**
+   * @param backends Array of storage backends to use, in order of preference ; if first is available, use it, otherwise try the next one.
+   */
+  constructor(backends: StorageBackend[] = [new COSBackend()]) {
+    for (const backend of backends) {
+      if (backend.isSupported()) {
+        this.sb = backend;
+        return;
+      }
+    }
+    throw new Error('No supported storage backend found');
   }
 
   /**
@@ -101,6 +123,36 @@ export class CacheManager {
 
   async download(url: string, options: DownloadOptions = {}): Promise<void> {
     const fileKey = await urlToFileName(url, '');
+
+    // Fetch sha256 before the GET so we can skip the download entirely if the
+    // file is already in COS (avoids opening a connection just to cancel it).
+    const sha256 = await getHFFileSHA256(url, options.headers ?? {});
+    const hint = sha256 ? { sha256 } : undefined;
+
+    if (hint && (await this.sb.getSize(fileKey, hint)) !== -1) {
+      // File already in COS. Metadata is origin-local (OPFS), so it may be
+      // absent on a different origin or after a crash between write and
+      // writeMetadata. Ensure it exists before returning.
+      if (!(await this.getMetadata(fileKey))) {
+        const head = await fetch(url, {
+          method: 'HEAD',
+          ...(options.headers ? { headers: options.headers } : {}),
+        });
+        const contentLength = head.headers.get('content-length');
+        const etag = (head.headers.get('etag') || '').replace(
+          /[^A-Za-z0-9]/g,
+          ''
+        );
+        await this.writeMetadata(fileKey, {
+          originalURL: url,
+          originalSize: parseInt(contentLength ?? '0', 10),
+          etag,
+          sha256,
+          ...(options.metadataAdditional ?? {}),
+        });
+      }
+      return;
+    }
 
     const response = await fetch(url, {
       ...(options.headers ? { headers: options.headers } : {}),
@@ -139,14 +191,22 @@ export class CacheManager {
       },
     });
 
-    await this.sb.write(fileKey, response.body.pipeThrough(progressStream));
-
-    await this.writeMetadata(fileKey, {
+    const metadata: CacheEntryMetadata = {
       originalURL: url,
       originalSize: total,
       etag,
       ...(options.metadataAdditional ?? {}),
-    });
+    };
+    if (sha256) {
+      metadata.sha256 = sha256;
+    }
+
+    await this.sb.write(
+      fileKey,
+      response.body.pipeThrough(progressStream),
+      hint
+    );
+    await this.writeMetadata(fileKey, metadata);
   }
 
   /**
@@ -156,11 +216,13 @@ export class CacheManager {
    * @returns Blob, or null if file does not exist
    */
   async open(nameOrURL: string): Promise<Blob | null> {
-    const direct = await this.sb.read(nameOrURL);
+    const hint1 = hintFromMetadata(await this.getMetadata(nameOrURL));
+    const direct = await this.sb.read(nameOrURL, hint1);
     if (direct) return direct;
     // also accept the original URL
     const key = await urlToFileName(nameOrURL, '');
-    return this.sb.read(key);
+    const hint2 = hintFromMetadata(await this.getMetadata(key));
+    return this.sb.read(key, hint2);
   }
 
   /**
@@ -172,7 +234,8 @@ export class CacheManager {
    * @returns number of bytes, or -1 if file does not exist
    */
   async getSize(name: string): Promise<number> {
-    return this.sb.getSize(name);
+    const hint = hintFromMetadata(await this.getMetadata(name));
+    return this.sb.getSize(name, hint);
   }
 
   /**

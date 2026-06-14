@@ -3,6 +3,14 @@ import { OPFS_UTILS_WORKER_CODE } from '../workers-code/generated';
 import type { StorageBackend } from './index';
 
 export class OPFSBackend implements StorageBackend {
+  isSupported(): boolean {
+    return (
+      typeof navigator !== 'undefined' &&
+      'storage' in navigator &&
+      !!navigator.storage?.getDirectory
+    );
+  }
+
   async read(key: string): Promise<Blob | null> {
     try {
       const cacheDir = await getCacheDir();
