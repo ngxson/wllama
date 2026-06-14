@@ -130,7 +130,27 @@ export class CacheManager {
     const hint = sha256 ? { sha256 } : undefined;
 
     if (hint && (await this.sb.getSize(fileKey, hint)) !== -1) {
-      // File already in COS; metadata was written on the original download.
+      // File already in COS. Metadata is origin-local (OPFS), so it may be
+      // absent on a different origin or after a crash between write and
+      // writeMetadata. Ensure it exists before returning.
+      if (!(await this.getMetadata(fileKey))) {
+        const head = await fetch(url, {
+          method: 'HEAD',
+          ...(options.headers ? { headers: options.headers } : {}),
+        });
+        const contentLength = head.headers.get('content-length');
+        const etag = (head.headers.get('etag') || '').replace(
+          /[^A-Za-z0-9]/g,
+          ''
+        );
+        await this.writeMetadata(fileKey, {
+          originalURL: url,
+          originalSize: parseInt(contentLength ?? '0', 10),
+          etag,
+          sha256,
+          ...(options.metadataAdditional ?? {}),
+        });
+      }
       return;
     }
 
