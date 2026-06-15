@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 const SAFARI = process.env.BROWSER === 'safari';
 const WEBGPU = process.env.WEBGPU === '1';
+const AUTO = process.env.AUTO === '1';
 
 const chromeArgsCI = ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'];
 const chromeArgsWebGPU = [
@@ -16,6 +17,7 @@ export default defineConfig({
     __GITHUB_CI__: JSON.stringify(!!process.env.GITHUB_ACTIONS),
   },
   test: {
+    ...(AUTO ? { watch: false } : {}),
     exclude: [
       '**/node_modules/**',
       '**/esm/**',

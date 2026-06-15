@@ -1143,6 +1143,20 @@ std::pair<long, std::vector<char>> common_remote_get_content(const std::string &
   throw std::runtime_error("common_remote_get_content is not implemented in wllama");
 }
 
+#if 1
+common_device_memory_data_vec common_get_device_memory_data(
+    const char *path_model,
+    const llama_model_params *mparams,
+    const llama_context_params *cparams,
+    std::vector<ggml_backend_dev_t> &devs,
+    uint32_t &hp_ngl,
+    uint32_t &hp_n_ctx_train,
+    uint32_t &hp_n_expert,
+    ggml_log_level log_level)
+{
+  throw std::runtime_error("common_get_device_memory_data is not implemented in wllama");
+}
+#else
 std::vector<llama_device_memory_data> common_get_device_memory_data(
     const char *path_model,
     const struct llama_model_params *mparams,
@@ -1155,3 +1169,4 @@ std::vector<llama_device_memory_data> common_get_device_memory_data(
 {
   throw std::runtime_error("common_get_device_memory_data is not implemented in wllama");
 }
+#endif
