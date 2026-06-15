@@ -34,8 +34,9 @@ class COSInternalBackend implements StorageBackend {
   // IMPORTANT: key must be SHA-256 hash of the data
   async read(key: string): Promise<Blob | null> {
     try {
-      const handle =
-        await navigator.crossOriginStorage!.requestFileHandle(makeHash(key));
+      const handle = await navigator.crossOriginStorage!.requestFileHandle(
+        makeHash(key)
+      );
       return handle.getFile();
     } catch {
       return null;
@@ -64,8 +65,9 @@ class COSInternalBackend implements StorageBackend {
   // IMPORTANT: key must be SHA-256 hash of the data
   async getSize(key: string): Promise<number> {
     try {
-      const handle =
-        await navigator.crossOriginStorage!.requestFileHandle(makeHash(key));
+      const handle = await navigator.crossOriginStorage!.requestFileHandle(
+        makeHash(key)
+      );
       const file = await handle.getFile();
       return file.size;
     } catch {
@@ -147,8 +149,7 @@ export function mockCOS(): void {
       return {
         getFile() {
           const blob = store.get(value);
-          if (!blob)
-            throw new DOMException('File not found', 'NotFoundError');
+          if (!blob) throw new DOMException('File not found', 'NotFoundError');
           return Promise.resolve(new File([blob], value));
         },
         createWritable() {
