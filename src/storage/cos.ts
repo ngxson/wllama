@@ -7,10 +7,10 @@ interface CrossOriginStorageRequestFileHandleHash {
 }
 
 interface CrossOriginStorageManager {
-  requestFileHandles(
-    hashes: CrossOriginStorageRequestFileHandleHash[],
+  requestFileHandle(
+    hash: CrossOriginStorageRequestFileHandleHash,
     options?: { create?: boolean; origins?: string[] | string }
-  ): Promise<FileSystemFileHandle[]>;
+  ): Promise<FileSystemFileHandle>;
 }
 
 declare global {
@@ -34,9 +34,9 @@ class COSInternalBackend implements StorageBackend {
   // IMPORTANT: key must be SHA-256 hash of the data
   async read(key: string): Promise<Blob | null> {
     try {
-      const [handle] = await navigator.crossOriginStorage!.requestFileHandles([
-        makeHash(key),
-      ]);
+      const handle = await navigator.crossOriginStorage!.requestFileHandle(
+        makeHash(key)
+      );
       return handle.getFile();
     } catch {
       return null;
@@ -45,8 +45,8 @@ class COSInternalBackend implements StorageBackend {
 
   // IMPORTANT: key must be SHA-256 hash of the data
   async write(key: string, stream: ReadableStream): Promise<void> {
-    const [handle] = await navigator.crossOriginStorage!.requestFileHandles(
-      [makeHash(key)],
+    const handle = await navigator.crossOriginStorage!.requestFileHandle(
+      makeHash(key),
       { create: true }
     );
     const writable = await (handle as any).createWritable();
@@ -65,9 +65,9 @@ class COSInternalBackend implements StorageBackend {
   // IMPORTANT: key must be SHA-256 hash of the data
   async getSize(key: string): Promise<number> {
     try {
-      const [handle] = await navigator.crossOriginStorage!.requestFileHandles([
-        makeHash(key),
-      ]);
+      const handle = await navigator.crossOriginStorage!.requestFileHandle(
+        makeHash(key)
+      );
       const file = await handle.getFile();
       return file.size;
     } catch {
@@ -139,36 +139,33 @@ export function mockCOS(): void {
   const store = new Map<string, Blob>();
 
   (navigator as any).crossOriginStorage = {
-    async requestFileHandles(
-      hashes: CrossOriginStorageRequestFileHandleHash[],
+    async requestFileHandle(
+      { value }: CrossOriginStorageRequestFileHandleHash,
       options?: { create?: boolean }
-    ): Promise<FileSystemFileHandle[]> {
-      return hashes.map(({ value }) => {
-        if (!options?.create && !store.has(value)) {
-          throw new DOMException('File not found', 'NotFoundError');
-        }
-        return {
-          getFile() {
-            const blob = store.get(value);
-            if (!blob)
-              throw new DOMException('File not found', 'NotFoundError');
-            return Promise.resolve(new File([blob], value));
-          },
-          createWritable() {
-            const chunks: BlobPart[] = [];
-            return Promise.resolve({
-              write(chunk: BlobPart) {
-                chunks.push(chunk);
-                return Promise.resolve();
-              },
-              close() {
-                store.set(value, new Blob(chunks));
-                return Promise.resolve();
-              },
-            });
-          },
-        } as unknown as FileSystemFileHandle;
-      });
+    ): Promise<FileSystemFileHandle> {
+      if (!options?.create && !store.has(value)) {
+        throw new DOMException('File not found', 'NotFoundError');
+      }
+      return {
+        getFile() {
+          const blob = store.get(value);
+          if (!blob) throw new DOMException('File not found', 'NotFoundError');
+          return Promise.resolve(new File([blob], value));
+        },
+        createWritable() {
+          const chunks: BlobPart[] = [];
+          return Promise.resolve({
+            write(chunk: BlobPart) {
+              chunks.push(chunk);
+              return Promise.resolve();
+            },
+            close() {
+              store.set(value, new Blob(chunks));
+              return Promise.resolve();
+            },
+          });
+        },
+      } as unknown as FileSystemFileHandle;
     },
   } satisfies CrossOriginStorageManager;
 }
