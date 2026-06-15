@@ -1,6 +1,5 @@
 .npmrc
 /docs
-/wasm
 /examples
 /llama.cpp
 /models
