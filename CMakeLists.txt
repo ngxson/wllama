@@ -3,6 +3,8 @@ project("wllama")
 
 option(WLLAMA_TEST_BACKEND "Build wllama with test-backend-ops included" OFF)
 
+set(MTMD_VIDEO OFF CACHE BOOL "" FORCE)
+
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 set(CMAKE_HAVE_THREADS_LIBRARY 1)
 set(CMAKE_USE_WIN32_THREADS_INIT 0)
@@ -23,6 +25,7 @@ set(WLLAMA_LINK_OPTIONS
     -sMODULARIZE=0
     -sINITIAL_MEMORY=128MB
     -sMAXIMUM_MEMORY=4096MB
+    -sSTACK_SIZE=5MB
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
     -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug

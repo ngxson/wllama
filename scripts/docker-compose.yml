@@ -12,6 +12,7 @@ services:
     user: "${D_UID}:${D_GID}"
     environment:
       - WLLAMA_TEST_BACKEND=${WLLAMA_TEST_BACKEND:-}
+      - SKIP_COMPAT=${SKIP_COMPAT:-}
     volumes:
       - ..:/source:Z
     entrypoint: /bin/bash
@@ -49,19 +50,21 @@ services:
         cp build/wllama.js   src/wasm
         cp build/wllama.wasm src/wasm
 
-        # build compat package
-        mkdir -p build-compat
-        cd build-compat
-        emcmake cmake .. -DWLLAMA_COMPAT=ON -DLLAMA_WASM_MEM64=OFF -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=OFF -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
-        emmake make wllama -j
+        # build compat package (skip if SKIP_COMPAT=1)
+        if [ -z "${SKIP_COMPAT}" ]; then
+          mkdir -p build-compat
+          cd build-compat
+          emcmake cmake .. -DWLLAMA_COMPAT=ON -DLLAMA_WASM_MEM64=OFF -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=OFF -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
+          emmake make wllama -j
 
-        # go back to root
-        cd ..
+          # go back to root
+          cd ..
 
-        # copy output files (compat build)
-        mkdir -p compat/wasm
-        cp build-compat/wllama.js   compat/wasm
-        cp build-compat/wllama.wasm compat/wasm
+          # copy output files (compat build)
+          mkdir -p compat/wasm
+          cp build-compat/wllama.js   compat/wasm
+          cp build-compat/wllama.wasm compat/wasm
+        fi
 
         # generate source map
         node scripts/build_source_map.js
