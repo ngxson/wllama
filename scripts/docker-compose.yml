@@ -71,4 +71,6 @@ services:
 
         # list files (optional, for verification)
         ls -lh build
-        ls -lh build-compat
+        if [ -d build-compat ]; then
+          ls -lh build-compat
+        fi
