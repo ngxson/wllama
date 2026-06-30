@@ -529,6 +529,7 @@ export class Wllama {
       embeddings: params.embeddings,
       offload_kqv: params.offload_kqv,
       n_batch: params.n_batch,
+      n_ubatch: params.n_ubatch,
       pooling_type: params.pooling_type as string,
       rope_scaling_type: params.rope_scaling_type as string,
       rope_freq_base: params.rope_freq_base,
