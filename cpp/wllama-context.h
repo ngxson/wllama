@@ -415,6 +415,8 @@ struct wllama_context
       params.embedding = req.embeddings.value;
     if (req.n_batch.not_null())
       params.n_batch = req.n_batch.value;
+    if (req.n_ubatch.not_null())
+      params.n_ubatch = req.n_ubatch.value;
     if (req.n_parallel.not_null())
       params.n_parallel = req.n_parallel.value;
     if (req.pooling_type.not_null())
