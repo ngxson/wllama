@@ -81,8 +81,10 @@ export interface WllamaWorkerResources {
   wasmPath: string;
   // if jsPath is not provided, use WLLAMA_EMSCRIPTEN_CODE
   jsPath?: string | { code: string } | undefined;
-  // in compat mode, mem64 must be disabled
   compat: boolean;
+  // whether the WASM was built with -sMEMORY64=1 (i64 size_t/pointer args);
+  // independent of compat mode — a compat (Asyncify) build can be either width
+  mem64?: boolean;
 }
 
 export class ProxyToWorker {
@@ -110,7 +112,12 @@ export class ProxyToWorker {
     this.multiThread = nbThread > 0;
     this.logger = logger;
     this.suppressNativeLog = suppressNativeLog;
-    this.useAsyncFile = canUseAsyncFileRead(resources.compat);
+    // Asyncify + MEMORY64 breaks emscripten's EM_ASYNC_JS unwind/rewind glue
+    // (i64 args cross invoke_*/dynCall trampolines as plain Numbers), so the
+    // wasm64 compat build must load models via heapfs instead of async reads.
+    // The old 2GB ftell limit doesn't apply there: long is 64-bit in wasm64.
+    const isCompatMem64 = resources.compat && (resources.mem64 ?? false);
+    this.useAsyncFile = canUseAsyncFileRead(resources.compat) && !isCompatMem64;
   }
 
   async getModuleCode(): Promise<string> {
@@ -145,6 +152,7 @@ export class ProxyToWorker {
       },
       nbThread: this.nbThread,
       compat: this.resources.compat,
+      mem64: this.resources.mem64 ?? !this.resources.compat,
     };
     const completeCode: string = [
       `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,

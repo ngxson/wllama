@@ -161,6 +161,9 @@ export class WllamaRuntimeError extends Error {
 export interface WllamaCompat {
   worker: string | { code: string };
   wasm: string;
+  // Set to true if the compat WASM was built with -sMEMORY64=1 (wasm64).
+  // The official @wllama/wllama-compat build is wasm32, so this defaults to false.
+  mem64?: boolean;
 }
 
 export class Wllama {
@@ -169,6 +172,7 @@ export class Wllama {
   public modelManager: ModelManager;
 
   private compat: WllamaCompat | null = null;
+  private compatForced: boolean = false;
 
   private proxy: ProxyToWorker = null as any;
   private config: WllamaConfig;
@@ -238,12 +242,13 @@ export class Wllama {
   /**
    * Set compatibility options for Wllama.
    * @param compat Set to null to disable compatibility, or 'default' to use the default compat resources from CDN.
-   * @param mode 'safari' by default; If set to 'firefox_safari', the compat mode will **also** be enabled on Firefox, which will significantly degrade the performance but allow using WebGPU on Firefox.
+   * @param mode 'safari' by default; If set to 'firefox_safari', the compat mode will **also** be enabled on Firefox, which will significantly degrade the performance but allow using WebGPU on Firefox. If set to 'force', the compat resources are used unconditionally, even when the browser supports JSPI and Memory64 (useful when the JSPI build misbehaves on a given browser/driver combo).
    */
   setCompat(
     compat: WllamaCompat | null | 'default',
-    mode: 'safari' | 'firefox_safari' = 'safari'
+    mode: 'safari' | 'firefox_safari' | 'force' = 'safari'
   ) {
+    this.compatForced = mode === 'force' && compat !== null;
     if (mode === 'safari') {
       if (isFirefox()) {
         this.compat = null;
@@ -1093,8 +1098,9 @@ export class Wllama {
     const workerResources: WllamaWorkerResources = {
       wasmPath: absoluteUrl(this.pathConfig['default']),
       compat: false,
+      mem64: true, // the main (JSPI) build is always wasm64
     };
-    if (needCompat()) {
+    if (this.compatForced || needCompat()) {
       if (!this.compat) {
         this.logger().warn(
           'Not using compat mode' +
@@ -1118,6 +1124,7 @@ export class Wllama {
         workerResources.wasmPath = absoluteUrl(this.compat.wasm);
         workerResources.jsPath = this.compat.worker;
         workerResources.compat = true;
+        workerResources.mem64 = this.compat.mem64 ?? false;
       }
     }
 

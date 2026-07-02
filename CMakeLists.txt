@@ -22,7 +22,7 @@ set(WLLAMA_LINK_OPTIONS
     -sEXPORT_ES6=0
     -sMODULARIZE=0
     -sINITIAL_MEMORY=128MB
-    -sMAXIMUM_MEMORY=4096MB
+    -sMAXIMUM_MEMORY=16384MB
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
     -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
@@ -44,14 +44,15 @@ set(WLLAMA_LINK_OPTIONS
 )
 
 if (WLLAMA_COMPAT)
-    # no wasm exception (not compatible with asyncify - asyncify is needed for firefox and safari)
-    # no mem64 (not compatible with safari)
+    # Asyncify instead of JSPI — compatible with Safari and Firefox
     list(APPEND WLLAMA_COMPILE_OPTIONS
         -fexceptions
         -pthread
+        -sMEMORY64=1
     )
     list(APPEND WLLAMA_LINK_OPTIONS
         -fexceptions
+        -sMEMORY64=1
         -sASYNCIFY=1
         -sASYNCIFY_ADD=['wllama_start','wllama_action']
     )
@@ -100,6 +101,7 @@ set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
     llama.cpp/tools/server/server-task.cpp
     llama.cpp/tools/server/server-chat.cpp
     llama.cpp/tools/server/server-common.cpp
+    llama.cpp/tools/server/server-schema.cpp
 )
 
 set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}

@@ -1,4 +1,4 @@
-export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
+﻿export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
   const output = new Uint8Array(totalSize);
   output.set(buffers[0], 0);
@@ -149,8 +149,17 @@ export const isMmproj = async (blob: Blob): Promise<boolean> => {
 
 export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export const absoluteUrl = (relativePath: string) =>
-  new URL(relativePath, document.baseURI).href;
+export const absoluteUrl = (relativePath: string): string => {
+  if (
+    relativePath.startsWith('http://') ||
+    relativePath.startsWith('https://') ||
+    relativePath.startsWith('blob:') ||
+    relativePath.startsWith('data:')
+  ) {
+    return relativePath;
+  }
+  return new URL(relativePath, document.baseURI).href;
+};
 
 export const padDigits = (number: number, digits: number) => {
   return (
@@ -345,6 +354,9 @@ export const createWorker = (workerCode: string | Blob): Worker => {
       ? new Blob([workerCode], { type: 'text/javascript' })
       : (workerCode as Blob)
   );
+  if (location.protocol === 'file:') {
+    return new Worker(workerURL);
+  }
   return new Worker(workerURL, { type: 'module' });
 };
 

@@ -19,6 +19,7 @@
 
 #include "server-context.h"
 #include "server-queue.h"
+#include "server-schema.h"
 
 #include "ggml-cpu.h"
 #include "ggml-backend.h"
@@ -300,7 +301,7 @@ struct wllama_context
       server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
       task.id = rd->get_new_id();
       task.index = 0;
-      task.params = server_task::params_from_json_cmpl(
+      task.params = server_schema::eval_llama_cmpl_schema(
           vocab,
           params,
           meta->slot_n_ctx,
@@ -1143,7 +1144,7 @@ std::pair<long, std::vector<char>> common_remote_get_content(const std::string &
   throw std::runtime_error("common_remote_get_content is not implemented in wllama");
 }
 
-std::vector<llama_device_memory_data> common_get_device_memory_data(
+common_device_memory_data_vec common_get_device_memory_data(
     const char *path_model,
     const struct llama_model_params *mparams,
     const struct llama_context_params *cparams,

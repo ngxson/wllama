@@ -7,6 +7,7 @@ let wllamaDebug;
 
 let Module = null;
 let isCompat = false;
+let isMem64 = true;
 let lastStack = '';
 let isAborted = false;
 let hasMultithread = false;
@@ -35,7 +36,11 @@ const getHeapU8 = () => {
 };
 
 const toSizeT = (num) => {
-  return isCompat ? Number(num) : BigInt(num);
+  // wasm64 (MEMORY64) exports take i64 size_t/pointer args, which must be
+  // BigInt on the JS side; wasm32 takes plain Numbers. This depends on how
+  // the WASM was built, not on compat mode — a compat (Asyncify) build can
+  // be either width, so the flag is passed in via RUN_OPTIONS.mem64.
+  return isMem64 ? BigInt(num) : Number(num);
 };
 
 // Get module config that forwards stdout/err to main thread
@@ -45,6 +50,9 @@ const getWModuleConfig = (_argMainScriptBlob) => {
   var argMainScriptBlob = _argMainScriptBlob;
 
   isCompat = RUN_OPTIONS.compat;
+  // Default preserves the upstream assumption (compat = wasm32, main = wasm64)
+  // when the flag is absent from RUN_OPTIONS.
+  isMem64 = RUN_OPTIONS.mem64 ?? !RUN_OPTIONS.compat;
   hasMultithread = pthreadPoolSize > 1;
 
   msg({
@@ -119,7 +127,7 @@ const getWModuleConfig = (_argMainScriptBlob) => {
 //      https://github.com/godotengine/godot/issues/70621
 const getWasmMemory = () => {
   let minBytes = 128 * 1024 * 1024;
-  let maxBytes = 4096 * 1024 * 1024;
+  let maxBytes = 16384 * 1024 * 1024;
   let stepBytes = 128 * 1024 * 1024;
   while (maxBytes > minBytes) {
     try {
@@ -127,7 +135,7 @@ const getWasmMemory = () => {
         initial: toSizeT(minBytes / 65536),
         maximum: toSizeT(maxBytes / 65536),
         shared: true,
-        address: isCompat ? undefined : 'i64',
+        address: isMem64 ? 'i64' : undefined,
       });
       return wasmMemory;
     } catch (e) {
@@ -384,7 +392,9 @@ onmessage = async (e) => {
         // init FS
         patchHeapFS();
         // init cwrap
-        const pointer = isCompat ? 'number' : 'bigint';
+        // Pointer/size_t width follows the WASM build (wasm64 → i64/bigint),
+        // not compat mode — a compat (Asyncify) build can be either width.
+        const pointer = isMem64 ? 'bigint' : 'number';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument
         wllamaMalloc = callWrapper('wllama_malloc', pointer, [
           'number',

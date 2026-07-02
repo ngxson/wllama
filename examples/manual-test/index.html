@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>wllama wasm64 test</title>
+</head>
+<body>
+  <h1>wllama wasm64 test harness</h1>
+  <p>Mode: <code id="mode"></code> — watch the console. Results land in <code>window.__TEST_RESULTS</code>.</p>
+  <pre id="log" style="white-space: pre-wrap; font-size: 12px;"></pre>
+
+  <script type="module">
+    import { Wllama } from '/esm/index.js';
+
+    const params = new URLSearchParams(location.search);
+    // 'compat64' = forced Asyncify+wasm64+WebGPU build, 'main' = JSPI build
+    const mode = params.get('mode') || 'compat64';
+    const gpuLayers = params.has('gpu') ? Number(params.get('gpu')) : 99;
+    document.getElementById('mode').textContent = `${mode} (n_gpu_layers=${gpuLayers})`;
+
+    const logEl = document.getElementById('log');
+    const results = { mode, gpuLayers, steps: [], done: false, ok: false };
+    window.__TEST_RESULTS = results;
+
+    function log(step, ok, detail) {
+      const line = `[TEST] ${ok ? 'PASS' : 'FAIL'} ${step}${detail ? ' — ' + detail : ''}`;
+      console.log(line);
+      logEl.textContent += line + '\n';
+      results.steps.push({ step, ok, detail });
+    }
+
+    const TOOLS = [
+      {
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          description: 'Get the current weather for a city',
+          parameters: {
+            type: 'object',
+            properties: {
+              city: { type: 'string', description: 'City name' },
+            },
+            required: ['city'],
+          },
+        },
+      },
+    ];
+
+    async function main() {
+      const wllama = new Wllama({ default: '/src/wasm/wllama.wasm' });
+
+      if (mode === 'compat64') {
+        wllama.setCompat(
+          {
+            wasm: '/compat/wasm/wllama.wasm',
+            worker: '/compat/wasm/wllama.js',
+            mem64: true,
+          },
+          'force'
+        );
+      } else {
+        wllama.setCompat(null);
+      }
+      log('setup', true, `mode=${mode}`);
+
+      // ── Model load (this is where the JSPI build crashes) ────────────
+      // Plain fetch + loadModel([blob]) — same path agentop uses; avoids
+      // ModelManager's parallel range requests (python http.server chokes).
+      const t0 = performance.now();
+      const resp = await fetch('/.dev-models/qwen3-0.6b-q8_0.gguf');
+      if (!resp.ok) throw new Error('model fetch failed: ' + resp.status);
+      const blob = await resp.blob();
+      log('model_fetch', true, `${(blob.size / 1e6).toFixed(0)}MB in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+      const t1 = performance.now();
+      await wllama.loadModel([blob], {
+        n_ctx: 2048,
+        n_gpu_layers: gpuLayers,
+      });
+      log('model_load', true, `${((performance.now() - t1) / 1000).toFixed(1)}s`);
+
+      // ── Basic completion ──────────────────────────────────────────────
+      const basic = await wllama.createChatCompletion({
+        messages: [{ role: 'user', content: 'Say exactly: hello world' }],
+        max_tokens: 64,
+        temp: 0.0,
+        chat_template_kwargs: { enable_thinking: false },
+      });
+      const basicText = basic?.choices?.[0]?.message?.content ?? '';
+      log('basic_completion', basicText.length > 0, JSON.stringify(basicText.slice(0, 80)));
+
+      // ── Native tool calling ───────────────────────────────────────────
+      const toolRes = await wllama.createChatCompletion({
+        messages: [
+          { role: 'user', content: 'What is the weather in Paris? Use the tool.' },
+        ],
+        tools: TOOLS,
+        tool_choice: 'auto',
+        max_tokens: 256,
+        temp: 0.0,
+        chat_template_kwargs: { enable_thinking: false },
+      });
+      const msg = toolRes?.choices?.[0]?.message ?? {};
+      const toolCalls = msg.tool_calls ?? [];
+      const tc = toolCalls[0];
+      const tcOk = !!tc && tc.function?.name === 'get_weather';
+      log('native_tool_call', tcOk, JSON.stringify({
+        finish_reason: toolRes?.choices?.[0]?.finish_reason,
+        tool_calls: toolCalls,
+        content: (msg.content ?? '').slice(0, 80),
+      }));
+
+      // ── Tool-result round trip ────────────────────────────────────────
+      if (tcOk) {
+        const followUp = await wllama.createChatCompletion({
+          messages: [
+            { role: 'user', content: 'What is the weather in Paris? Use the tool.' },
+            { role: 'assistant', content: msg.content ?? null, tool_calls: toolCalls },
+            {
+              role: 'tool',
+              tool_call_id: tc.id ?? 'call_0',
+              content: JSON.stringify({ city: 'Paris', temp_c: 21, condition: 'sunny' }),
+            },
+          ],
+          tools: TOOLS,
+          tool_choice: 'auto',
+          max_tokens: 128,
+          temp: 0.0,
+          chat_template_kwargs: { enable_thinking: false },
+        });
+        const answer = followUp?.choices?.[0]?.message?.content ?? '';
+        log('tool_round_trip', /21|sunny/i.test(answer), JSON.stringify(answer.slice(0, 120)));
+      } else {
+        log('tool_round_trip', false, 'skipped — no tool call detected');
+      }
+
+      results.ok = results.steps.every((s) => s.ok);
+    }
+
+    main()
+      .catch((err) => {
+        log('exception', false, (err?.message || String(err)).slice(0, 300));
+        console.error(err);
+      })
+      .finally(() => {
+        results.done = true;
+        console.log('[TEST] DONE ok=' + results.ok);
+      });
+  </script>
+</body>
+</html>
