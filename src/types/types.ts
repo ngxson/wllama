@@ -11,8 +11,9 @@ export interface LoadModelParams {
   n_threads?: number;
   embeddings?: boolean;
   offload_kqv?: boolean;
-  pooling_type?: // legacy values
-  | 'LLAMA_POOLING_TYPE_UNSPECIFIED'
+  pooling_type?:
+    // legacy values
+    | 'LLAMA_POOLING_TYPE_UNSPECIFIED'
     | 'LLAMA_POOLING_TYPE_NONE'
     | 'LLAMA_POOLING_TYPE_MEAN'
     | 'LLAMA_POOLING_TYPE_CLS'
