@@ -103,6 +103,7 @@ set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
     llama.cpp/tools/server/server-task.cpp
     llama.cpp/tools/server/server-chat.cpp
     llama.cpp/tools/server/server-common.cpp
+    llama.cpp/tools/server/server-schema.cpp
 )
 
 set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}

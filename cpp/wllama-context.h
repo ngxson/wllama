@@ -19,6 +19,7 @@
 
 #include "server-context.h"
 #include "server-queue.h"
+#include "server-schema.h"
 
 #include "ggml-cpu.h"
 #include "ggml-backend.h"
@@ -300,7 +301,7 @@ struct wllama_context
       server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
       task.id = rd->get_new_id();
       task.index = 0;
-      task.params = server_task::params_from_json_cmpl(
+      task.params = server_schema::eval_llama_cmpl_schema(
           vocab,
           params,
           meta->slot_n_ctx,
@@ -745,6 +746,9 @@ struct wllama_context
 
     bool has_more = run_loop();
     auto [result, is_error] = get_next_result();
+    if (!has_more && rd) {
+      has_more = rd->has_next();
+    }
 
     json data_json;
     if (result)
@@ -1019,6 +1023,10 @@ server_task_result_ptr server_response_reader::next(const std::function<bool()> 
   {
     LOG_DBG("%s: received error result, stop further processing\n", __func__);
     stop();
+  }
+  if (result && result->is_stop())
+  {
+    received_count++;
   }
   return result;
 }
