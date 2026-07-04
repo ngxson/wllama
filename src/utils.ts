@@ -150,7 +150,7 @@ export const isMmproj = async (blob: Blob): Promise<boolean> => {
 export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const absoluteUrl = (relativePath: string) =>
-  relativePath.includes('://') ? relativePath : new URL(relativePath, document.baseURI).href;
+  typeof document === 'undefined' ? relativePath : new URL(relativePath, document.baseURI).href;
 
 export const padDigits = (number: number, digits: number) => {
   return (
