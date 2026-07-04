@@ -151,7 +151,7 @@ export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const absoluteUrl = (relativePath: string) =>
   typeof document === 'undefined'
-    ? relativePath
+    ? new URL(relativePath, self.location.href).href
     : new URL(relativePath, document.baseURI).href;
 
 export const padDigits = (number: number, digits: number) => {
