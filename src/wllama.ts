@@ -1081,9 +1081,11 @@ export class Wllama {
         }
       }
 
-      if (!result_chunk.has_more) {
-        break;
-      }
+      // Do NOT break on has_more here: get_result pops one queued result per
+      // call while has_more reflects the task queue, so more results may still
+      // be queued even when has_more is false. Breaking early strands them,
+      // truncating this completion's tail and leaking it into the next one.
+      // Only an empty poll (handled above) confirms the queue is drained.
     }
 
     return finalResult;
