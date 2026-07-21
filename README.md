@@ -160,6 +160,27 @@ await wllama.loadModelFromHF({
 });
 ```
 
+### LoRA adapters
+
+You can apply one or more LoRA adapters on top of the base model at load
+time. Convert an adapter to GGUF with llama.cpp's `convert_lora_to_gguf.py`,
+then pass it as a blob:
+
+```js
+const adapterBlob = await (await fetch('./my_adapter.gguf')).blob();
+await wllama.loadModelFromUrl(MODEL_URL, {
+  lora_adapters: [{ blob: adapterBlob, scale: 1.0 }],
+});
+```
+
+Because the adapter stays in its original precision (typically f16) while
+only the base model is quantized, a quantized-base + adapter setup can match
+or exceed the quality of merging the adapter before quantization — while a
+new "personality" for an already-cached base costs only a few MB of download.
+
+Advanced: if you stage the adapter file into the module's file system
+yourself, pass `{ path, scale }` instead.
+
 ### Custom logger (suppress debug messages)
 
 When initializing Wllama, you can pass a custom logger to Wllama.
@@ -217,7 +238,6 @@ npm run build
 
 ## TODO
 
-- Add support for LoRA adapter
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
 
 ## Acknowledgments

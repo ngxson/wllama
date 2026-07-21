@@ -53,7 +53,17 @@ export interface LoadModelParams {
   ctx_shift?: boolean;
   cache_idle_slots?: boolean;
   n_cache_reuse?: number;
-  lora_adapters?: { path: string; scale?: number }[];
+  /**
+   * LoRA adapters applied on top of the model at load time.
+   * Each adapter is either:
+   * - `blob`: a GGUF adapter file (e.g. produced by llama.cpp's
+   *   convert_lora_to_gguf.py) — staged into the module's file system
+   *   automatically; or
+   * - `path`: a path already present in the module's file system, for
+   *   callers that staged the file themselves.
+   * `scale` defaults to 1.0.
+   */
+  lora_adapters?: { blob?: Blob; path?: string; scale?: number }[];
   lora_init_without_apply?: boolean;
   spec_draft_model?: string;
   spec_draft_ngl?: number;
