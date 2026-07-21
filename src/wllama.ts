@@ -498,7 +498,22 @@ export class Wllama {
       logLevel = 9999 as any;
     }
 
-    const modelFiles = await prepareBlobs(blobs);
+    // Stage LoRA adapter blobs into the module's file system; adapters
+    // given as `path` are assumed to be staged by the caller already.
+    const loraAdapters = params.lora_adapters ?? [];
+    const loraBlobs = loraAdapters
+      .map((a) => a.blob)
+      .filter((b): b is Blob => !!b);
+    const modelFiles = await prepareBlobs(blobs, loraBlobs);
+    let loraBlobIndex = 0;
+    const loraPaths = loraAdapters.map((a) => {
+      if (a.blob) return `models/${modelFiles.lora[loraBlobIndex++].name}`;
+      if (a.path) return a.path;
+      throw new WllamaError(
+        'lora_adapters entries need either a blob or a path',
+        'load_error'
+      );
+    });
     await this.proxy.moduleInit(modelFiles.all);
 
     // run it
@@ -557,8 +572,10 @@ export class Wllama {
       ctx_shift: params.ctx_shift,
       cache_idle_slots: params.cache_idle_slots,
       n_cache_reuse: params.n_cache_reuse,
-      lora_paths: params.lora_adapters?.map((a) => a.path),
-      lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
+      lora_paths: loraAdapters.length ? loraPaths : undefined,
+      lora_scales: loraAdapters.length
+        ? loraAdapters.map((a) => a.scale ?? 1.0)
+        : undefined,
       lora_init_without_apply: params.lora_init_without_apply,
       spec_draft_model: params.spec_draft_model,
       spec_draft_ngl: params.spec_draft_ngl,

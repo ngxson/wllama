@@ -165,12 +165,16 @@ export const isString = (value: any): boolean => !!value?.startsWith;
 
 export const MMPROJ_FILE_NAME = 'mmproj.gguf';
 
+export const loraFileName = (i: number) => `lora-${padDigits(i + 1, 5)}.gguf`;
+
 type ModelShard = { blob: Blob; name: string };
 export const prepareBlobs = async (
-  blobsInp: Blob[]
+  blobsInp: Blob[],
+  loraBlobs: Blob[] = []
 ): Promise<{
   llm: ModelShard[];
   mmproj: ModelShard | null;
+  lora: ModelShard[];
   all: ModelShard[];
 }> => {
   const blobs: Blob[] = [];
@@ -199,9 +203,19 @@ export const prepareBlobs = async (
     });
   }
 
+  // prepare lora-XXXXX.gguf adapter blobs
+  const lora = loraBlobs.map((blob, i) => ({
+    blob,
+    name: loraFileName(i),
+  }));
+  result.push(...lora);
+
   return {
-    llm: result.filter((f) => f.name !== MMPROJ_FILE_NAME),
+    llm: result.filter(
+      (f) => f.name !== MMPROJ_FILE_NAME && !lora.includes(f)
+    ),
     mmproj: blobMmproj ? { blob: blobMmproj, name: MMPROJ_FILE_NAME } : null,
+    lora,
     all: result,
   };
 };
