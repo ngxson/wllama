@@ -1,4 +1,15 @@
 // Note: snake_case is used to match llama.cpp's naming convention
+export type LoraAdapterSource =
+  | { blob: Blob; path?: never; scale?: number }
+  | { path: string; blob?: never; scale?: number };
+
+export interface LoraAdapterSelection {
+  /** Zero-based index in the lora_adapters array supplied at model load. */
+  id: number;
+  /** Runtime scale. Use an empty selection to run the base model. */
+  scale: number;
+}
+
 export interface LoadModelParams {
   log_level?: LogLevel;
   seed?: number;
@@ -53,7 +64,17 @@ export interface LoadModelParams {
   ctx_shift?: boolean;
   cache_idle_slots?: boolean;
   n_cache_reuse?: number;
-  lora_adapters?: { path: string; scale?: number }[];
+  /**
+   * LoRA adapters applied on top of the model at load time.
+   * Each adapter is either:
+   * - `blob`: a GGUF adapter file (e.g. produced by llama.cpp's
+   *   convert_lora_to_gguf.py) — staged into the module's file system
+   *   automatically; or
+   * - `path`: a path already present in the module's file system, for
+   *   callers that staged the file themselves.
+   * `scale` defaults to 1.0.
+   */
+  lora_adapters?: LoraAdapterSource[];
   lora_init_without_apply?: boolean;
   spec_draft_model?: string;
   spec_draft_ngl?: number;

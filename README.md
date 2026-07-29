@@ -1,5 +1,11 @@
 # wllama - Wasm binding for llama.cpp
 
+> **mmaccrate fork:** This repository is a focused fork of
+> [ngxson/wllama](https://github.com/ngxson/wllama) that adds browser-side
+> GGUF LoRA adapter loading and per-request adapter switching. The base
+> runtime remains compatible with wllama; the added API is documented in the
+> [LoRA adapters](#lora-adapters) section below.
+
 ![](./README_banner.png)
 
 WebAssembly binding for [llama.cpp](https://github.com/ggerganov/llama.cpp)
@@ -160,6 +166,37 @@ await wllama.loadModelFromHF({
 });
 ```
 
+### LoRA adapters
+
+You can apply one or more LoRA adapters on top of the base model at load
+time. Convert an adapter to GGUF with llama.cpp's `convert_lora_to_gguf.py`,
+then pass it as a blob:
+
+```js
+const adapterBlob = await (await fetch('./my_adapter.gguf')).blob();
+await wllama.loadModelFromUrl(MODEL_URL, {
+  lora_adapters: [{ blob: adapterBlob, scale: 1.0 }],
+  lora_init_without_apply: true,
+});
+
+// Adapter IDs are zero-based positions in lora_adapters. The server context
+// applies the selection before decode and invalidates incompatible slot cache.
+await wllama.createChatCompletion({
+  messages: [{ role: 'user', content: 'Hello' }],
+  lora: [{ id: 0, scale: 0.8 }],
+});
+
+// Omitting lora (or passing an empty array) returns to base-model weights.
+```
+
+Because the adapter stays in its original precision (typically f16) while
+only the base model is quantized, a quantized-base + adapter setup can match
+or exceed the quality of merging the adapter before quantization — while a
+new "personality" for an already-cached base costs only a few MB of download.
+
+Advanced: if you stage the adapter file into the module's file system
+yourself, pass `{ path, scale }` instead.
+
 ### Custom logger (suppress debug messages)
 
 When initializing Wllama, you can pass a custom logger to Wllama.
@@ -217,7 +254,6 @@ npm run build
 
 ## TODO
 
-- Add support for LoRA adapter
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
 
 ## Acknowledgments

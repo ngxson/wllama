@@ -1,4 +1,4 @@
-import type { SamplingParams } from './types';
+import type { LoraAdapterSelection, SamplingParams } from './types';
 
 // Message content types
 
@@ -130,6 +130,8 @@ export type ChatCompletionParams = {
   cache_prompt?: boolean;
   return_tokens?: boolean;
   timings_per_token?: boolean;
+  /** Apply preloaded adapters for this request. Omit or pass [] for base weights. */
+  lora?: LoraAdapterSelection[];
 } & SamplingParams;
 
 // Response types----------
@@ -246,6 +248,9 @@ export type RawCompletionParams = {
   logit_bias?: Record<string, number>;
   seed?: number;
   user?: string;
+  cache_prompt?: boolean;
+  /** Apply preloaded adapters for this request. Omit or pass [] for base weights. */
+  lora?: LoraAdapterSelection[];
 } & SamplingParams;
 
 export interface RawCompletionChoice {

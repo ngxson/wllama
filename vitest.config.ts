@@ -3,6 +3,9 @@ import { defineConfig } from 'vitest/config';
 const SAFARI = process.env.BROWSER === 'safari';
 const WEBGPU = process.env.WEBGPU === '1';
 const AUTO = process.env.AUTO === '1';
+const LORA_INTEGRATION = process.env.LORA_INTEGRATION === '1';
+const GAME_BASE_INTEGRATION = process.env.GAME_BASE_INTEGRATION === '1';
+const QWEN35_INTEGRATION = process.env.QWEN35_INTEGRATION === '1';
 
 const chromeArgsCI = ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'];
 const chromeArgsWebGPU = [
@@ -15,6 +18,9 @@ const chromeArgsWebGPU = [
 export default defineConfig({
   define: {
     __GITHUB_CI__: JSON.stringify(!!process.env.GITHUB_ACTIONS),
+    __LORA_INTEGRATION__: JSON.stringify(LORA_INTEGRATION),
+    __GAME_BASE_INTEGRATION__: JSON.stringify(GAME_BASE_INTEGRATION),
+    __QWEN35_INTEGRATION__: JSON.stringify(QWEN35_INTEGRATION),
   },
   test: {
     ...(AUTO ? { watch: false } : {}),

@@ -1,6 +1,7 @@
 import { ProxyToWorker, type WllamaWorkerResources } from './worker';
 import {
   absoluteUrl,
+  baseLoraSelection,
   canUseAsyncFileRead,
   cbToAsyncIter,
   checkEnvironmentCompatible,
@@ -164,6 +165,7 @@ export interface WllamaCompat {
 }
 
 export class Wllama {
+  private loraAdapterCount = 0;
   // The CacheManager and ModelManager are singleton, can be accessed by user
   public cacheManager: CacheManager;
   public modelManager: ModelManager;
@@ -498,8 +500,24 @@ export class Wllama {
       logLevel = 9999 as any;
     }
 
-    const modelFiles = await prepareBlobs(blobs);
+    // Stage LoRA adapter blobs into the module's file system; adapters
+    // given as `path` are assumed to be staged by the caller already.
+    const loraAdapters = params.lora_adapters ?? [];
+    const loraBlobs = loraAdapters
+      .map((a) => a.blob)
+      .filter((b): b is Blob => !!b);
+    const modelFiles = await prepareBlobs(blobs, loraBlobs);
+    let loraBlobIndex = 0;
+    const loraPaths = loraAdapters.map((a) => {
+      if (a.blob) return `models/${modelFiles.lora[loraBlobIndex++].name}`;
+      if (a.path) return a.path;
+      throw new WllamaError(
+        'lora_adapters entries need either a blob or a path',
+        'load_error'
+      );
+    });
     await this.proxy.moduleInit(modelFiles.all);
+    this.loraAdapterCount = loraAdapters.length;
 
     // run it
     this.logger().debug('Calling wllamaStart...');
@@ -557,8 +575,10 @@ export class Wllama {
       ctx_shift: params.ctx_shift,
       cache_idle_slots: params.cache_idle_slots,
       n_cache_reuse: params.n_cache_reuse,
-      lora_paths: params.lora_adapters?.map((a) => a.path),
-      lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
+      lora_paths: loraAdapters.length ? loraPaths : undefined,
+      lora_scales: loraAdapters.length
+        ? loraAdapters.map((a) => a.scale ?? 1.0)
+        : undefined,
       lora_init_without_apply: params.lora_init_without_apply,
       spec_draft_model: params.spec_draft_model,
       spec_draft_ngl: params.spec_draft_ngl,
@@ -788,6 +808,21 @@ export class Wllama {
   ): Promise<TChunk> {
     this.checkModelLoaded();
 
+    // llama.cpp keeps load-time adapters enabled when the request does not
+    // contain a `lora` field. The browser API treats an omitted or empty
+    // selection as an explicit request for the base model instead.
+    const completionOptions = options as any;
+    if (
+      this.loraAdapterCount > 0 &&
+      (!Array.isArray(completionOptions.lora) ||
+        completionOptions.lora.length === 0)
+    ) {
+      options = {
+        ...completionOptions,
+        lora: baseLoraSelection(this.loraAdapterCount),
+      } as TOpt;
+    }
+
     const isStream = !!(options as any).stream;
     const isChat = !!(options as any).messages;
     const customOpt: any = {};
@@ -874,6 +909,7 @@ export class Wllama {
   async exit(): Promise<void> {
     await this.proxy?.wllamaExit();
     this.proxy = null as any;
+    this.loraAdapterCount = 0;
   }
 
   /**
