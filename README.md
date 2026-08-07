@@ -37,7 +37,7 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
 - The default Memory64 build reads large model files in bounded chunks instead of materializing the full file in an `ArrayBuffer`. Splitting models into 512MB shards is still recommended for compatibility builds and constrained browsers.
-- The 16 GiB Memory64 value is a maximum, not a guarantee that a device can commit that much memory. Wllama grows from 128 MiB and may negotiate a lower maximum during multithreaded startup when the browser cannot reserve 16 GiB. Browsers without full 16 GiB Memory64 or JSPI support use the wasm32 compat build and remain limited to 4 GiB.
+- The 16 GiB Memory64 value is a maximum, not a guarantee that a device can commit that much memory. Wllama grows from 128 MiB and may negotiate a lower maximum during multithreaded startup when the browser cannot reserve 16 GiB. Browsers without shared Memory64 or JSPI support use the wasm32 compat build and remain limited to 4 GiB.
 
 ## Code demo and documentation
 
@@ -139,7 +139,7 @@ const wllama = new Wllama(WasmFromCDN);
 ### Split model
 
 Cases where we want to split the model:
-- Due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length), the size limitation of a file is 2GB. If your model is bigger than 2GB, you can split the model into small files.
+- The wasm32 compatibility build and constrained browsers can hit a 2 GiB [ArrayBuffer size limit](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length), so model files larger than 2 GiB must be split in those environments. Elsewhere, the default Memory64 build reads model files in bounded chunks and does not require splitting for this reason.
 - Even with a small model, splitting into chunks allows the browser to download multiple chunks in parallel, thus making the download process a bit faster.
 
 We use `llama-gguf-split` to split a big gguf file into smaller files. You can download the pre-built binary via [llama.cpp release page](https://github.com/ggerganov/llama.cpp/releases):

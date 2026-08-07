@@ -104,9 +104,9 @@ const getWModuleConfig = (_argMainScriptBlob) => {
       ? argMainScriptBlob
       : 'throw new Error("Multithreading is not enabled")',
     pthreadPoolSize: hasMultithread ? pthreadPoolSize : 0,
-    // Emscripten creates the imported memory in single-thread mode. Pthread
-    // workers need us to create and share one memory object up front.
-    wasmMemory: hasMultithread ? getWasmMemory() : null,
+    // Create the imported memory here for every mode so constrained runtimes
+    // can negotiate a lower maximum before Emscripten initializes.
+    wasmMemory: getWasmMemory(),
     onAbort: function (message) {
       isAborted = true;
       msg({ verb: 'signal.abort', args: ['abort', message, lastStack, null] });
@@ -122,7 +122,7 @@ const getWModuleConfig = (_argMainScriptBlob) => {
   };
 };
 
-// Get the memory to be used by wasm. (Only used in multi-thread mode)
+// Get the memory to be used by wasm.
 // Because we have a weird OOM issue on iOS, we need to try some values
 // See: https://github.com/emscripten-core/emscripten/issues/19144
 //      https://github.com/godotengine/godot/issues/70621

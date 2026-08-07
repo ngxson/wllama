@@ -144,6 +144,30 @@ test.sequential(
   }
 );
 
+test.sequential('failed COS writes cancel their source stream', async () => {
+  const backend = new COSBackend();
+  const { buf, sha256 } = await randomBufAndHash();
+  const writeError = new Error('COS write failed');
+  let cancelReason: unknown;
+
+  cosWriteError = writeError;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(buf);
+    },
+    cancel(reason) {
+      cancelReason = reason;
+      throw new Error('Source cancellation failed');
+    },
+  });
+
+  await expect(backend.write('unused', stream, { sha256 })).rejects.toBe(
+    writeError
+  );
+  expect(cancelReason).toBe(writeError);
+  expect(stream.locked).toBe(false);
+});
+
 test.sequential(
   'cache listing rediscovers COS data from metadata',
   async () => {

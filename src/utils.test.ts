@@ -11,6 +11,7 @@ import {
   parseModelUrl,
   sortFileByShard,
   isValidGgufFile,
+  needCompat,
 } from './utils';
 
 describe('joinBuffers', () => {
@@ -76,6 +77,49 @@ describe('absoluteUrl', () => {
 
     expect(absoluteUrl('test.html')).toBe('http://example.com/app/test.html');
     expect(absoluteUrl('/test.html')).toBe('http://example.com/test.html');
+  });
+});
+
+describe('Memory64 support', () => {
+  test('does not require the full 16 GiB maximum during capability detection', () => {
+    const memoryDescriptor = Object.getOwnPropertyDescriptor(
+      WebAssembly,
+      'Memory'
+    );
+    const suspendingDescriptor = Object.getOwnPropertyDescriptor(
+      WebAssembly,
+      'Suspending'
+    );
+    const requestedMaximums: bigint[] = [];
+
+    Object.defineProperty(WebAssembly, 'Memory', {
+      configurable: true,
+      value: function (descriptor: WebAssembly.MemoryDescriptor) {
+        requestedMaximums.push(descriptor.maximum as bigint);
+        if ((descriptor.maximum as bigint) > 1n) {
+          throw new RangeError('Maximum memory is unavailable');
+        }
+        return { grow: () => 1n };
+      },
+    });
+    Object.defineProperty(WebAssembly, 'Suspending', {
+      configurable: true,
+      value: function () {},
+    });
+
+    try {
+      expect(needCompat()).toBe(false);
+      expect(requestedMaximums).toEqual([1n]);
+    } finally {
+      if (memoryDescriptor) {
+        Object.defineProperty(WebAssembly, 'Memory', memoryDescriptor);
+      }
+      if (suspendingDescriptor) {
+        Object.defineProperty(WebAssembly, 'Suspending', suspendingDescriptor);
+      } else {
+        delete (WebAssembly as any).Suspending;
+      }
+    }
   });
 });
 

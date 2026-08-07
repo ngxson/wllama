@@ -206,7 +206,7 @@ button.quiet {
 .badge {
   flex: 0 0 auto;
   padding: 0.35em 0.65em;
-  border: 1px solid currentColor;
+  border: 1px solid currentcolor;
   border-radius: 999px;
   font-size: 0.875rem;
   font-weight: 700;

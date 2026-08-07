@@ -60,6 +60,7 @@ class COSInternalBackend implements StorageBackend {
       await writable.close();
     } catch (error) {
       await writable.abort(error).catch(() => {});
+      await reader.cancel(error).catch(() => {});
       throw error;
     } finally {
       reader.releaseLock();

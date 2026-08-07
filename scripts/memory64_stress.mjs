@@ -824,7 +824,9 @@ const runCase = async (caseName, modelCase, server, runOptions = {}) => {
     }
     await browser?.close().catch(() => {});
     if (!keepBrowserProfile) {
-      await rm(browserProfile, { force: true, recursive: true });
+      await rm(browserProfile, { force: true, recursive: true }).catch(
+        () => {}
+      );
     }
   }
 };
@@ -868,7 +870,7 @@ try {
       await rm(getBrowserProfile(caseName), {
         force: true,
         recursive: true,
-      });
+      }).catch(() => {});
       continue;
     }
 
@@ -899,7 +901,10 @@ try {
     if (twoPhase) {
       await Promise.all(
         selectedCases.map((caseName) =>
-          rm(getBrowserProfile(caseName), { force: true, recursive: true })
+          rm(getBrowserProfile(caseName), {
+            force: true,
+            recursive: true,
+          }).catch(() => {})
         )
       );
     }

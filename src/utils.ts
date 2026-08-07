@@ -275,15 +275,15 @@ export const isSupportWebGPU = () => {
 };
 
 /**
- * @returns true if the browser supports a Memory64 descriptor with Wllama's
- * full 16 GiB maximum
+ * @returns true if the browser supports the shared Memory64 descriptor that
+ * Wllama needs. The worker negotiates the largest available maximum later.
  */
 export const isSupportMem64 = (): boolean => {
   try {
     const memory = new WebAssembly.Memory({
       address: 'i64',
       initial: 1n, // 1 page (64 KiB)
-      maximum: 262_144n, // 16 GiB, the WebAssembly JS API runtime limit
+      maximum: 1n,
       shared: true,
     } as any);
     return (memory as any).grow(0n) === 1n;

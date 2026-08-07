@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest';
-import { WLLAMA_EMSCRIPTEN_CODE } from './workers-code/generated';
+import {
+  LLAMA_CPP_WORKER_CODE,
+  WLLAMA_EMSCRIPTEN_CODE,
+} from './workers-code/generated';
 
 const WASM_PAGE_BYTES = 64 * 1024;
 const FOUR_GIB_BYTES = 4 * 1024 * 1024 * 1024;
@@ -36,6 +39,12 @@ interface Memory64ProbeResult {
   aboveBoundary: number;
   finalBytes: number;
   finalByte: number;
+}
+
+interface Memory64FallbackResult {
+  attempts: bigint[];
+  selectedMaximum: bigint;
+  warnings: string[];
 }
 
 const runMemory64Probe = async (): Promise<Memory64ProbeResult> => {
@@ -125,6 +134,85 @@ const runMemory64Probe = async (): Promise<Memory64ProbeResult> => {
     URL.revokeObjectURL(workerUrl);
   }
 };
+
+const runMemory64FallbackProbe = async (): Promise<Memory64FallbackResult> => {
+  const workerCode = `
+    const attempts = [];
+    const workerMessages = [];
+    const nativePostMessage = postMessage.bind(self);
+
+    Object.defineProperty(WebAssembly, 'Memory', {
+      configurable: true,
+      value: function (descriptor) {
+        attempts.push(descriptor.maximum);
+        if (descriptor.maximum === 262144n) {
+          throw new RangeError('The full Memory64 maximum is unavailable');
+        }
+        return { descriptor };
+      },
+    });
+    globalThis.postMessage = (message) => workerMessages.push(message);
+
+    const RUN_OPTIONS = {
+      compat: false,
+      nbThread: 0,
+      pathConfig: { 'wllama.wasm': 'unused' },
+    };
+
+    ${LLAMA_CPP_WORKER_CODE}
+
+    try {
+      const config = getWModuleConfig(new Blob());
+      nativePostMessage({
+        attempts,
+        selectedMaximum: config.wasmMemory.descriptor.maximum,
+        warnings: workerMessages.flatMap(({ verb, args }) =>
+          verb === 'console.warn' ? args : []
+        ),
+      });
+    } catch (error) {
+      nativePostMessage({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  `;
+  const workerUrl = URL.createObjectURL(
+    new Blob([workerCode], { type: 'text/javascript' })
+  );
+  const worker = new Worker(workerUrl);
+
+  try {
+    return await new Promise<Memory64FallbackResult>((resolve, reject) => {
+      const timeout = window.setTimeout(
+        () => reject(new Error('Memory64 fallback probe timed out')),
+        10_000
+      );
+
+      worker.onmessage = ({ data }) => {
+        window.clearTimeout(timeout);
+        if (data.error) reject(new Error(data.error));
+        else resolve(data);
+      };
+      worker.onerror = ({ message }) => {
+        window.clearTimeout(timeout);
+        reject(new Error(message));
+      };
+    });
+  } finally {
+    worker.terminate();
+    URL.revokeObjectURL(workerUrl);
+  }
+};
+
+test('single-thread Memory64 startup retries a lower maximum', async () => {
+  const result = await runMemory64FallbackProbe();
+
+  expect(result.attempts).toEqual([262_144n, 260_096n]);
+  expect(result.selectedMaximum).toBe(260_096n);
+  expect(result.warnings).toContain(
+    'WASM memory maximum: 16256 MiB (requested 16384 MiB)'
+  );
+});
 
 test
   .runIf(IS_CHROMIUM)
