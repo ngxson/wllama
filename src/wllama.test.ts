@@ -87,6 +87,91 @@ test.sequential('loads single thread model', async () => {
   await wllama.exit();
 });
 
+test.sequential('rejects invalid model content', async () => {
+  const wllama = createWllama();
+  const invalidModel = new Blob([
+    new TextEncoder().encode('not a valid GGUF model'),
+  ]);
+
+  await expect(
+    wllama.loadModel([invalidModel], {
+      n_gpu_layers: 0,
+      n_threads: 1,
+    })
+  ).rejects.toThrow();
+  expect(wllama.isModelLoaded()).toBe(false);
+
+  await wllama.exit();
+});
+
+test.sequential('retries after worker initialization fails', async () => {
+  const config = { default: '/missing-wllama.wasm' };
+  const wllama = createWllama(config);
+
+  await expect(
+    wllama.loadModelFromUrl(TINY_MODEL, {
+      n_ctx: 256,
+      n_gpu_layers: 0,
+      n_threads: 1,
+    })
+  ).rejects.toThrow();
+  expect(wllama.isModelLoaded()).toBe(false);
+
+  config.default = CONFIG_PATHS.default;
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 256,
+    n_gpu_layers: 0,
+    n_threads: 1,
+  });
+
+  expect(wllama.isModelLoaded()).toBe(true);
+  await wllama.exit();
+});
+
+test.sequential('rejects concurrent model initialization', async () => {
+  const wllama = createWllama();
+  const model = await fetch(TINY_MODEL).then((response) => response.blob());
+  const loading = wllama.loadModel([model], {
+    n_ctx: 256,
+    n_gpu_layers: 0,
+    n_threads: 1,
+  });
+
+  await expect(
+    wllama.loadModel([model], {
+      n_ctx: 256,
+      n_gpu_layers: 0,
+      n_threads: 1,
+    })
+  ).rejects.toThrow('Module is already initialized');
+  await loading;
+
+  expect(wllama.isModelLoaded()).toBe(true);
+  await wllama.exit();
+});
+
+test.sequential('cancels model initialization on exit', async () => {
+  const wllama = createWllama();
+  const model = await fetch(TINY_MODEL).then((response) => response.blob());
+  const loading = wllama.loadModel([model], {
+    n_ctx: 256,
+    n_gpu_layers: 0,
+    n_threads: 1,
+  });
+
+  await wllama.exit();
+  await expect(loading).rejects.toThrow('Operation aborted');
+  expect(wllama.isModelLoaded()).toBe(false);
+
+  await wllama.loadModel([model], {
+    n_ctx: 256,
+    n_gpu_layers: 0,
+    n_threads: 1,
+  });
+  expect(wllama.isModelLoaded()).toBe(true);
+  await wllama.exit();
+});
+
 test.sequential('loads model with progress callback', async () => {
   const wllama = createWllama();
 

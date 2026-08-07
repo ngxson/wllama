@@ -29,18 +29,21 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 - Can run inference directly on browser (using [WebAssembly SIMD](https://emscripten.org/docs/porting/simd.html)), no backend or GPU is needed!
 - No runtime dependency (see [package.json](./package.json))
 - Ability to split the model into smaller files and load them in parallel (same as `split` and `cat`)
+- Up to 16 GiB of WebAssembly linear memory on 64-bit Memory64 browsers, with a wasm32 compatibility fallback
 - Auto switch between single-thread and multi-thread build based on browser support
 - Inference is done inside a worker, does not block UI render
 - Pre-built npm package [@wllama/wllama](https://www.npmjs.com/package/@wllama/wllama)
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- Max file size is 2GB, due to [size restriction of ArrayBuffer](https://stackoverflow.com/questions/17823225/do-arraybuffers-have-a-maximum-length). If your model is bigger than 2GB, please follow the **Split model** section below.
+- The default Memory64 build reads large model files in bounded chunks instead of materializing the full file in an `ArrayBuffer`. Splitting models into 512MB shards is still recommended for compatibility builds and constrained browsers.
+- The 16 GiB Memory64 value is a maximum, not a guarantee that a device can commit that much memory. Wllama grows from 128 MiB and may negotiate a lower maximum during multithreaded startup when the browser cannot reserve 16 GiB. Browsers without full 16 GiB Memory64 or JSPI support use the wasm32 compat build and remain limited to 4 GiB.
 
 ## Code demo and documentation
 
 Demo:
 - Basic usages with completions and embeddings: https://github.ngxson.com/wllama/examples/basic/ ([source code](./examples/basic/index.html))
+- Memory64 model loading and inference stress lab: [source code](./examples/memory64/index.html)
 - Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/ ([source code](./examples/embeddings/index.html))
 - Multimodal (vision) completion: https://github.ngxson.com/wllama/examples/multimodal/ ([source code](./examples/multimodal/index.html))
 - Tool calling: https://github.ngxson.com/wllama/examples/tools/ ([source code](./examples/tools/index.html))

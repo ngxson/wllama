@@ -171,6 +171,9 @@ export class Wllama {
   private compat: WllamaCompat | null = null;
 
   private proxy: ProxyToWorker = null as any;
+  private loadingProxy: ProxyToWorker = null as any;
+  private isLoading: boolean = false;
+  private loadGeneration: number = 0;
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
@@ -475,143 +478,168 @@ export class Wllama {
       );
     }
 
-    if (this.proxy) {
+    if (this.proxy || this.isLoading) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
-    // detect if we can use multi-thread and webgpu
-    const supportMultiThread = await isSupportMultiThread();
-    const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
-    const nbThreads = params.n_threads ?? hwConccurency;
-    this.nbThreads = nbThreads;
-    this.useMultiThread = supportMultiThread && nbThreads > 1;
 
-    // initialize the worker
-    const workerResources = this.getWorkerResources();
-    this.proxy = new ProxyToWorker(
-      workerResources,
-      this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
-      this.config.suppressNativeLog ?? false,
-      this.logger()
-    );
-    let logLevel = params.log_level ?? LogLevel.INFO;
-    if (this.config.suppressNativeLog) {
-      logLevel = 9999 as any;
-    }
+    this.isLoading = true;
+    const loadGeneration = ++this.loadGeneration;
+    let proxy: ProxyToWorker = null as any;
+    try {
+      // detect if we can use multi-thread and webgpu
+      const supportMultiThread = await isSupportMultiThread();
+      if (loadGeneration !== this.loadGeneration) throw new WllamaAbortError();
 
-    const modelFiles = await prepareBlobs(blobs);
-    await this.proxy.moduleInit(modelFiles.all);
-
-    // run it
-    this.logger().debug('Calling wllamaStart...');
-    const startResult: any = await this.proxy.wllamaStart();
-    if (!startResult.success) {
-      throw new WllamaError(
-        `Error while calling start function, result = ${startResult}`
+      const hwConccurency = Math.floor(
+        (navigator.hardwareConcurrency || 1) / 2
       );
-    }
+      const nbThreads = params.n_threads ?? hwConccurency;
+      this.nbThreads = nbThreads;
+      this.useMultiThread = supportMultiThread && nbThreads > 1;
 
-    // load the model
-    this.logger().debug('Loading model...');
-    const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
-      _name: 'load_req',
-      log_level: logLevel,
-      // if async read is not supported, use mmap; refer to README-dev.md for more details
-      use_mmap: !canUseAsyncFileRead(workerResources.compat),
-      use_mlock: false,
-      n_gpu_layers: params.n_gpu_layers ?? 99999,
-      n_ctx: params.n_ctx ?? 1024,
-      n_threads: this.useMultiThread ? nbThreads : 1,
-      n_ctx_auto: false, // not supported for now
-      mmproj_path: modelFiles.mmproj
-        ? `/models/${MMPROJ_FILE_NAME}`
-        : undefined,
-      model_paths: modelFiles.llm.map((f) => `models/${f.name}`),
-      embeddings: params.embeddings,
-      offload_kqv: params.offload_kqv,
-      n_batch: params.n_batch,
-      pooling_type: params.pooling_type as string,
-      rope_scaling_type: params.rope_scaling_type as string,
-      rope_freq_base: params.rope_freq_base,
-      rope_freq_scale: params.rope_freq_scale,
-      yarn_ext_factor: params.yarn_ext_factor,
-      yarn_attn_factor: params.yarn_attn_factor,
-      yarn_beta_fast: params.yarn_beta_fast,
-      yarn_beta_slow: params.yarn_beta_slow,
-      yarn_orig_ctx: params.yarn_orig_ctx,
-      cache_type_k: params.cache_type_k as string,
-      cache_type_v: params.cache_type_v as string,
-      n_parallel: 1, // only support single sequence for now
-      kv_unified: false, // TODO: support kv unified cache
-      flash_attn: params.flash_attn,
-      swa_full: params.swa_full,
-      chat_template: params.chat_template,
-      jinja: params.jinja,
-      reasoning: params.reasoning,
-      image_min_tokens: params.image_min_tokens,
-      image_max_tokens: params.image_max_tokens,
-      warmup: params.warmup,
-      no_kv_offload: params.no_kv_offload,
-      mmproj_offload: params.mmproj_offload,
-      cont_batching: params.cont_batching,
-      n_keep: params.n_keep,
-      ctx_shift: params.ctx_shift,
-      cache_idle_slots: params.cache_idle_slots,
-      n_cache_reuse: params.n_cache_reuse,
-      lora_paths: params.lora_adapters?.map((a) => a.path),
-      lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
-      lora_init_without_apply: params.lora_init_without_apply,
-      spec_draft_model: params.spec_draft_model,
-      spec_draft_ngl: params.spec_draft_ngl,
-      spec_draft_n_max: params.spec_draft_n_max,
-      spec_draft_n_min: params.spec_draft_n_min,
-      spec_draft_p_min: params.spec_draft_p_min,
-      spec_draft_threads: params.spec_draft_threads,
-      spec_draft_threads_batch: params.spec_draft_threads_batch,
-      kv_overrides_keys: params.kv_overrides
-        ? Object.keys(params.kv_overrides)
-        : undefined,
-      kv_overrides_vals: params.kv_overrides
-        ? Object.values(params.kv_overrides)
-        : undefined,
-      reasoning_budget_tokens: params.reasoning_budget_tokens,
-      reasoning_budget_message: params.reasoning_budget_message,
-      reasoning_format: params.reasoning_format,
-      skip_chat_parsing: params.skip_chat_parsing,
-      prefill_assistant: params.prefill_assistant,
-    });
-    const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
-      ...loadResult,
-      metadata: {},
-    };
-    for (let i = 0; i < loadResult.metadata_key.length; i++) {
-      loadedCtxInfo.metadata[loadResult.metadata_key[i]] =
-        loadResult.metadata_val[i];
+      // initialize the worker
+      const workerResources = this.getWorkerResources();
+      proxy = new ProxyToWorker(
+        workerResources,
+        this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
+        this.config.suppressNativeLog ?? false,
+        this.logger()
+      );
+      this.loadingProxy = proxy;
+      let logLevel = params.log_level ?? LogLevel.INFO;
+      if (this.config.suppressNativeLog) {
+        logLevel = 9999 as any;
+      }
+
+      const modelFiles = await prepareBlobs(blobs);
+      await proxy.moduleInit(modelFiles.all);
+
+      // run it
+      this.logger().debug('Calling wllamaStart...');
+      const startResult: any = await proxy.wllamaStart();
+      if (!startResult.success) {
+        throw new WllamaError(
+          `Error while calling start function, result = ${startResult}`
+        );
+      }
+
+      // load the model
+      this.logger().debug('Loading model...');
+      const loadResult: GlueMsgLoadRes = await proxy.wllamaAction('load', {
+        _name: 'load_req',
+        log_level: logLevel,
+        // if async read is not supported, use mmap; refer to README-dev.md for more details
+        use_mmap: !canUseAsyncFileRead(workerResources.compat),
+        use_mlock: false,
+        n_gpu_layers: params.n_gpu_layers ?? 99999,
+        n_ctx: params.n_ctx ?? 1024,
+        n_threads: this.useMultiThread ? nbThreads : 1,
+        n_ctx_auto: false, // not supported for now
+        mmproj_path: modelFiles.mmproj
+          ? `/models/${MMPROJ_FILE_NAME}`
+          : undefined,
+        model_paths: modelFiles.llm.map((f) => `models/${f.name}`),
+        embeddings: params.embeddings,
+        offload_kqv: params.offload_kqv,
+        n_batch: params.n_batch,
+        pooling_type: params.pooling_type as string,
+        rope_scaling_type: params.rope_scaling_type as string,
+        rope_freq_base: params.rope_freq_base,
+        rope_freq_scale: params.rope_freq_scale,
+        yarn_ext_factor: params.yarn_ext_factor,
+        yarn_attn_factor: params.yarn_attn_factor,
+        yarn_beta_fast: params.yarn_beta_fast,
+        yarn_beta_slow: params.yarn_beta_slow,
+        yarn_orig_ctx: params.yarn_orig_ctx,
+        cache_type_k: params.cache_type_k as string,
+        cache_type_v: params.cache_type_v as string,
+        n_parallel: 1, // only support single sequence for now
+        kv_unified: false, // TODO: support kv unified cache
+        flash_attn: params.flash_attn,
+        swa_full: params.swa_full,
+        chat_template: params.chat_template,
+        jinja: params.jinja,
+        reasoning: params.reasoning,
+        image_min_tokens: params.image_min_tokens,
+        image_max_tokens: params.image_max_tokens,
+        warmup: params.warmup,
+        no_kv_offload: params.no_kv_offload,
+        mmproj_offload: params.mmproj_offload,
+        cont_batching: params.cont_batching,
+        n_keep: params.n_keep,
+        ctx_shift: params.ctx_shift,
+        cache_idle_slots: params.cache_idle_slots,
+        n_cache_reuse: params.n_cache_reuse,
+        lora_paths: params.lora_adapters?.map((a) => a.path),
+        lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
+        lora_init_without_apply: params.lora_init_without_apply,
+        spec_draft_model: params.spec_draft_model,
+        spec_draft_ngl: params.spec_draft_ngl,
+        spec_draft_n_max: params.spec_draft_n_max,
+        spec_draft_n_min: params.spec_draft_n_min,
+        spec_draft_p_min: params.spec_draft_p_min,
+        spec_draft_threads: params.spec_draft_threads,
+        spec_draft_threads_batch: params.spec_draft_threads_batch,
+        kv_overrides_keys: params.kv_overrides
+          ? Object.keys(params.kv_overrides)
+          : undefined,
+        kv_overrides_vals: params.kv_overrides
+          ? Object.values(params.kv_overrides)
+          : undefined,
+        reasoning_budget_tokens: params.reasoning_budget_tokens,
+        reasoning_budget_message: params.reasoning_budget_message,
+        reasoning_format: params.reasoning_format,
+        skip_chat_parsing: params.skip_chat_parsing,
+        prefill_assistant: params.prefill_assistant,
+      });
+      if (!loadResult.success) {
+        throw new WllamaError(
+          'Model failed to load; see native logs for details',
+          'load_error'
+        );
+      }
+      const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
+        ...loadResult,
+        metadata: {},
+      };
+      for (let i = 0; i < loadResult.metadata_key.length; i++) {
+        loadedCtxInfo.metadata[loadResult.metadata_key[i]] =
+          loadResult.metadata_val[i];
+      }
+      this.seed = params.seed;
+      this.bosToken = loadedCtxInfo.token_bos;
+      this.eosToken = loadedCtxInfo.token_eos;
+      this.eotToken = loadedCtxInfo.token_eot;
+      this.useEmbeddings = !!params.embeddings;
+      this.useRerank = params.pooling_type == 'rank';
+      this.metadata = {
+        hparams: {
+          nVocab: loadedCtxInfo.n_vocab,
+          nCtxTrain: loadedCtxInfo.n_ctx_train,
+          nEmbd: loadedCtxInfo.n_embd,
+          nLayer: loadedCtxInfo.n_layer,
+        },
+        meta: loadedCtxInfo.metadata,
+      };
+      this.hasEncoder = !!loadedCtxInfo.has_encoder;
+      this.decoderStartToken = loadedCtxInfo.token_decoder_start;
+      this.addBosToken = loadedCtxInfo.add_bos_token;
+      this.addEosToken = loadedCtxInfo.add_eos_token;
+      this.chatTemplate = loadedCtxInfo.metadata['tokenizer.chat_template'];
+      this.loadedContextInfo = loadedCtxInfo;
+      this.eogTokens = new Set(loadedCtxInfo.list_tokens_eog);
+      this.mediaMarker = loadedCtxInfo.media_marker;
+      this.chatTemplateKwargs = params.default_template_kwargs ?? {};
+      this.proxy = proxy;
+      this.loadingProxy = null as any;
+    } catch (error) {
+      await proxy?.wllamaExit();
+      throw error;
+    } finally {
+      if (this.loadingProxy === proxy) this.loadingProxy = null as any;
+      if (loadGeneration === this.loadGeneration) this.isLoading = false;
     }
-    this.seed = params.seed;
-    this.bosToken = loadedCtxInfo.token_bos;
-    this.eosToken = loadedCtxInfo.token_eos;
-    this.eotToken = loadedCtxInfo.token_eot;
-    this.useEmbeddings = !!params.embeddings;
-    this.useRerank = params.pooling_type == 'rank';
-    this.metadata = {
-      hparams: {
-        nVocab: loadedCtxInfo.n_vocab,
-        nCtxTrain: loadedCtxInfo.n_ctx_train,
-        nEmbd: loadedCtxInfo.n_embd,
-        nLayer: loadedCtxInfo.n_layer,
-      },
-      meta: loadedCtxInfo.metadata,
-    };
-    this.hasEncoder = !!loadedCtxInfo.has_encoder;
-    this.decoderStartToken = loadedCtxInfo.token_decoder_start;
-    this.addBosToken = loadedCtxInfo.add_bos_token;
-    this.addEosToken = loadedCtxInfo.add_eos_token;
-    this.chatTemplate = loadedCtxInfo.metadata['tokenizer.chat_template'];
-    this.loadedContextInfo = loadedCtxInfo;
-    this.eogTokens = new Set(loadedCtxInfo.list_tokens_eog);
-    this.mediaMarker = loadedCtxInfo.media_marker;
-    this.chatTemplateKwargs = params.default_template_kwargs ?? {};
-    this.logger().debug({ loadedCtxInfo });
+    this.logger().debug({ loadedCtxInfo: this.loadedContextInfo });
   }
 
   getLoadedContextInfo(): LoadedContextInfo {
@@ -872,8 +900,15 @@ export class Wllama {
    * Note: This function will NOT crash if model is not yet loaded
    */
   async exit(): Promise<void> {
-    await this.proxy?.wllamaExit();
+    const proxies = new Set([this.proxy, this.loadingProxy].filter(Boolean));
+
+    this.loadGeneration += 1;
+    this.isLoading = false;
     this.proxy = null as any;
+    this.loadingProxy = null as any;
+    await Promise.all(
+      [...proxies].map((proxy: ProxyToWorker) => proxy.wllamaExit())
+    );
   }
 
   /**

@@ -11,6 +11,13 @@ let lastStack = '';
 let isAborted = false;
 let hasMultithread = false;
 
+const WASM_PAGE_BYTES = 64 * 1024;
+const INITIAL_MEMORY_BYTES = 128 * 1024 * 1024;
+const MEMORY32_MAX_BYTES = 4 * 1024 * 1024 * 1024;
+const MEMORY64_MAX_BYTES = 16 * 1024 * 1024 * 1024;
+const MEMORY_FALLBACK_STEP_BYTES = 128 * 1024 * 1024;
+const ASYNC_FILE_READ_CHUNK_BYTES = 64 * 1024 * 1024;
+
 //////////////////////////////////////////////////////////////
 // UTILS
 //////////////////////////////////////////////////////////////
@@ -97,6 +104,8 @@ const getWModuleConfig = (_argMainScriptBlob) => {
       ? argMainScriptBlob
       : 'throw new Error("Multithreading is not enabled")',
     pthreadPoolSize: hasMultithread ? pthreadPoolSize : 0,
+    // Emscripten creates the imported memory in single-thread mode. Pthread
+    // workers need us to create and share one memory object up front.
     wasmMemory: hasMultithread ? getWasmMemory() : null,
     onAbort: function (message) {
       isAborted = true;
@@ -118,20 +127,31 @@ const getWModuleConfig = (_argMainScriptBlob) => {
 // See: https://github.com/emscripten-core/emscripten/issues/19144
 //      https://github.com/godotengine/godot/issues/70621
 const getWasmMemory = () => {
-  let minBytes = 128 * 1024 * 1024;
-  let maxBytes = 4096 * 1024 * 1024;
-  let stepBytes = 128 * 1024 * 1024;
-  while (maxBytes > minBytes) {
+  const requestedMaxBytes = isCompat ? MEMORY32_MAX_BYTES : MEMORY64_MAX_BYTES;
+  let maxBytes = requestedMaxBytes;
+
+  while (maxBytes >= INITIAL_MEMORY_BYTES) {
     try {
       const wasmMemory = new WebAssembly.Memory({
-        initial: toSizeT(minBytes / 65536),
-        maximum: toSizeT(maxBytes / 65536),
+        initial: toSizeT(INITIAL_MEMORY_BYTES / WASM_PAGE_BYTES),
+        maximum: toSizeT(maxBytes / WASM_PAGE_BYTES),
         shared: true,
         address: isCompat ? undefined : 'i64',
       });
+
+      const level = maxBytes === requestedMaxBytes ? 'debug' : 'warn';
+      msg({
+        verb: `console.${level}`,
+        args: [
+          `WASM memory maximum: ${maxBytes / 1024 / 1024} MiB` +
+            (maxBytes === requestedMaxBytes
+              ? ''
+              : ` (requested ${requestedMaxBytes / 1024 / 1024} MiB)`),
+        ],
+      });
       return wasmMemory;
     } catch (e) {
-      maxBytes -= stepBytes;
+      maxBytes -= MEMORY_FALLBACK_STEP_BYTES;
       continue; // retry
     }
   }
@@ -277,27 +297,41 @@ const _stripModelsPrefix = (path) => path.replace(/^\/?models\//, '');
 // Called from EM_ASYNC_JS stub in wllama-fs.h (path is already a JS string)
 const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
   const name = _stripModelsPrefix(path);
-
-  pendingReadPromise = new Promise((res, rej) => {
-    pendingReadResolve = res;
-    pendingReadReject = rej;
-  });
   isAwaitReading = true;
 
-  postMessage({ verb: 'fs.read_req', args: [name, offset, req_size] });
-
-  let data;
   try {
-    data = await pendingReadPromise;
+    let totalBytes = 0;
+
+    while (totalBytes < req_size) {
+      const chunkSize = Math.min(
+        ASYNC_FILE_READ_CHUNK_BYTES,
+        req_size - totalBytes
+      );
+      pendingReadPromise = new Promise((res, rej) => {
+        pendingReadResolve = res;
+        pendingReadReject = rej;
+      });
+
+      postMessage({
+        verb: 'fs.read_req',
+        args: [name, offset + totalBytes, chunkSize],
+      });
+
+      const data = await pendingReadPromise;
+      const bytes = new Uint8Array(data);
+      getHeapU8().set(bytes, out_ptr + totalBytes);
+      totalBytes += bytes.length;
+
+      if (bytes.length < chunkSize) break;
+    }
+
+    return toSizeT(totalBytes);
   } finally {
     isAwaitReading = false;
+    pendingReadPromise = null;
     pendingReadResolve = null;
     pendingReadReject = null;
   }
-
-  const bytes = new Uint8Array(data);
-  getHeapU8().set(bytes, out_ptr);
-  return toSizeT(bytes.length);
 };
 
 //////////////////////////////////////////////////////////////
@@ -468,6 +502,11 @@ onmessage = async (e) => {
       );
       inputBuffer.set(argEncodedMsg, 0);
       const outputPtr = await wllamaAction(argAction, inputPtr);
+      if (!outputPtr) {
+        throw new Error(
+          `Wllama action "${argAction}" failed without a response; see native logs`
+        );
+      }
       // length of output buffer is written at the first 4 bytes of input buffer
       const outputLen = new Uint32Array(
         getHeapU8().buffer,

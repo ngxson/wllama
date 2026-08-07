@@ -3,6 +3,8 @@ import { defineConfig } from 'vitest/config';
 const SAFARI = process.env.BROWSER === 'safari';
 const WEBGPU = process.env.WEBGPU === '1';
 const AUTO = process.env.AUTO === '1';
+const COMPAT = process.env.COMPAT === '1';
+const CI = !!process.env.CI;
 
 const chromeArgsCI = ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'];
 const chromeArgsWebGPU = [
@@ -24,10 +26,12 @@ export default defineConfig({
       '**/docs/**',
       '**/examples/**',
       ...(!WEBGPU ? ['**/src/*.wgpu.test.*'] : []),
+      ...(!COMPAT ? ['**/src/*.compat.test.*'] : []),
     ],
     include: WEBGPU ? ['**/src/*.wgpu.test.*'] : ['**/src/**/*.test.*'],
     browser: {
       enabled: true,
+      headless: AUTO || CI,
       name: process.env.BROWSER ?? 'chromium',
       provider: SAFARI ? 'webdriverio' : 'playwright',
       // https://playwright.dev

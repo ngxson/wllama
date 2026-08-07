@@ -24,7 +24,6 @@ set(WLLAMA_LINK_OPTIONS
     -sEXPORT_ES6=0
     -sMODULARIZE=0
     -sINITIAL_MEMORY=128MB
-    -sMAXIMUM_MEMORY=4096MB
     -sSTACK_SIZE=5MB
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
@@ -55,6 +54,8 @@ if (WLLAMA_COMPAT)
     )
     list(APPEND WLLAMA_LINK_OPTIONS
         -fexceptions
+        # wasm32 cannot address more than 4 GiB.
+        -sMAXIMUM_MEMORY=4096MB
         -sASYNCIFY=1
         -sASYNCIFY_ADD=['wllama_start','wllama_action']
     )
@@ -65,6 +66,8 @@ else()
     )
     list(APPEND WLLAMA_LINK_OPTIONS
         -sMEMORY64=1
+        # The WebAssembly JavaScript embedding caps Memory64 at 16 GiB.
+        -sMAXIMUM_MEMORY=16384MB
         -fwasm-exceptions
         -sJSPI
         -sJSPI_EXPORTS=['wllama_start','wllama_action']
