@@ -324,7 +324,7 @@ export class ProxyToWorker {
   private pushTask(param: TaskParam, buffers?: ArrayBuffer[]) {
     return new Promise<any>((resolve, reject) => {
       if (this.terminated) {
-        reject(new Error('Wllama worker was terminated'));
+        reject(new WllamaRuntimeError('Wllama worker was terminated', ''));
         return;
       }
       this.taskQueue.push({ resolve, reject, param, buffers });

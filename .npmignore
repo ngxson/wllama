@@ -8,9 +8,7 @@
 /build
 /build-*
 /cache
-/scripts/memory64_stress.mjs
-/scripts/memory64_stress_helpers.mjs
-/scripts/memory64_stress.test.mjs
+/scripts/memory64_stress*
 /compat
 /.github
 /.vscode

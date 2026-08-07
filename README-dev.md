@@ -57,8 +57,9 @@ The default build uses WebAssembly Memory64 with a 128 MiB initial memory and
 a 16 GiB maximum. The compat build remains wasm32 and has a 4 GiB maximum.
 Both builds allow memory growth. For multithreaded startup, the worker creates
 the shared memory and can retry with a lower maximum on constrained devices.
-Single-threaded startup uses Emscripten's imported-memory setup after Wllama
-verifies that the browser can create a shared 16 GiB Memory64 descriptor.
+The same worker-managed retry applies to single-threaded startup. Before loading
+the default build, Wllama only verifies baseline shared Memory64 support so a
+failed 16 GiB reservation can continue through the lower-maximum retry path.
 
 Memory64 changes C/C++ pointers and `size_t` values to 64 bits. Values crossing
 the JavaScript boundary therefore use `BigInt`, while offsets passed to

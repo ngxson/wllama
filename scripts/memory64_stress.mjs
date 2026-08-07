@@ -649,18 +649,22 @@ const runCase = async (caseName, modelCase, server, runOptions = {}) => {
         { timeout: timeoutMs }
       )
     );
-    const appState = await page.evaluate(() =>
-      window.__wllamaMemory64Stress.getState()
+    const appState = await guardBrowser(
+      page.evaluate(() => window.__wllamaMemory64Stress.getState())
     );
-    await page.waitForTimeout(2000);
+    await guardBrowser(page.waitForTimeout(2000));
     await sampleMemory();
-    const preciseMemory = await page
-      .evaluate(async () => {
-        if (!performance.measureUserAgentSpecificMemory) return null;
-        return await performance.measureUserAgentSpecificMemory();
-      })
-      .catch(() => null);
-    const performanceMetrics = await pageCdp.send('Performance.getMetrics');
+    const preciseMemory = await guardBrowser(
+      page
+        .evaluate(async () => {
+          if (!performance.measureUserAgentSpecificMemory) return null;
+          return await performance.measureUserAgentSpecificMemory();
+        })
+        .catch(() => null)
+    );
+    const performanceMetrics = await guardBrowser(
+      pageCdp.send('Performance.getMetrics')
+    );
     await guardBrowser(
       page.screenshot({
         fullPage: true,
