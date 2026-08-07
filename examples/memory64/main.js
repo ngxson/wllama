@@ -10,10 +10,10 @@ const MODEL_PRESETS = {
     url: 'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf',
   },
   '4g': {
-    label: '4 GiB tier · Gemma 7B Q4_0 · 4.67 GiB',
-    shortLabel: 'Gemma 7B Q4_0',
-    expectedBytes: 5_011_843_904,
-    url: 'https://huggingface.co/LiteLLMs/gemma-7b-GGUF/resolve/0c30b2f1817d692cc47706eec0ac4ed0a147506f/Q4_0/Q4_0-00001-of-00004.gguf',
+    label: '4 GiB tier · Qwen2.5 7B Q4_K_M · 4.36 GiB',
+    shortLabel: 'Qwen2.5 7B Q4_K_M',
+    expectedBytes: 4_683_073_632,
+    url: 'https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/bb5d59e06d9551d752d08b292a50eb208b07ab1f/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf',
   },
   '8g': {
     label: '8 GiB tier · Qwen2.5 Coder 14B Q4_K_M · 8.37 GiB',

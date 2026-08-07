@@ -30,9 +30,9 @@ const MODEL_CASES = {
     label: 'Tiny harness check',
   },
   '4g': {
-    expectedCompletionSubstring: 'Paris',
-    expectedBytes: 5_011_843_904,
-    label: 'Gemma 7B Q4_0',
+    expectedCompletion: ' Paris.',
+    expectedBytes: 4_683_073_632,
+    label: 'Qwen2.5 7B Q4_K_M',
   },
   '8g': {
     expectedCompletion: ' Paris.',

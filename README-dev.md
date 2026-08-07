@@ -229,7 +229,7 @@ trace, and process-tree RSS/PSS samples.
 # Fast end-to-end validation with the 18.2 MiB TinyLlama fixture.
 npm run test:memory64:stress:smoke
 
-# Sequential 4.67 GiB, 8.37 GiB, and 11.29 GiB model runs.
+# Sequential 4.36 GiB, 8.37 GiB, and 11.29 GiB model runs.
 npm run test:memory64:stress
 
 # Use separate download and inference browser lifetimes so cached model pages
