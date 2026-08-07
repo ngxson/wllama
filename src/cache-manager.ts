@@ -275,7 +275,7 @@ export class CacheManager {
         const blob = await this.sb.read(key);
         if (blob) {
           const meta = await new Response(blob).json().catch(() => null);
-          metadataMap[key.slice(PREFIX_METADATA.length)] = meta;
+          if (meta) metadataMap[key.slice(PREFIX_METADATA.length)] = meta;
         }
       }
     }
@@ -294,6 +294,17 @@ export class CacheManager {
         });
       }
     }
+
+    // COS keeps the data outside OPFS, so its local directory only contains
+    // metadata. Rehydrate those entries through their content hash; otherwise
+    // a new ModelManager instance cannot discover an already cached model.
+    for (const [name, metadata] of Object.entries(metadataMap)) {
+      if (result.some((entry) => entry.name === name)) continue;
+
+      const size = await this.sb.getSize(name, hintFromMetadata(metadata));
+      if (size !== -1) result.push({ name, size, metadata });
+    }
+
     return result;
   }
 

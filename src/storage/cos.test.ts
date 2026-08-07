@@ -1,4 +1,5 @@
 import { test, expect, beforeEach } from 'vitest';
+import { CacheManager } from '../cache-manager';
 import { COSBackend, mockCOS } from './cos';
 
 async function randomBufAndHash(): Promise<{
@@ -74,6 +75,40 @@ test.sequential('getSize with hint reflects COS size', async () => {
 
   await backend.delete(key);
 });
+
+test.sequential(
+  'cache listing rediscovers COS data from metadata',
+  async () => {
+    const backend = new COSBackend();
+    const cache = new CacheManager([backend]);
+    const { buf, sha256 } = await randomBufAndHash();
+    const key = 'test-cached-model';
+
+    await backend.write(key, bufStream(buf), { sha256 });
+    await cache.writeMetadata(key, {
+      etag: 'fixture-etag',
+      originalSize: buf.byteLength,
+      originalURL: 'https://example.com/model.gguf',
+      sha256,
+    });
+
+    expect(await cache.list()).toEqual([
+      {
+        metadata: {
+          etag: 'fixture-etag',
+          originalSize: buf.byteLength,
+          originalURL: 'https://example.com/model.gguf',
+          sha256,
+        },
+        name: key,
+        size: buf.byteLength,
+      },
+    ]);
+    expect(
+      new Uint8Array(await (await cache.open(key))!.arrayBuffer())
+    ).toEqual(buf);
+  }
+);
 
 test.sequential('read missing key returns null', async () => {
   const backend = new COSBackend();
