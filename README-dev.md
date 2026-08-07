@@ -241,7 +241,9 @@ npm run test:memory64:stress:low-memory
 npm run test:memory64:stress:multithread
 ```
 
-The full command requires 64-bit Chromium 137 or newer. Every current fixture
+The real-model stress runner requires Linux and 64-bit Chromium 137 or newer.
+It reads Linux `/proc` process data to prove that large fixtures were physically
+resident instead of merely reserved in virtual memory. Every current fixture
 fits within the runner's 12 GiB test budget. Host and cgroup memory values are
 recorded for diagnostics but do not gate a run: cgroup usage includes
 reclaimable page cache and can substantially understate usable memory after a

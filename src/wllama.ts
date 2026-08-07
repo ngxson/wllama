@@ -172,6 +172,7 @@ export class Wllama {
 
   private proxy: ProxyToWorker = null as any;
   private loadingProxy: ProxyToWorker = null as any;
+  private loadingAbortController: AbortController = null as any;
   private isLoading: boolean = false;
   private loadGeneration: number = 0;
   private config: WllamaConfig;
@@ -226,6 +227,54 @@ export class Wllama {
         'loadModel() is not yet called',
         'model_not_loaded'
       );
+    }
+  }
+
+  private checkModelLoadActive(loadGeneration: number, signal: AbortSignal) {
+    if (loadGeneration !== this.loadGeneration || signal.aborted) {
+      throw new WllamaAbortError();
+    }
+  }
+
+  private async runModelLoad(
+    callback: (loadGeneration: number, signal: AbortSignal) => Promise<void>,
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (this.proxy || this.isLoading) {
+      throw new WllamaError('Module is already initialized', 'load_error');
+    }
+
+    this.isLoading = true;
+    const loadGeneration = ++this.loadGeneration;
+    const abortController = new AbortController();
+    const abort = () => abortController.abort();
+    this.loadingAbortController = abortController;
+
+    if (signal?.aborted) abort();
+    else signal?.addEventListener('abort', abort, { once: true });
+
+    try {
+      this.checkModelLoadActive(loadGeneration, abortController.signal);
+      await callback(loadGeneration, abortController.signal);
+      this.checkModelLoadActive(loadGeneration, abortController.signal);
+    } catch (error) {
+      const loadedProxy = this.proxy as ProxyToWorker;
+      if (
+        loadGeneration === this.loadGeneration &&
+        abortController.signal.aborted &&
+        loadedProxy
+      ) {
+        this.proxy = null as any;
+        await loadedProxy.wllamaExit();
+      }
+      this.checkModelLoadActive(loadGeneration, abortController.signal);
+      throw error;
+    } finally {
+      signal?.removeEventListener('abort', abort);
+      if (this.loadingAbortController === abortController) {
+        this.loadingAbortController = null as any;
+      }
+      if (loadGeneration === this.loadGeneration) this.isLoading = false;
     }
   }
 
@@ -424,15 +473,12 @@ export class Wllama {
     modelSourceOrURL: ModelSource | string,
     params: LoadModelParams & DownloadOptions & { useCache?: boolean } = {}
   ): Promise<void> {
-    const source: ModelSource = isString(modelSourceOrURL)
-      ? ({ url: modelSourceOrURL } as ModelSource)
-      : (modelSourceOrURL as ModelSource);
-    const useCache = params.useCache ?? true;
-    const model = useCache
-      ? await this.modelManager.getModelOrDownload(source, params)
-      : await this.modelManager.downloadModel(source, params);
-    const blobs = await model.open();
-    return await this.loadModel(blobs, params);
+    return await this.runModelLoad(async (loadGeneration, signal) => {
+      const source: ModelSource = isString(modelSourceOrURL)
+        ? ({ url: modelSourceOrURL } as ModelSource)
+        : (modelSourceOrURL as ModelSource);
+      await this.loadModelFromSource(source, params, loadGeneration, signal);
+    }, params.signal);
   }
 
   /**
@@ -445,8 +491,11 @@ export class Wllama {
     hfOptions: HuggingFaceParams,
     params: LoadModelParams & DownloadOptions & { useCache?: boolean } = {}
   ) {
-    const source = await getHFModelSource(hfOptions);
-    return await this.loadModelFromUrl(source, params);
+    return await this.runModelLoad(async (loadGeneration, signal) => {
+      const source = await getHFModelSource(hfOptions, signal);
+      this.checkModelLoadActive(loadGeneration, signal);
+      await this.loadModelFromSource(source, params, loadGeneration, signal);
+    }, params.signal);
   }
 
   /**
@@ -461,10 +510,40 @@ export class Wllama {
     ggufBlobsOrModel: Blob[] | Model,
     params: LoadModelParams = {}
   ): Promise<void> {
-    const blobs: Blob[] =
-      ggufBlobsOrModel instanceof Model
-        ? await ggufBlobsOrModel.open()
-        : [...(ggufBlobsOrModel as Blob[])]; // copy array
+    return await this.runModelLoad(async (loadGeneration, signal) => {
+      const blobs: Blob[] =
+        ggufBlobsOrModel instanceof Model
+          ? await ggufBlobsOrModel.open()
+          : [...(ggufBlobsOrModel as Blob[])]; // copy array
+      this.checkModelLoadActive(loadGeneration, signal);
+      await this.loadModelBlobs(blobs, params, loadGeneration, signal);
+    });
+  }
+
+  private async loadModelFromSource(
+    source: ModelSource,
+    params: LoadModelParams & DownloadOptions & { useCache?: boolean },
+    loadGeneration: number,
+    signal: AbortSignal
+  ): Promise<void> {
+    const useCache = params.useCache ?? true;
+    const downloadOptions = { ...params, signal };
+    const model = useCache
+      ? await this.modelManager.getModelOrDownload(source, downloadOptions)
+      : await this.modelManager.downloadModel(source, downloadOptions);
+    this.checkModelLoadActive(loadGeneration, signal);
+
+    const blobs = await model.open();
+    this.checkModelLoadActive(loadGeneration, signal);
+    await this.loadModelBlobs(blobs, params, loadGeneration, signal);
+  }
+
+  private async loadModelBlobs(
+    blobs: Blob[],
+    params: LoadModelParams,
+    loadGeneration: number,
+    signal: AbortSignal
+  ): Promise<void> {
     if (blobs.some((b) => b.size === 0)) {
       throw new WllamaError(
         'Input model (or splits) must be non-empty Blob or File',
@@ -478,17 +557,11 @@ export class Wllama {
       );
     }
 
-    if (this.proxy || this.isLoading) {
-      throw new WllamaError('Module is already initialized', 'load_error');
-    }
-
-    this.isLoading = true;
-    const loadGeneration = ++this.loadGeneration;
     let proxy: ProxyToWorker = null as any;
     try {
       // detect if we can use multi-thread and webgpu
       const supportMultiThread = await isSupportMultiThread();
-      if (loadGeneration !== this.loadGeneration) throw new WllamaAbortError();
+      this.checkModelLoadActive(loadGeneration, signal);
 
       const hwConccurency = Math.floor(
         (navigator.hardwareConcurrency || 1) / 2
@@ -512,11 +585,14 @@ export class Wllama {
       }
 
       const modelFiles = await prepareBlobs(blobs);
+      this.checkModelLoadActive(loadGeneration, signal);
       await proxy.moduleInit(modelFiles.all);
+      this.checkModelLoadActive(loadGeneration, signal);
 
       // run it
       this.logger().debug('Calling wllamaStart...');
       const startResult: any = await proxy.wllamaStart();
+      this.checkModelLoadActive(loadGeneration, signal);
       if (!startResult.success) {
         throw new WllamaError(
           `Error while calling start function, result = ${startResult}`
@@ -592,6 +668,7 @@ export class Wllama {
         skip_chat_parsing: params.skip_chat_parsing,
         prefill_assistant: params.prefill_assistant,
       });
+      this.checkModelLoadActive(loadGeneration, signal);
       if (!loadResult.success) {
         throw new WllamaError(
           'Model failed to load; see native logs for details',
@@ -637,7 +714,6 @@ export class Wllama {
       throw error;
     } finally {
       if (this.loadingProxy === proxy) this.loadingProxy = null as any;
-      if (loadGeneration === this.loadGeneration) this.isLoading = false;
     }
     this.logger().debug({ loadedCtxInfo: this.loadedContextInfo });
   }
@@ -902,10 +978,12 @@ export class Wllama {
   async exit(): Promise<void> {
     const proxies = new Set([this.proxy, this.loadingProxy].filter(Boolean));
 
+    this.loadingAbortController?.abort();
     this.loadGeneration += 1;
     this.isLoading = false;
     this.proxy = null as any;
     this.loadingProxy = null as any;
+    this.loadingAbortController = null as any;
     await Promise.all(
       [...proxies].map((proxy: ProxyToWorker) => proxy.wllamaExit())
     );

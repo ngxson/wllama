@@ -3,7 +3,7 @@ import CacheManager, {
   type CacheEntry,
   type DownloadOptions,
 } from './cache-manager';
-import { isString, isValidGgufFile, sumArr } from './utils';
+import { isString, isValidGgufFile, sumArr, throwIfAborted } from './utils';
 import { WllamaError, type WllamaLogger } from './wllama';
 
 const DEFAULT_PARALLEL_DOWNLOADS = 3;
@@ -169,10 +169,11 @@ export class Model {
     this.modelManager.logger.debug('Downloading model files:', urls);
     const nParallel =
       this.modelManager.params.parallelDownloads ?? DEFAULT_PARALLEL_DOWNLOADS;
-    const totalSize = await this.getTotalDownloadSize(urls);
+    const totalSize = await this.getTotalDownloadSize(urls, options);
     const loadedSize: number[] = [];
     const worker = async () => {
       while (works.length > 0) {
+        throwIfAborted(options.signal);
         const w = works.shift();
         if (!w) break;
         await this.modelManager.cacheManager.download(w.url, {
@@ -197,7 +198,10 @@ export class Model {
       loadedSize.push(0);
     }
     await Promise.all(promises);
-    this.files = this.getAllFiles(await this.modelManager.cacheManager.list());
+    throwIfAborted(options.signal);
+    const savedFiles = await this.modelManager.cacheManager.list();
+    throwIfAborted(options.signal);
+    this.files = this.getAllFiles(savedFiles);
     this.size = this.files.reduce((acc, f) => acc + f.metadata.originalSize, 0);
   }
   /**
@@ -231,9 +235,18 @@ export class Model {
     return allFiles;
   }
 
-  private async getTotalDownloadSize(urls: string[]): Promise<number> {
+  private async getTotalDownloadSize(
+    urls: string[],
+    options: DownloadOptions
+  ): Promise<number> {
     const responses = await Promise.all(
-      urls.map((url) => fetch(url, { method: 'HEAD' }))
+      urls.map((url) =>
+        fetch(url, {
+          method: 'HEAD',
+          ...(options.headers ? { headers: options.headers } : {}),
+          ...(options.signal ? { signal: options.signal } : {}),
+        })
+      )
     );
     const sizes = responses.map((res) =>
       Number(res.headers.get('content-length') || '0')
@@ -341,10 +354,13 @@ export class ModelManager {
     source: ModelSource,
     options: DownloadOptions = {}
   ): Promise<Model> {
+    throwIfAborted(options.signal);
     const models = await this.getModels();
+    throwIfAborted(options.signal);
     const model = models.find((m) => m.url === source.url);
     if (model) {
       options.progressCallback?.({ loaded: model.size, total: model.size });
+      throwIfAborted(options.signal);
       return model;
     }
     return this.downloadModel(source, options);

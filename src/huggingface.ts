@@ -42,14 +42,18 @@ interface HFFileEntry {
 
 async function fetchRepoFiles(
   repo: string,
-  token?: string
+  token?: string,
+  signal?: AbortSignal
 ): Promise<HFFileEntry[]> {
   const url = `${HF_BASE}/api/models/${repo}/tree/main?recursive=true`;
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const res = await fetch(url, { headers });
+  const res = await fetch(url, {
+    headers,
+    ...(signal ? { signal } : {}),
+  });
   if (!res.ok) {
     let msg = res.statusText;
     try {
@@ -102,11 +106,12 @@ function selectFile(
 }
 
 export async function getHFModelSource(
-  config: HuggingFaceParams
+  config: HuggingFaceParams,
+  signal?: AbortSignal
 ): Promise<ModelSource> {
   const { repo, file, quant, mmprojFile, mmprojQuant, hfToken } = config;
 
-  const files = await fetchRepoFiles(repo, hfToken);
+  const files = await fetchRepoFiles(repo, hfToken, signal);
 
   const modelPath = file ?? selectFile(files, quant, false);
   if (!modelPath) {
@@ -137,15 +142,20 @@ export async function getHFModelSource(
 
 export async function getHFFileSHA256(
   url: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  signal?: AbortSignal
 ): Promise<string | undefined> {
   if (!url.includes('/resolve/')) return undefined;
   const rawUrl = url.replace('/resolve/', '/raw/');
   try {
-    const text = await fetch(rawUrl, { headers }).then((r) => r.text());
+    const text = await fetch(rawUrl, {
+      headers,
+      ...(signal ? { signal } : {}),
+    }).then((r) => r.text());
     const match = text.match(/^oid sha256:([0-9a-f]{64})$/m);
     return match ? match[1] : undefined;
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw error;
     return undefined;
   }
 }

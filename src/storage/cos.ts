@@ -57,8 +57,12 @@ class COSInternalBackend implements StorageBackend {
         if (done) break;
         await writable.write(value);
       }
-    } finally {
       await writable.close();
+    } catch (error) {
+      await writable.abort(error).catch(() => {});
+      throw error;
+    } finally {
+      reader.releaseLock();
     }
   }
 
@@ -135,37 +139,52 @@ export class COSBackend implements StorageBackend {
 }
 
 // used for testing only
-export function mockCOS(): void {
+export function mockCOS(
+  options: {
+    onWrite?: () => void;
+    writeError?: () => Error | undefined;
+  } = {}
+): void {
   const store = new Map<string, Blob>();
 
-  (navigator as any).crossOriginStorage = {
-    async requestFileHandle(
-      { value }: CrossOriginStorageRequestFileHandleHash,
-      options?: { create?: boolean }
-    ): Promise<FileSystemFileHandle> {
-      if (!options?.create && !store.has(value)) {
-        throw new DOMException('File not found', 'NotFoundError');
-      }
-      return {
-        getFile() {
-          const blob = store.get(value);
-          if (!blob) throw new DOMException('File not found', 'NotFoundError');
-          return Promise.resolve(new File([blob], value));
-        },
-        createWritable() {
-          const chunks: BlobPart[] = [];
-          return Promise.resolve({
-            write(chunk: BlobPart) {
-              chunks.push(chunk);
-              return Promise.resolve();
-            },
-            close() {
-              store.set(value, new Blob(chunks));
-              return Promise.resolve();
-            },
-          });
-        },
-      } as unknown as FileSystemFileHandle;
-    },
-  } satisfies CrossOriginStorageManager;
+  Object.defineProperty(navigator, 'crossOriginStorage', {
+    configurable: true,
+    value: {
+      async requestFileHandle(
+        { value }: CrossOriginStorageRequestFileHandleHash,
+        requestOptions?: { create?: boolean }
+      ): Promise<FileSystemFileHandle> {
+        if (!requestOptions?.create && !store.has(value)) {
+          throw new DOMException('File not found', 'NotFoundError');
+        }
+        return {
+          getFile() {
+            const blob = store.get(value);
+            if (!blob)
+              throw new DOMException('File not found', 'NotFoundError');
+            return Promise.resolve(new File([blob], value));
+          },
+          createWritable() {
+            const chunks: BlobPart[] = [];
+            return Promise.resolve({
+              write(chunk: BlobPart) {
+                chunks.push(chunk);
+                options.onWrite?.();
+                const error = options.writeError?.();
+                if (error) return Promise.reject(error);
+                return Promise.resolve();
+              },
+              close() {
+                store.set(value, new Blob(chunks));
+                return Promise.resolve();
+              },
+              abort() {
+                return Promise.resolve();
+              },
+            });
+          },
+        } as unknown as FileSystemFileHandle;
+      },
+    } satisfies CrossOriginStorageManager,
+  });
 }

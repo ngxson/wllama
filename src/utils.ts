@@ -8,6 +8,12 @@ export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   return output;
 };
 
+export const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw new DOMException('The operation was aborted', 'AbortError');
+  }
+};
+
 const textDecoder = new TextDecoder();
 
 /**

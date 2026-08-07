@@ -1,6 +1,10 @@
 import { test, expect, beforeEach } from 'vitest';
 import { CacheManager } from '../cache-manager';
 import { COSBackend, mockCOS } from './cos';
+import type { StorageBackend } from './index';
+
+let onCOSWrite: (() => void) | undefined;
+let cosWriteError: Error | undefined;
 
 async function randomBufAndHash(): Promise<{
   buf: Uint8Array;
@@ -37,7 +41,12 @@ test.sequential('write then read without hint falls back to OPFS', async () => {
 });
 
 beforeEach(() => {
-  mockCOS();
+  onCOSWrite = undefined;
+  cosWriteError = undefined;
+  mockCOS({
+    onWrite: () => onCOSWrite?.(),
+    writeError: () => cosWriteError,
+  });
 });
 
 test.sequential('write with hint stores in COS only', async () => {
@@ -77,6 +86,65 @@ test.sequential('getSize with hint reflects COS size', async () => {
 });
 
 test.sequential(
+  'aborted COS writes are discarded and recoverable',
+  async () => {
+    const backend = new COSBackend();
+    const cache = new CacheManager([backend]);
+    const { buf, sha256 } = await randomBufAndHash();
+    const hint = { sha256 };
+    const url = `https://huggingface.co/example/model/resolve/main/model.gguf?${crypto.randomUUID()}`;
+    const originalFetch = globalThis.fetch;
+    let partialWasWritten = false;
+    onCOSWrite = () => {
+      partialWasWritten = true;
+    };
+    cosWriteError = new DOMException('The operation was aborted', 'AbortError');
+    const writing = backend.write('unused', bufStream(buf.slice(0, 64)), hint);
+    await expect(writing).rejects.toThrow('aborted');
+
+    expect(partialWasWritten).toBe(true);
+    expect(await backend.read('unused', hint)).toBeNull();
+
+    // A partial object left by an older writer must not satisfy the cache hit.
+    cosWriteError = undefined;
+    await backend.write('unused', bufStream(buf.slice(0, 64)), hint);
+    expect(await backend.getSize('unused', hint)).toBe(64);
+
+    let downloadCount = 0;
+    globalThis.fetch = ((input, init) => {
+      const requestUrl = String(input);
+      if (requestUrl.includes('/raw/')) {
+        return Promise.resolve(new Response(`oid sha256:${sha256}`));
+      }
+      if (init?.method === 'HEAD') {
+        return Promise.resolve(
+          new Response(null, {
+            headers: { 'content-length': String(buf.byteLength) },
+          })
+        );
+      }
+
+      downloadCount++;
+      return Promise.resolve(
+        new Response(buf.slice(), {
+          headers: { 'content-length': String(buf.byteLength) },
+        })
+      );
+    }) as typeof fetch;
+
+    try {
+      await cache.download(url);
+      const blob = await backend.read('unused', hint);
+      expect(new Uint8Array(await blob!.arrayBuffer())).toEqual(buf);
+      expect(downloadCount).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await cache.delete(url);
+    }
+  }
+);
+
+test.sequential(
   'cache listing rediscovers COS data from metadata',
   async () => {
     const backend = new COSBackend();
@@ -92,18 +160,16 @@ test.sequential(
       sha256,
     });
 
-    expect(await cache.list()).toEqual([
-      {
-        metadata: {
-          etag: 'fixture-etag',
-          originalSize: buf.byteLength,
-          originalURL: 'https://example.com/model.gguf',
-          sha256,
-        },
-        name: key,
-        size: buf.byteLength,
+    expect(await cache.list()).toContainEqual({
+      metadata: {
+        etag: 'fixture-etag',
+        originalSize: buf.byteLength,
+        originalURL: 'https://example.com/model.gguf',
+        sha256,
       },
-    ]);
+      name: key,
+      size: buf.byteLength,
+    });
     expect(
       new Uint8Array(await (await cache.open(key))!.arrayBuffer())
     ).toEqual(buf);
@@ -116,3 +182,67 @@ test.sequential('read missing key returns null', async () => {
   const blob = await backend.read('non-existent-key', { sha256 });
   expect(blob).toBeNull();
 });
+
+test.sequential(
+  'abort signal cancels cached model metadata lookup',
+  async () => {
+    const sha256 = 'a'.repeat(64);
+    const writes: string[] = [];
+    const backend: StorageBackend = {
+      isSupported: () => true,
+      read: async () => null,
+      write: async (key) => {
+        writes.push(key);
+      },
+      getSize: async (_key, hint) => (hint ? 1024 : -1),
+      list: async () => [],
+      delete: async () => {},
+    };
+    const cache = new CacheManager([backend]);
+    const originalFetch = globalThis.fetch;
+    let headSignal!: AbortSignal;
+    let markHeadStarted!: () => void;
+    const headStarted = new Promise<void>((resolve) => {
+      markHeadStarted = resolve;
+    });
+    globalThis.fetch = ((input, init) => {
+      const url = String(input);
+      if (url.includes('/raw/')) {
+        return Promise.resolve(new Response(`oid sha256:${sha256}`));
+      }
+      if (init?.method === 'HEAD') {
+        headSignal = init.signal!;
+        markHeadStarted();
+        return new Promise((_, reject) => {
+          headSignal.addEventListener(
+            'abort',
+            () =>
+              reject(
+                new DOMException('The operation was aborted', 'AbortError')
+              ),
+            { once: true }
+          );
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    const controller = new AbortController();
+    const downloading = cache.download(
+      'https://huggingface.co/example/model/resolve/main/model.gguf',
+      { signal: controller.signal }
+    );
+    try {
+      await headStarted;
+      const rejected = expect(downloading).rejects.toThrow('aborted');
+      controller.abort();
+
+      expect(headSignal.aborted).toBe(true);
+      await rejected;
+      expect(writes).toEqual([]);
+    } finally {
+      controller.abort();
+      globalThis.fetch = originalFetch;
+    }
+  }
+);

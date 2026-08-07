@@ -1,4 +1,5 @@
 import { test, expect, beforeEach } from 'vitest';
+import { Model } from './model-manager';
 
 declare const __GITHUB_CI__: boolean;
 
@@ -147,6 +148,201 @@ test.sequential('rejects concurrent model initialization', async () => {
   await loading;
 
   expect(wllama.isModelLoaded()).toBe(true);
+  await wllama.exit();
+});
+
+test.sequential('cancels model download on exit', async () => {
+  let downloadSignal!: AbortSignal;
+  let markDownloadStarted!: () => void;
+  const downloadStarted = new Promise<void>((resolve) => {
+    markDownloadStarted = resolve;
+  });
+  const modelManager = {
+    getModelOrDownload(
+      _source: unknown,
+      options: { signal?: AbortSignal }
+    ): Promise<never> {
+      downloadSignal = options.signal!;
+      markDownloadStarted();
+      return new Promise((_, reject) => {
+        downloadSignal.addEventListener(
+          'abort',
+          () =>
+            reject(new DOMException('The operation was aborted', 'AbortError')),
+          { once: true }
+        );
+      });
+    },
+  } as any;
+  const wllama = createWllama(CONFIG_PATHS, { modelManager });
+  const loading = wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 256,
+    n_gpu_layers: 0,
+    n_threads: 1,
+  });
+
+  await downloadStarted;
+  const rejected = expect(loading).rejects.toThrow('Operation aborted');
+  await wllama.exit();
+
+  expect(downloadSignal.aborted).toBe(true);
+  await rejected;
+  expect(wllama.isModelLoaded()).toBe(false);
+});
+
+test.sequential('cancels model preparation requests on exit', async () => {
+  const originalFetch = globalThis.fetch;
+  const modelUrl =
+    'https://huggingface.co/example/model/resolve/main/model.gguf';
+  let headSignal!: AbortSignal;
+  let shaSignal!: AbortSignal;
+  let markShaStarted!: () => void;
+  const shaStarted = new Promise<void>((resolve) => {
+    markShaStarted = resolve;
+  });
+  globalThis.fetch = ((input, init) => {
+    const url = String(input);
+    if (init?.method === 'HEAD') {
+      headSignal = init.signal!;
+      return Promise.resolve(
+        new Response(null, { headers: { 'content-length': '1024' } })
+      );
+    }
+    if (url.includes('/raw/')) {
+      shaSignal = init?.signal!;
+      markShaStarted();
+      return new Promise((_, reject) => {
+        shaSignal.addEventListener(
+          'abort',
+          () =>
+            reject(new DOMException('The operation was aborted', 'AbortError')),
+          { once: true }
+        );
+      });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }) as typeof fetch;
+
+  const wllama = createWllama();
+  const loading = wllama.loadModelFromUrl(modelUrl, { useCache: false });
+  try {
+    await shaStarted;
+    const rejected = expect(loading).rejects.toThrow('Operation aborted');
+    await wllama.exit();
+
+    expect(headSignal).toBe(shaSignal);
+    expect(headSignal.aborted).toBe(true);
+    await rejected;
+    expect(wllama.isModelLoaded()).toBe(false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await wllama.exit();
+  }
+});
+
+test.sequential('cancels Hugging Face discovery on exit', async () => {
+  const originalFetch = globalThis.fetch;
+  let discoverySignal!: AbortSignal;
+  let markDiscoveryStarted!: () => void;
+  const discoveryStarted = new Promise<void>((resolve) => {
+    markDiscoveryStarted = resolve;
+  });
+  globalThis.fetch = ((_input, init) => {
+    discoverySignal = init?.signal!;
+    markDiscoveryStarted();
+    return new Promise((_, reject) => {
+      discoverySignal.addEventListener(
+        'abort',
+        () =>
+          reject(new DOMException('The operation was aborted', 'AbortError')),
+        { once: true }
+      );
+    });
+  }) as typeof fetch;
+
+  const wllama = createWllama();
+  const loading = wllama.loadModelFromHF({
+    repo: 'example/model',
+    file: 'model.gguf',
+  });
+  try {
+    await discoveryStarted;
+    const rejected = expect(loading).rejects.toThrow('Operation aborted');
+    await wllama.exit();
+
+    expect(discoverySignal.aborted).toBe(true);
+    await rejected;
+    expect(wllama.isModelLoaded()).toBe(false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await wllama.exit();
+  }
+});
+
+test.sequential('does not resume model opening after exit', async () => {
+  let markOpenStarted!: () => void;
+  let resolveOpen!: (blobs: Blob[]) => void;
+  const openStarted = new Promise<void>((resolve) => {
+    markOpenStarted = resolve;
+  });
+  const openResult = new Promise<Blob[]>((resolve) => {
+    resolveOpen = resolve;
+  });
+  const model = Object.create(Model.prototype) as Model;
+  model.open = () => {
+    markOpenStarted();
+    return openResult;
+  };
+  const wllama = createWllama();
+  const loading = wllama.loadModel(model, {
+    n_ctx: 256,
+    n_gpu_layers: 0,
+    n_threads: 1,
+  });
+
+  await openStarted;
+  const rejected = expect(loading).rejects.toThrow('Operation aborted');
+  await wllama.exit();
+  resolveOpen([new Blob(['model data'])]);
+
+  await rejected;
+  expect(wllama.isModelLoaded()).toBe(false);
+});
+
+test.sequential('rejects an abort during the final load handoff', async () => {
+  const modelBlob = await fetch(TINY_MODEL).then((response) => response.blob());
+  const abortController = new AbortController();
+  const modelManager = {
+    async getModelOrDownload() {
+      return { open: async () => [modelBlob] };
+    },
+  } as any;
+  const logger = {
+    debug(message: unknown) {
+      if (
+        typeof message === 'object' &&
+        message !== null &&
+        'loadedCtxInfo' in message
+      ) {
+        queueMicrotask(() => abortController.abort());
+      }
+    },
+    log: console.log,
+    warn: console.warn,
+    error: console.error,
+  };
+  const wllama = createWllama(CONFIG_PATHS, { logger, modelManager });
+
+  await expect(
+    wllama.loadModelFromUrl(TINY_MODEL, {
+      signal: abortController.signal,
+      n_ctx: 256,
+      n_gpu_layers: 0,
+      n_threads: 1,
+    })
+  ).rejects.toThrow('Operation aborted');
+
+  expect(wllama.isModelLoaded()).toBe(false);
   await wllama.exit();
 });
 

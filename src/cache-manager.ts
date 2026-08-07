@@ -2,6 +2,7 @@ import { getHFFileSHA256 } from './huggingface';
 import type { DownloadProgressCallback } from './model-manager';
 import { COSBackend } from './storage/cos';
 import type { StorageBackend, StorageFileHint } from './storage/index';
+import { throwIfAborted } from './utils';
 
 const PREFIX_METADATA = '__metadata__';
 
@@ -122,36 +123,55 @@ export class CacheManager {
   }
 
   async download(url: string, options: DownloadOptions = {}): Promise<void> {
+    throwIfAborted(options.signal);
     const fileKey = await urlToFileName(url, '');
+    throwIfAborted(options.signal);
 
     // Fetch sha256 before the GET so we can skip the download entirely if the
     // file is already in COS (avoids opening a connection just to cancel it).
-    const sha256 = await getHFFileSHA256(url, options.headers ?? {});
+    const sha256 = await getHFFileSHA256(
+      url,
+      options.headers ?? {},
+      options.signal
+    );
+    throwIfAborted(options.signal);
     const hint = sha256 ? { sha256 } : undefined;
 
-    if (hint && (await this.sb.getSize(fileKey, hint)) !== -1) {
+    const cachedSize = hint ? await this.sb.getSize(fileKey, hint) : -1;
+    if (hint && cachedSize !== -1) {
+      throwIfAborted(options.signal);
       // File already in COS. Metadata is origin-local (OPFS), so it may be
       // absent on a different origin or after a crash between write and
       // writeMetadata. Ensure it exists before returning.
-      if (!(await this.getMetadata(fileKey))) {
+      const metadata = await this.getMetadata(fileKey);
+      throwIfAborted(options.signal);
+      if (metadata?.originalSize === cachedSize) return;
+
+      if (!metadata) {
         const head = await fetch(url, {
           method: 'HEAD',
           ...(options.headers ? { headers: options.headers } : {}),
+          ...(options.signal ? { signal: options.signal } : {}),
         });
         const contentLength = head.headers.get('content-length');
         const etag = (head.headers.get('etag') || '').replace(
           /[^A-Za-z0-9]/g,
           ''
         );
-        await this.writeMetadata(fileKey, {
-          originalURL: url,
-          originalSize: parseInt(contentLength ?? '0', 10),
-          etag,
-          sha256,
-          ...(options.metadataAdditional ?? {}),
-        });
+        throwIfAborted(options.signal);
+        const originalSize = parseInt(contentLength ?? '0', 10);
+        if (originalSize === cachedSize) {
+          await this.writeMetadata(fileKey, {
+            originalURL: url,
+            originalSize,
+            etag,
+            sha256,
+            ...(options.metadataAdditional ?? {}),
+          });
+          throwIfAborted(options.signal);
+          return;
+        }
       }
-      return;
     }
 
     const response = await fetch(url, {
@@ -206,6 +226,7 @@ export class CacheManager {
       response.body.pipeThrough(progressStream),
       hint
     );
+    throwIfAborted(options.signal);
     await this.writeMetadata(fileKey, metadata);
   }
 
