@@ -139,8 +139,13 @@ export class ProxyToWorker {
   }
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
+    if (this.terminated) {
+      throw new WllamaRuntimeError('Wllama worker was terminated', '');
+    }
     let moduleCode = JSPI_STUB + (await this.getModuleCode());
-    if (this.terminated) throw new Error('Wllama worker was terminated');
+    if (this.terminated) {
+      throw new WllamaRuntimeError('Wllama worker was terminated', '');
+    }
 
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
