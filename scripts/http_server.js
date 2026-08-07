@@ -32,6 +32,7 @@ app.get("/", (req, res) => {
   res.send(`
     Examples:<br/>
     <a href="/examples/basic">Basic</a><br/>
+    <a href="/examples/memory64">Memory64 stress lab</a><br/>
     <a href="/examples/embeddings">Embeddings</a><br/>
     <a href="/examples/multimodal">Multimodal</a><br/>
     <a href="/examples/tools">Tools</a><br/>

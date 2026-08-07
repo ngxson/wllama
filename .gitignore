@@ -12,6 +12,7 @@ node_modules
 /wasm
 /esm
 /models
+/.memory64-stress-profiles
 /test-results
 _tmp
 

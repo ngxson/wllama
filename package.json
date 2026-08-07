@@ -26,7 +26,14 @@
     "test:auto": "AUTO=1 vitest",
     "test:firefox": "BROWSER=firefox vitest",
     "test:safari": "BROWSER=safari vitest",
-    "test:wgpu": "WEBGPU=1 vitest"
+    "test:wgpu": "WEBGPU=1 vitest",
+    "test:memory64": "AUTO=1 vitest src/memory64.test.ts",
+    "test:memory64:stress": "npm run test:memory64:stress:unit && npm run build:worker && npm run build:tsup && npm run build:minified && ./scripts/post_build.sh && node scripts/memory64_stress.mjs",
+    "test:memory64:stress:low-memory": "WLLAMA_STRESS_TWO_PHASE=1 WLLAMA_STRESS_CASES=8g,12g npm run test:memory64:stress",
+    "test:memory64:stress:multithread": "WLLAMA_STRESS_THREADS=2 WLLAMA_STRESS_CASES=8g npm run test:memory64:stress",
+    "test:memory64:stress:smoke": "WLLAMA_STRESS_CASES=tiny npm run test:memory64:stress",
+    "test:memory64:stress:unit": "node --test scripts/memory64_stress.test.mjs",
+    "test:compat": "AUTO=1 COMPAT=1 vitest src/wllama.compat.test.ts"
   },
   "repository": {
     "type": "git",

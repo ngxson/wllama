@@ -51,6 +51,25 @@ The thread pool size is passed to emscripten via `-sPTHREAD_POOL_SIZE=Module["pt
 
 This logic lives in `wllama.ts` (`isSupportMultiThread()` from `utils.ts` performs the feature detection).
 
+### Linear memory
+
+The default build uses WebAssembly Memory64 with a 128 MiB initial memory and
+a 16 GiB maximum. The compat build remains wasm32 and has a 4 GiB maximum.
+Both builds allow memory growth. For multithreaded startup, the worker creates
+the shared memory and can retry with a lower maximum on constrained devices.
+Single-threaded startup uses Emscripten's imported-memory setup after Wllama
+verifies that the browser can create a shared 16 GiB Memory64 descriptor.
+
+Memory64 changes C/C++ pointers and `size_t` values to 64 bits. Values crossing
+the JavaScript boundary therefore use `BigInt`, while offsets passed to
+`TypedArray` and `Blob` APIs are converted to `Number`. This is exact throughout
+the 16 GiB address range. Heap views must always be recreated after growth; use
+`getHeapU8()` rather than caching an Emscripten `HEAPU8` view.
+
+The browser maximum is a virtual-address and runtime ceiling, not an allocation
+guarantee. A real model also needs memory for browser overhead, model input,
+temporary buffers, and inference state.
+
 ## Startup process
 
 Upon startup, these steps are performed:
@@ -176,3 +195,75 @@ After compilation, `generate_glue_prototype.js` is called to generate the GLUE m
 Built wasm file will then be copied to the `src` directory.
 
 Finally, `build_worker.sh` is called to generate the web worker code.
+
+## Testing linear memory
+
+After rebuilding both Wasm artifacts, run:
+
+```sh
+# Grow the real default artifact past 4 GiB, perform Wasm reads/writes on both
+# sides of the boundary, then grow to and touch the final 16 GiB page.
+npm run test:memory64
+
+# Force the locally built wasm32 compat worker and run real model inference.
+npm run test:compat
+
+# Run the ordinary default-build browser suite.
+npm run test:auto
+```
+
+The Memory64 boundary test is sparse and suitable for a normal 64-bit Chromium
+runner. The real-model stress runner uses an explicit 12 GiB test budget. Serve
+tests with COOP and COEP headers so the shared-memory path is exercised.
+
+### Real-model Chromium stress test
+
+The Memory64 stress lab exercises the package as a user would: it downloads a
+real GGUF into the browser model cache, loads it through the default Memory64
+artifact, validates model metadata, and generates deterministic tokens. The
+Playwright runner connects through Chrome DevTools Protocol and records page and
+worker console output, exceptions, crashes, failed requests, screenshots, a
+trace, and process-tree RSS/PSS samples.
+
+```sh
+# Fast end-to-end validation with the 18.2 MiB TinyLlama fixture.
+npm run test:memory64:stress:smoke
+
+# Sequential 4.67 GiB, 8.37 GiB, and 11.29 GiB model runs.
+npm run test:memory64:stress
+
+# Use separate download and inference browser lifetimes so cached model pages
+# can be reclaimed before tensors are committed.
+npm run test:memory64:stress:low-memory
+
+# Exercise the shared-Memory64 pthread path instead of the default one-thread
+# physical stress configuration.
+npm run test:memory64:stress:multithread
+```
+
+The full command requires 64-bit Chromium 137 or newer. Every current fixture
+fits within the runner's 12 GiB test budget. Host and cgroup memory values are
+recorded for diagnostics but do not gate a run: cgroup usage includes
+reclaimable page cache and can substantially understate usable memory after a
+model download. Selecting a fixture larger than the declared budget is a
+configuration error. Each model runs in a fresh browser so OPFS data and Wasm
+memory from the prior tier cannot influence the next result.
+
+The low-memory command stores its temporary Chromium profiles on the workspace
+volume rather than Docker's overlay filesystem. It first downloads each model,
+closes Chrome, flushes the OPFS files, and then opens a fresh renderer for model
+loading and inference. The runner raises the isolated test origin's quota to
+32 GiB through Chrome DevTools Protocol and removes the profile after the
+inference phase. The inference renderer must rediscover valid cached shards
+without remote model requests. A pass requires exact fixture bytes, valid model
+metadata, expected fixture output, the requested threading mode, zero fatal
+DevTools events, and measured browser PSS at least as large as the selected
+fixture for every model over 4 GiB. This avoids overlapping reclaimable download
+cache with the physical tensor allocation; it does not reduce the model's Wasm
+memory use.
+
+To use the proof-of-concept manually, build the browser package, run
+`npm run serve:mt`, and open
+`http://localhost:8080/examples/memory64/`. The page includes the same model
+presets and mirrors package logs while the browser developer console remains
+the source of truth.

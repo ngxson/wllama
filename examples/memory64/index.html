@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A real-browser stress harness for wllama Memory64 model loading and inference."
+    />
+    <title>wllama Memory64 stress lab</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <p class="eyebrow">wllama / browser proof of concept</p>
+        <h1>Memory64 stress lab</h1>
+        <p class="lede">
+          Download a real sharded GGUF, load its tensors into the Memory64
+          runtime, and generate tokens while Chrome DevTools records every
+          warning and failure.
+        </p>
+      </header>
+
+      <section class="panel controls" aria-labelledby="run-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Test configuration</p>
+            <h2 id="run-heading">Choose a pressure tier</h2>
+          </div>
+          <span id="capability" class="badge pending">Checking browser…</span>
+        </div>
+
+        <label for="model-preset">Model preset</label>
+        <select id="model-preset"></select>
+
+        <label for="model-url">First GGUF shard URL</label>
+        <input id="model-url" type="url" spellcheck="false" />
+
+        <div class="button-row">
+          <button id="run" type="button">Run load + inference</button>
+          <button id="clear" class="secondary" type="button">
+            Clear model cache
+          </button>
+        </div>
+      </section>
+
+      <section class="metrics" aria-label="Test metrics">
+        <article class="metric">
+          <span>Stage</span>
+          <strong id="stage">Idle</strong>
+        </article>
+        <article class="metric">
+          <span>Model size</span>
+          <strong id="model-size">—</strong>
+        </article>
+        <article class="metric">
+          <span>Downloaded</span>
+          <strong id="downloaded">—</strong>
+        </article>
+        <article class="metric">
+          <span>Elapsed</span>
+          <strong id="elapsed">—</strong>
+        </article>
+      </section>
+
+      <section class="panel progress-panel" aria-labelledby="progress-heading">
+        <div class="section-heading compact">
+          <h2 id="progress-heading">Run progress</h2>
+          <span id="outcome" class="badge pending">Not started</span>
+        </div>
+        <progress id="progress" max="100" value="0">0%</progress>
+        <p id="message" role="status" aria-live="polite">
+          Select a model and begin when the browser capability check passes.
+        </p>
+        <pre id="completion" aria-label="Generated completion"></pre>
+      </section>
+
+      <section class="panel console-panel" aria-labelledby="console-heading">
+        <div class="section-heading compact">
+          <h2 id="console-heading">In-page console mirror</h2>
+          <button id="clear-console" class="quiet" type="button">Clear</button>
+        </div>
+        <ol id="console" aria-live="polite"></ol>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
