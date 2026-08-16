@@ -81,6 +81,8 @@ export interface WllamaWorkerResources {
   wasmPath: string;
   // if jsPath is not provided, use WLLAMA_EMSCRIPTEN_CODE
   jsPath?: string | { code: string } | undefined;
+  // if llamaCppCode is not provided, use LLAMA_CPP_WORKER_CODE
+  llamaCppCode?: string;
   // in compat mode, mem64 must be disabled
   compat: boolean;
   // skip WebGPU device initialization entirely (e.g. when n_gpu_layers is 0)
@@ -100,12 +102,14 @@ export class ProxyToWorker {
   nbThread: number;
   useAsyncFile: boolean;
   fileBlobs: Map<string, Blob> = new Map(); // filename -> Blob for async reads
+  workerFactory: (workerCode: string | Blob) => Worker;
 
   constructor(
     resources: WllamaWorkerResources,
     nbThread: number,
     suppressNativeLog: boolean,
-    logger: Logger
+    logger: Logger,
+    workerFactory?: (workerCode: string | Blob) => Worker
   ) {
     this.resources = resources;
     this.nbThread = nbThread;
@@ -113,6 +117,7 @@ export class ProxyToWorker {
     this.logger = logger;
     this.suppressNativeLog = suppressNativeLog;
     this.useAsyncFile = canUseAsyncFileRead(resources.compat);
+    this.workerFactory = workerFactory ?? createWorker;
   }
 
   async getModuleCode(): Promise<string> {
@@ -157,9 +162,9 @@ export class ProxyToWorker {
     const completeCode: string = [
       `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,
       `function wModuleInit() { ${mainModuleCode}; return Module; }`,
-      LLAMA_CPP_WORKER_CODE,
+      this.resources.llamaCppCode ?? LLAMA_CPP_WORKER_CODE,
     ].join(';\n\n');
-    this.worker = createWorker(completeCode);
+    this.worker = this.workerFactory(completeCode);
     this.worker.onmessage = this.onRecvMsg.bind(this);
     this.worker.onerror = this.logger.error;
 

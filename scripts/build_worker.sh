@@ -31,6 +31,11 @@ process_file() {
 process_file ./src/workers-code/llama-cpp.js  LLAMA_CPP_WORKER_CODE
 process_file ./src/workers-code/opfs-utils.js OPFS_UTILS_WORKER_CODE
 
+# shared worker scope, see src/workers-code/shared-worker-scope.ts
+SCOPE_BUNDLE="$(mktemp -d)/shared-worker-scope.js"
+node ./scripts/build_shared_worker_scope.mjs "$SCOPE_BUNDLE"
+process_file "$SCOPE_BUNDLE" SHARED_WORKER_SCOPE_CODE
+
 # emscripten
 process_file ./src/wasm/wllama.js             WLLAMA_EMSCRIPTEN_CODE
 
