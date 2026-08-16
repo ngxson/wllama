@@ -164,6 +164,33 @@ export interface WllamaCompat {
   wasm: string;
 }
 
+/**
+ * TEMPORARY FIX, remove when the ggml-webgpu multi-output bug is fixed upstream.
+ *
+ * The WebGPU backend currently fails whenever one llama_decode produces more
+ * than one logits row (i.e. two requests being decoded in the same batch),
+ * even if no layer is offloaded to GPU. Until that is fixed, requests are
+ * serialized whenever the WebGPU backend may be registered, so that only one
+ * request is ever in-flight on the C++ side.
+ *
+ * See ./cache/bug0.md and https://github.com/ngxson/wllama/issues/261
+ */
+class TmpRequestSerializer {
+  private tail: Promise<void> = Promise.resolve();
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.tail;
+    let release!: () => void;
+    this.tail = new Promise((r) => (release = r));
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+}
+
 export class Wllama {
   // The CacheManager and ModelManager are singleton, can be accessed by user
   public cacheManager: CacheManager;
@@ -178,6 +205,9 @@ export class Wllama {
   private nbThreads: number = 1;
   private useEmbeddings: boolean = false;
   private useRerank: boolean = false;
+  // TEMPORARY FIX for the ggml-webgpu multi-output bug, see TmpRequestSerializer
+  private tmpSerializeRequests: boolean = false;
+  private tmpRequestSerializer = new TmpRequestSerializer();
   // available when loaded
   private loadedContextInfo: LoadedContextInfo = null as any;
   private seed: number | undefined = undefined;
@@ -492,6 +522,12 @@ export class Wllama {
       // skip WebGPU device initialization when the user asks for CPU-only
       workerResources.noWebGPU = true;
     }
+    // TEMPORARY FIX: serialize requests when the WebGPU backend may be
+    // registered inside the worker, see TmpRequestSerializer
+    this.tmpSerializeRequests =
+      !workerResources.noWebGPU &&
+      typeof navigator !== 'undefined' &&
+      !!(navigator as any).gpu;
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
@@ -651,23 +687,25 @@ export class Wllama {
       );
     }
 
-    const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
-      'embedding',
-      {
-        _name: 'embd_req',
-        data_json: JSON.stringify(options),
-        files: [], // TODO: support file input
-      }
-    );
-
-    if (!result.success) {
-      throw new WllamaError(
-        'Model failed to start inference',
-        'inference_error'
+    return await this.withTmpRequestLock(async () => {
+      const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
+        'embedding',
+        {
+          _name: 'embd_req',
+          data_json: JSON.stringify(options),
+          files: [], // TODO: support file input
+        }
       );
-    }
 
-    return await this.getResponse(options as any, false, result.req_id);
+      if (!result.success) {
+        throw new WllamaError(
+          'Model failed to start inference',
+          'inference_error'
+        );
+      }
+
+      return await this.getResponse(options as any, false, result.req_id);
+    });
   }
 
   /**
@@ -690,23 +728,28 @@ export class Wllama {
     const rawResults: Array<{ index: number; score: number }> = [];
 
     for (let i = 0; i < options.documents.length; i++) {
-      const result = await this.proxy.wllamaAction<GlueMsgRerankRes>('rerank', {
-        _name: 'rrnk_req',
-        data_json: JSON.stringify({
-          query: options.query,
-          document: options.documents[i],
-        }),
-      });
+      const { score, tokens_evaluated } = await this.withTmpRequestLock(
+        async () => {
+          const result = await this.proxy.wllamaAction<GlueMsgRerankRes>(
+            'rerank',
+            {
+              _name: 'rrnk_req',
+              data_json: JSON.stringify({
+                query: options.query,
+                document: options.documents[i],
+              }),
+            }
+          );
 
-      if (!result.success) {
-        throw new WllamaError(
-          'Model failed to start reranking',
-          'inference_error'
-        );
-      }
+          if (!result.success) {
+            throw new WllamaError(
+              'Model failed to start reranking',
+              'inference_error'
+            );
+          }
 
-      const { score, tokens_evaluated } = await this.getRerankResult(
-        result.req_id
+          return await this.getRerankResult(result.req_id);
+        }
       );
       totalTokens += tokens_evaluated;
       rawResults.push({ index: i, score });
@@ -812,28 +855,40 @@ export class Wllama {
       options = tmp.params as any;
       files = tmp.files;
     }
-    const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
-      'completion',
-      {
-        _name: 'cmpl_req',
-        is_chat: isChat,
-        data_json: JSON.stringify({ ...options, ...customOpt }),
-        files: files.map((f) => new Uint8Array(f)),
-      }
-    );
-
-    if (!result.success) {
-      throw new WllamaError(
-        'Model failed to start inference',
-        'inference_error'
+    // the lock covers the whole request lifecycle: once the task is posted, it
+    // can be picked up by a slot on the very next poll, so posting must also
+    // wait for the previous request to fully finish
+    return await this.withTmpRequestLock(async () => {
+      const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
+        'completion',
+        {
+          _name: 'cmpl_req',
+          is_chat: isChat,
+          data_json: JSON.stringify({ ...options, ...customOpt }),
+          files: files.map((f) => new Uint8Array(f)),
+        }
       );
-    }
 
-    return await this.getResponse(
-      options as StreamParams<TChunk> & { abortSignal?: AbortSignal },
-      isStream,
-      result.req_id
-    );
+      if (!result.success) {
+        throw new WllamaError(
+          'Model failed to start inference',
+          'inference_error'
+        );
+      }
+
+      return await this.getResponse(
+        options as StreamParams<TChunk> & { abortSignal?: AbortSignal },
+        isStream,
+        result.req_id
+      );
+    });
+  }
+
+  /**
+   * TEMPORARY FIX for the ggml-webgpu multi-output bug, see TmpRequestSerializer
+   */
+  private withTmpRequestLock<T>(fn: () => Promise<T>): Promise<T> {
+    return this.tmpSerializeRequests ? this.tmpRequestSerializer.run(fn) : fn();
   }
 
   /**
