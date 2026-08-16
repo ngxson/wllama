@@ -109,7 +109,7 @@ setInterval(() => {
 }, SWEEP_INTERVAL_MS);
 
 const die = (reason: string) => {
-  logger.error('shared worker scope closing: ' + reason);
+  logger.warn('shared worker scope closing: ' + reason);
   broadcast({ evt: 'dying', reason });
   setTimeout(() => self.close(), 10);
 };

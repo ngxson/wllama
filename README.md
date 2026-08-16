@@ -160,6 +160,25 @@ await wllama.loadModelFromHF({
 });
 ```
 
+### Share one model instance across browser tabs
+
+By default, each tab loads its own copy of the model into memory. With `sharedWorker: true`, the model runs inside a SharedWorker: the first tab loads it, other tabs of the same origin attach to the running instance. Completions from multiple tabs run in parallel (see `n_parallel`).
+
+```js
+const wllama = new Wllama(CONFIG_PATHS, {
+  sharedWorker: true,
+});
+// first tab does the real load; other tabs attach in milliseconds
+await wllama.loadModelFromUrl(MODEL_URL);
+```
+
+Things to know:
+- CPU inference is single-thread in this mode (browsers do not allow SharedArrayBuffer inside a SharedWorker). WebGPU works normally, so prefer this mode for GPU inference.
+- All tabs must use the same model. Loading a different model while one is active throws an error.
+- The model stays in memory as long as at least one tab is open.
+- `exit()` only detaches the current tab. Other tabs keep working.
+- On browsers without SharedWorker support (e.g. some mobile browsers), wllama silently falls back to the normal per-tab dedicated worker.
+
 ### Custom logger (suppress debug messages)
 
 When initializing Wllama, you can pass a custom logger to Wllama.

@@ -5,3 +5,4 @@ export const LIBLLAMA_VERSION = '';
 export const LLAMA_CPP_WORKER_CODE = '';
 export const OPFS_UTILS_WORKER_CODE = '';
 export const WLLAMA_EMSCRIPTEN_CODE = '';
+export const SHARED_WORKER_SCOPE_CODE = '';
