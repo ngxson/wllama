@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest';
 import { ModelManager, Model, ModelValidationStatus } from './model-manager';
 import { OPFSBackend } from './storage/opfs';
+import CacheManager from './cache-manager';
 
 const TINY_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf';
@@ -107,13 +108,17 @@ test.skip('interrupt download split model (partial files downloaded)', async () 
   expect((await manager.getModels({ includeInvalid: true })).length).toBe(1);
 });
 
+// the tests below poke the storage directly, so pin the backend instead of the default one
+const opfs = new OPFSBackend();
+const opfsManager = () =>
+  new ModelManager({ cacheManager: new CacheManager([opfs]) });
+
 test.sequential('recover from missing metadata', async () => {
-  const manager = new ModelManager();
+  const manager = opfsManager();
   await manager.clear();
   await manager.downloadModel(TINY_MODEL);
 
   // simulate a tab closed between the file write and the metadata write
-  const opfs = new OPFSBackend();
   const fileKey = await manager.cacheManager.getNameFromURL(TINY_MODEL);
   await opfs.delete(`__metadata__${fileKey}`);
   expect((await manager.getModels()).length).toBe(0);
@@ -125,11 +130,10 @@ test.sequential('recover from missing metadata', async () => {
 });
 
 test.sequential('recover from partial file in cache', async () => {
-  const manager = new ModelManager();
+  const manager = opfsManager();
   await manager.clear();
   await manager.downloadModel(TINY_MODEL);
 
-  const opfs = new OPFSBackend();
   const fileKey = await manager.cacheManager.getNameFromURL(TINY_MODEL);
   const head = await (await opfs.read(fileKey))!.slice(0, 1024).arrayBuffer();
   await opfs.write(fileKey, new Blob([head]).stream());
