@@ -1,5 +1,10 @@
 import { ProxyToWorker, type WllamaWorkerResources } from './worker';
 import {
+  ProxyToSharedWorker,
+  isSharedWorkerSupported,
+  type SharedWorkerState,
+} from './worker-shared';
+import {
   absoluteUrl,
   canUseAsyncFileRead,
   cbToAsyncIter,
@@ -84,6 +89,12 @@ export interface WllamaConfig {
    * Custom model manager (only for advanced usage)
    */
   modelManager?: ModelManager;
+  /**
+   * Run the model inside a SharedWorker, so all tabs of the same origin share one model instance.
+   *
+   * The first tab loads the model, later tabs attach to it. Always single-thread CPU (WebGPU works normally). Falls back to a dedicated worker when the browser has no SharedWorker support.
+   */
+  sharedWorker?: boolean;
 }
 
 export interface WllamaChatMessage {
@@ -171,7 +182,7 @@ export class Wllama {
 
   private compat: WllamaCompat | null = null;
 
-  private proxy: ProxyToWorker = null as any;
+  private proxy: ProxyToWorker | ProxyToSharedWorker = null as any;
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
@@ -479,6 +490,16 @@ export class Wllama {
     if (this.proxy) {
       throw new WllamaError('Module is already initialized', 'load_error');
     }
+
+    if (this.config.sharedWorker) {
+      if (isSharedWorkerSupported()) {
+        return await this.loadModelShared(blobs, params);
+      }
+      this.logger().warn(
+        'sharedWorker is not supported in this browser, falling back to dedicated worker'
+      );
+    }
+
     // detect if we can use multi-thread and webgpu
     const supportMultiThread = await isSupportMultiThread();
     const hwConccurency = Math.floor((navigator.hardwareConcurrency || 1) / 2);
@@ -498,12 +519,23 @@ export class Wllama {
       this.config.suppressNativeLog ?? false,
       this.logger()
     );
+    const modelFiles = await prepareBlobs(blobs);
+    const loadResult = await this.initModules(modelFiles, params);
+    this.setLoadedState(loadResult, params);
+  }
+
+  /**
+   * Init the wasm module and load the model via the current proxy
+   */
+  private async initModules(
+    modelFiles: Awaited<ReturnType<typeof prepareBlobs>>,
+    params: LoadModelParams
+  ): Promise<GlueMsgLoadRes> {
     let logLevel = params.log_level ?? LogLevel.INFO;
     if (this.config.suppressNativeLog) {
       logLevel = 9999 as any;
     }
 
-    const modelFiles = await prepareBlobs(blobs);
     await this.proxy.moduleInit(modelFiles.all);
 
     // run it
@@ -521,11 +553,11 @@ export class Wllama {
       _name: 'load_req',
       log_level: logLevel,
       // if async read is not supported, use mmap; refer to README-dev.md for more details
-      use_mmap: !canUseAsyncFileRead(workerResources.compat),
+      use_mmap: !canUseAsyncFileRead(this.proxy.resources.compat),
       use_mlock: false,
       n_gpu_layers: params.n_gpu_layers ?? 99999,
       n_ctx: params.n_ctx ?? 1024,
-      n_threads: this.useMultiThread ? nbThreads : 1,
+      n_threads: this.useMultiThread ? this.nbThreads : 1,
       n_ctx_auto: false, // not supported for now
       mmproj_path: modelFiles.mmproj
         ? `/models/${MMPROJ_FILE_NAME}`
@@ -586,6 +618,13 @@ export class Wllama {
       skip_chat_parsing: params.skip_chat_parsing,
       prefill_assistant: params.prefill_assistant,
     });
+    return loadResult;
+  }
+
+  /**
+   * Set model-derived props after load. Also used to hydrate a tab that joins an already-loaded shared worker.
+   */
+  private setLoadedState(loadResult: GlueMsgLoadRes, params: LoadModelParams) {
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
       metadata: {},
@@ -619,6 +658,89 @@ export class Wllama {
     this.mediaMarker = loadedCtxInfo.media_marker;
     this.chatTemplateKwargs = params.default_template_kwargs ?? {};
     this.logger().debug({ loadedCtxInfo });
+  }
+
+  /**
+   * Load the model inside a SharedWorker shared by all tabs of the same origin. The first tab loads the model, later tabs attach and only replay the derived state from the snapshot.
+   */
+  private async loadModelShared(
+    blobs: Blob[],
+    params: LoadModelParams
+  ): Promise<void> {
+    // no SharedArrayBuffer in a SharedWorker scope, always single thread
+    this.useMultiThread = false;
+    this.nbThreads = 1;
+    const workerResources = this.getWorkerResources();
+    if (params.n_gpu_layers === 0) {
+      workerResources.noWebGPU = true;
+    }
+    const modelFiles = await prepareBlobs(blobs);
+    const modelId = modelFiles.all
+      .map((f) => `${f.name}:${f.blob.size}`)
+      .join(';');
+    const proxy = new ProxyToSharedWorker(
+      workerResources,
+      this.config.suppressNativeLog ?? false,
+      this.logger()
+    );
+    let state = await proxy.connect();
+    this.proxy = proxy;
+    const hydrate = (st: SharedWorkerState) => {
+      if (st.modelId !== modelId) {
+        throw new WllamaError(
+          `shared worker already has another model loaded: ${st.modelId}`,
+          'load_error'
+        );
+      }
+      const snap = st.snapshot;
+      this.setLoadedState(snap.loadResult, {
+        ...snap.params,
+        // seed and template kwargs only exist on the tab side, prefer values from this tab
+        seed: params.seed ?? snap.params.seed,
+        default_template_kwargs:
+          params.default_template_kwargs ?? snap.params.default_template_kwargs,
+      });
+    };
+    if (state.status === 'initializing') {
+      await proxy.waitReady();
+      state = await proxy.getState();
+    }
+    if (state.status === 'ready') {
+      hydrate(state);
+      return;
+    }
+    if (state.status !== 'uninit') {
+      throw new WllamaError(
+        `shared worker is in an unexpected state: ${state.status}`,
+        'load_error'
+      );
+    }
+    try {
+      const loadResult = await this.initModules(modelFiles, params);
+      this.setLoadedState(loadResult, params);
+      await proxy.setState(
+        {
+          loadResult,
+          params: {
+            seed: params.seed,
+            embeddings: params.embeddings,
+            pooling_type: params.pooling_type,
+            default_template_kwargs: params.default_template_kwargs,
+          },
+        },
+        modelId
+      );
+    } catch (e) {
+      if (String((e as Error)?.message).startsWith('cannot init')) {
+        // another tab won the init race, wait for it and reuse its model
+        await proxy.waitReady();
+        hydrate(await proxy.getState());
+        return;
+      }
+      // load failed mid-way, kill the scope so other tabs do not join a broken instance
+      await proxy.destroy().catch(() => {});
+      throw e;
+    }
   }
 
   getLoadedContextInfo(): LoadedContextInfo {
