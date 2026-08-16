@@ -83,6 +83,8 @@ export interface WllamaWorkerResources {
   jsPath?: string | { code: string } | undefined;
   // in compat mode, mem64 must be disabled
   compat: boolean;
+  // skip WebGPU device initialization entirely (e.g. when n_gpu_layers is 0)
+  noWebGPU?: boolean;
 }
 
 export class ProxyToWorker {
@@ -138,6 +140,12 @@ export class ProxyToWorker {
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
     let moduleCode = JSPI_STUB + (await this.getModuleCode());
+    if (this.resources.noWebGPU) {
+      // make requestAdapter() resolve to null so ggml-webgpu skips device registration
+      moduleCode =
+        'try{Object.defineProperty(WorkerNavigator.prototype,"gpu",{get:()=>({requestAdapter:async()=>null})});}catch(e){}' +
+        moduleCode;
+    }
     let mainModuleCode = moduleCode.replace('var Module', 'var ___Module');
     const runOptions = {
       pathConfig: {

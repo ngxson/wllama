@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <cmath>
 #include <fstream>
+#include <unordered_map>
 
 #include "llama.h"
 #include "common.h"
@@ -260,9 +261,9 @@ struct wllama_context
 
   std::function<bool()> should_stop = []()
   { return false; };
-  std::string last_error;
-  // using unique_ptr to allow late initialization
-  std::unique_ptr<server_response_reader> rd;
+  // one reader per in-flight request, keyed by req_id; erasing an entry cancels its unfinished tasks
+  std::unordered_map<int, std::unique_ptr<server_response_reader>> readers;
+  int next_req_id = 1;
   std::unique_ptr<const server_context_meta> meta;
 
   struct console
@@ -278,7 +279,7 @@ struct wllama_context
 
   explicit wllama_context() {};
 
-  void create_completion_task(std::string &req_raw, std::vector<raw_buffer> &files, bool is_chat)
+  void create_completion_task(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &files, bool is_chat)
   {
     json body = json::parse(req_raw);
     task_response_type res_type = TASK_RESPONSE_TYPE_OAI_CMPL;
@@ -299,7 +300,7 @@ struct wllama_context
 
       // TODO: reduce some copies here in the future
       server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
-      task.id = rd->get_new_id();
+      task.id = rd.get_new_id();
       task.index = 0;
       task.params = server_schema::eval_llama_cmpl_schema(
           vocab,
@@ -311,13 +312,20 @@ struct wllama_context
       task.cli_files = files;
       task.cli = true;
 
-      rd->post_task({std::move(task)});
+      rd.post_task({std::move(task)});
     }
   }
 
-  std::pair<server_task_result_ptr, bool> get_next_result()
+  int register_reader(std::unique_ptr<server_response_reader> rd)
   {
-    server_task_result_ptr result = rd->next(should_stop);
+    const int req_id = next_req_id++;
+    readers.emplace(req_id, std::move(rd));
+    return req_id;
+  }
+
+  std::pair<server_task_result_ptr, bool> get_next_result(server_response_reader &rd)
+  {
+    server_task_result_ptr result = rd.next(should_stop);
     if (result)
     {
       const bool is_error = result->is_error();
@@ -451,6 +459,8 @@ struct wllama_context
       params.cache_type_k = kv_cache_type_from_str(req.cache_type_k.value);
     if (req.cache_type_v.not_null())
       params.cache_type_v = kv_cache_type_from_str(req.cache_type_v.value);
+    if (req.kv_unified.not_null())
+      params.kv_unified = req.kv_unified.value;
     if (req.flash_attn.not_null())
       params.flash_attn_type = req.flash_attn.value ? LLAMA_FLASH_ATTN_TYPE_AUTO : LLAMA_FLASH_ATTN_TYPE_DISABLED;
     if (req.swa_full.not_null())
@@ -637,8 +647,7 @@ struct wllama_context
     glue_msg_completion_res res;
 
     // prepare
-    rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-    last_error = "";
+    auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
     std::vector<raw_buffer> input_files;
     for (const auto &file : req.files.arr)
     {
@@ -646,13 +655,14 @@ struct wllama_context
     }
 
     // create completion task and post to the queue
-    create_completion_task(req.data_json.value, input_files, req.is_chat.value);
+    create_completion_task(*rd, req.data_json.value, input_files, req.is_chat.value);
 
     res.success.value = true;
+    res.req_id.value = register_reader(std::move(rd));
     return res;
   }
 
-  void create_embedding_tasks(std::string &req_raw)
+  void create_embedding_tasks(server_response_reader &rd, std::string &req_raw)
   {
     json body = json::parse(req_raw);
 
@@ -689,13 +699,13 @@ struct wllama_context
     for (size_t i = 0; i < tokenized_prompts.size(); i++)
     {
       server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
-      task.id = rd->get_new_id();
+      task.id = rd.get_new_id();
       task.tokens = std::move(tokenized_prompts[i]);
       task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
       task.params.embd_normalize = embd_normalize;
       tasks.push_back(std::move(task));
     }
-    rd->post_tasks(std::move(tasks));
+    rd.post_tasks(std::move(tasks));
   }
 
   glue_msg_embedding_res action_embedding(const char *req_raw)
@@ -703,12 +713,12 @@ struct wllama_context
     PARSE_REQ(glue_msg_embedding_req);
     glue_msg_embedding_res res;
 
-    rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-    last_error = "";
+    auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
 
-    create_embedding_tasks(req.data_json.value);
+    create_embedding_tasks(*rd, req.data_json.value);
 
     res.success.value = true;
+    res.req_id.value = register_reader(std::move(rd));
     return res;
   }
 
@@ -729,8 +739,7 @@ struct wllama_context
     std::string query = body.at("query");
     std::string document = body.at("document");
 
-    rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-    last_error = "";
+    auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
 
     auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document);
     server_task task = server_task(SERVER_TASK_TYPE_RERANK);
@@ -740,6 +749,7 @@ struct wllama_context
     rd->post_task(std::move(task));
 
     res.success.value = true;
+    res.req_id.value = register_reader(std::move(rd));
     return res;
   }
 
@@ -748,13 +758,22 @@ struct wllama_context
     PARSE_REQ(glue_msg_get_result_req);
     glue_msg_get_result_res res;
 
-    bool has_more = run_loop();
-    auto [result, is_error] = get_next_result();
-    // the task queue can be empty while the request is still streaming, keep polling until we get the stop result
-    if (!has_more && rd)
+    auto it = readers.find(req.req_id.value);
+    if (it == readers.end())
     {
-      has_more = rd->has_next();
+      // request already finished or cancelled; report end-of-stream so late polls are harmless
+      res.success.value = true;
+      res.has_more.value = false;
+      res.data_json.value = "";
+      res.is_error.value = false;
+      return res;
     }
+    server_response_reader &rd = *it->second;
+
+    run_loop();
+    auto [result, is_error] = get_next_result(rd);
+    // the task queue can be empty while the request is still streaming, keep polling until we get the stop result
+    const bool has_more = rd.has_next();
 
     json data_json;
     if (result)
@@ -787,6 +806,28 @@ struct wllama_context
     res.has_more.value = has_more;
     res.data_json.value = result ? data_json.dump() : "";
     res.is_error.value = is_error;
+
+    if (!has_more)
+    {
+      readers.erase(it);
+    }
+    return res;
+  }
+
+  glue_msg_cancel_res action_cancel(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_cancel_req);
+    glue_msg_cancel_res res;
+
+    auto it = readers.find(req.req_id.value);
+    if (it != readers.end())
+    {
+      // reader destructor posts cancel tasks; run one loop iteration to release the slot right away
+      readers.erase(it);
+      run_loop();
+    }
+
+    res.success.value = true;
     return res;
   }
 
@@ -947,13 +988,23 @@ void server_response::add_waiting_task_ids(const std::unordered_set<int> &id_tas
 
 void server_response::remove_waiting_task_ids(const std::unordered_set<int> &id_tasks)
 {
-  // no-op
+  // drop results that belong to these tasks; no reader will consume them anymore
+  queue_results.erase(
+      std::remove_if(queue_results.begin(), queue_results.end(),
+                     [&](const server_task_result_ptr &res)
+                     { return id_tasks.count(res->id) > 0; }),
+      queue_results.end());
 }
 
-server_task_result_ptr server_response::recv(const std::unordered_set<int> &)
+server_task_result_ptr server_response::recv(const std::unordered_set<int> &id_tasks)
 {
+  // multiple requests can be in-flight, only pick results belonging to this reader
   for (size_t i = 0; i < queue_results.size(); i++)
   {
+    if (id_tasks.count(queue_results[i]->id) == 0)
+    {
+      continue;
+    }
     server_task_result_ptr res = std::move(queue_results[i]);
     queue_results.erase(queue_results.begin() + i);
     return res;
@@ -1062,6 +1113,11 @@ server_task_result_ptr server_response_reader::next(const std::function<bool()> 
 void server_response_reader::stop()
 {
   queue_results.remove_waiting_task_ids(id_tasks);
+  if (!has_next())
+  {
+    // all results already received (or already cancelled), nothing left to cancel
+    return;
+  }
   cancelled = true;
   std::vector<server_task> cancel_tasks;
   cancel_tasks.reserve(id_tasks.size());

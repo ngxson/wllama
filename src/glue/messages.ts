@@ -483,6 +483,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "bool",
         "name": "success",
         "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "req_id",
+        "isNullable": false
       }
     ]
   },
@@ -512,6 +517,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "bool",
         "name": "success",
         "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "req_id",
+        "isNullable": false
       }
     ]
   },
@@ -536,6 +546,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "bool",
         "name": "success",
         "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "req_id",
+        "isNullable": false
       }
     ]
   },
@@ -543,7 +558,13 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
     "name": "gres_req",
     "structName": "glue_msg_get_result_req",
     "className": "GlueMsgGetResultReq",
-    "fields": []
+    "fields": [
+      {
+        "type": "int",
+        "name": "req_id",
+        "isNullable": false
+      }
+    ]
   },
   "gres_res": {
     "name": "gres_res",
@@ -568,6 +589,30 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "str",
         "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
+  "cncl_req": {
+    "name": "cncl_req",
+    "structName": "glue_msg_cancel_req",
+    "className": "GlueMsgCancelReq",
+    "fields": [
+      {
+        "type": "int",
+        "name": "req_id",
+        "isNullable": false
+      }
+    ]
+  },
+  "cncl_res": {
+    "name": "cncl_res",
+    "structName": "glue_msg_cancel_res",
+    "className": "GlueMsgCancelRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
         "isNullable": false
       }
     ]
@@ -715,6 +760,7 @@ export interface GlueMsgCompletionReq {
 export interface GlueMsgCompletionRes {
   _name: "cmpl_res";
   success: boolean;
+  req_id: number;
 }
 
 // struct glue_msg_embedding_req
@@ -728,6 +774,7 @@ export interface GlueMsgEmbeddingReq {
 export interface GlueMsgEmbeddingRes {
   _name: "embd_res";
   success: boolean;
+  req_id: number;
 }
 
 // struct glue_msg_rerank_req
@@ -740,11 +787,13 @@ export interface GlueMsgRerankReq {
 export interface GlueMsgRerankRes {
   _name: "rrnk_res";
   success: boolean;
+  req_id: number;
 }
 
 // struct glue_msg_get_result_req
 export interface GlueMsgGetResultReq {
   _name: "gres_req";
+  req_id: number;
 }
 
 // struct glue_msg_get_result_res
@@ -754,6 +803,18 @@ export interface GlueMsgGetResultRes {
   has_more: boolean;
   is_error: boolean;
   data_json: string;
+}
+
+// struct glue_msg_cancel_req
+export interface GlueMsgCancelReq {
+  _name: "cncl_req";
+  req_id: number;
+}
+
+// struct glue_msg_cancel_res
+export interface GlueMsgCancelRes {
+  _name: "cncl_res";
+  success: boolean;
 }
 
 // struct glue_msg_test_backend_ops_req
@@ -770,4 +831,4 @@ export interface GlueMsgTestBackendOpsRes {
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgCancelReq | GlueMsgCancelRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;

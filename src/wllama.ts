@@ -16,6 +16,7 @@ import {
 import CacheManager, { type DownloadOptions } from './cache-manager';
 import { ModelManager, Model, type ModelSource } from './model-manager';
 import type {
+  GlueMsgCancelRes,
   GlueMsgCompletionRes,
   GlueMsgEmbeddingRes,
   GlueMsgRerankRes,
@@ -487,6 +488,10 @@ export class Wllama {
 
     // initialize the worker
     const workerResources = this.getWorkerResources();
+    if (params.n_gpu_layers === 0) {
+      // skip WebGPU device initialization when the user asks for CPU-only
+      workerResources.noWebGPU = true;
+    }
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
@@ -541,8 +546,9 @@ export class Wllama {
       yarn_orig_ctx: params.yarn_orig_ctx,
       cache_type_k: params.cache_type_k as string,
       cache_type_v: params.cache_type_v as string,
-      n_parallel: 1, // only support single sequence for now
-      kv_unified: false, // TODO: support kv unified cache
+      // with unified KV, all sequences share one n_ctx cache, so each request can still use the full context
+      n_parallel: params.n_parallel ?? 4,
+      kv_unified: params.kv_unified ?? true,
       flash_attn: params.flash_attn,
       swa_full: params.swa_full,
       chat_template: params.chat_template,
@@ -660,7 +666,7 @@ export class Wllama {
       );
     }
 
-    return await this.getResponse(options as any, false);
+    return await this.getResponse(options as any, false, result.req_id);
   }
 
   /**
@@ -698,7 +704,9 @@ export class Wllama {
         );
       }
 
-      const { score, tokens_evaluated } = await this.getRerankResult();
+      const { score, tokens_evaluated } = await this.getRerankResult(
+        result.req_id
+      );
       totalTokens += tokens_evaluated;
       rawResults.push({ index: i, score });
     }
@@ -822,7 +830,8 @@ export class Wllama {
 
     return await this.getResponse(
       options as StreamParams<TChunk> & { abortSignal?: AbortSignal },
-      isStream
+      isStream,
+      result.req_id
     );
   }
 
@@ -1003,87 +1012,122 @@ export class Wllama {
     };
   }
 
-  private async getRerankResult(): Promise<{
+  // release the slot occupied by the request; cancelling an already-finished request is a no-op
+  private async cancelRequest(reqId: number): Promise<void> {
+    try {
+      await this.proxy.wllamaAction<GlueMsgCancelRes>('cancel', {
+        _name: 'cncl_req',
+        req_id: reqId,
+      });
+    } catch (e) {
+      this.logger().warn('Failed to cancel request', reqId, e);
+    }
+  }
+
+  private async getRerankResult(reqId: number): Promise<{
     score: number;
     tokens_evaluated: number;
   }> {
-    while (true) {
-      const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
-        'get_result',
-        { _name: 'gres_req' }
-      );
+    let completed = false;
+    try {
+      while (true) {
+        const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+          'get_result',
+          { _name: 'gres_req', req_id: reqId }
+        );
 
-      const jsonString = chunk.data_json;
-      if (jsonString && jsonString.length > 0) {
-        if (chunk.is_error) {
-          const jsonData = this.jsonDecode(jsonString);
-          throw new WllamaError(
-            jsonData.message || 'Unknown reranking error',
-            'inference_error'
-          );
+        const jsonString = chunk.data_json;
+        if (jsonString && jsonString.length > 0) {
+          if (chunk.is_error) {
+            const jsonData = this.jsonDecode(jsonString);
+            throw new WllamaError(
+              jsonData.message || 'Unknown reranking error',
+              'inference_error'
+            );
+          }
+          completed = true;
+          return this.jsonDecode(jsonString);
         }
-        return this.jsonDecode(jsonString);
+
+        if (!chunk.has_more) {
+          completed = true;
+          break;
+        }
       }
 
-      if (!chunk.has_more) break;
+      throw new WllamaError('No reranking result received', 'inference_error');
+    } finally {
+      if (!completed) {
+        await this.cancelRequest(reqId);
+      }
     }
-
-    throw new WllamaError('No reranking result received', 'inference_error');
   }
 
   private async getResponse(
     options: StreamParams<any> & { abortSignal?: AbortSignal },
-    isStream: boolean
+    isStream: boolean,
+    reqId: number
   ) {
     let finalResult: any = null;
+    let completed = false;
 
-    while (true) {
-      if (options.abortSignal?.aborted) {
-        throw new WllamaAbortError();
-      }
-      const result_chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
-        'get_result',
-        {
-          _name: 'gres_req',
+    try {
+      while (true) {
+        if (options.abortSignal?.aborted) {
+          throw new WllamaAbortError();
         }
-      );
-
-      const jsonString = result_chunk.data_json;
-      if (!jsonString || jsonString.length === 0) {
-        if (!result_chunk.has_more) {
-          break;
-        } else {
-          continue;
-        }
-      }
-
-      if (jsonString == 'null') {
-        continue; // this is the "is_begin = true" chunk on server side, we can ignore it
-      }
-
-      let jsonData = this.jsonDecode(jsonString);
-      finalResult = jsonData;
-      if (result_chunk.is_error) {
-        this.logger().error('Model returned an error:', jsonData);
-        throw new WllamaError(
-          jsonData.message || 'Unknown inference error',
-          'inference_error'
+        const result_chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+          'get_result',
+          {
+            _name: 'gres_req',
+            req_id: reqId,
+          }
         );
-      }
 
-      if (isStream) {
-        if (!Array.isArray(jsonData)) {
-          jsonData = [jsonData];
+        const jsonString = result_chunk.data_json;
+        if (!jsonString || jsonString.length === 0) {
+          if (!result_chunk.has_more) {
+            completed = true;
+            break;
+          } else {
+            continue;
+          }
         }
 
-        for (const chunk of jsonData) {
-          options.onData?.(chunk);
-          finalResult = chunk;
+        if (jsonString == 'null') {
+          continue; // this is the "is_begin = true" chunk on server side, we can ignore it
+        }
+
+        let jsonData = this.jsonDecode(jsonString);
+        finalResult = jsonData;
+        if (result_chunk.is_error) {
+          this.logger().error('Model returned an error:', jsonData);
+          throw new WllamaError(
+            jsonData.message || 'Unknown inference error',
+            'inference_error'
+          );
+        }
+
+        if (isStream) {
+          if (!Array.isArray(jsonData)) {
+            jsonData = [jsonData];
+          }
+
+          for (const chunk of jsonData) {
+            options.onData?.(chunk);
+            finalResult = chunk;
+          }
+        }
+
+        if (!result_chunk.has_more) {
+          completed = true;
+          break;
         }
       }
-
-      if (!result_chunk.has_more) {
-        break;
+    } finally {
+      // any exit before the final chunk (abort, decode error, onData throw) must free the slot
+      if (!completed) {
+        await this.cancelRequest(reqId);
       }
     }
 

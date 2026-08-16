@@ -167,6 +167,10 @@ Requirements:
 
 Note: A debugging build cannot be merged to `master` or publish to npm
 
+## Debugging the C++ glue natively
+
+`dev/native-test/` contains a native harness that compiles `cpp/wllama-context.h` with llama.cpp's server sources and drives it like the JS worker does (single-threaded polling, glue-encoded messages). Use it to debug glue/server behavior with fast rebuilds and lldb, or to bisect whether a wasm failure comes from the C++ code or from the browser environment (WebGPU, JSPI, ...). See `dev/native-test/README.md`.
+
 ## Build process
 
 The build process uses emscripten in docker to compile the project.

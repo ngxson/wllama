@@ -601,6 +601,7 @@ struct glue_msg_completion_res
 {
   GLUE_HANDLER("cmpl_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(int, req_id)
 };
 
 /////////
@@ -616,6 +617,7 @@ struct glue_msg_embedding_res
 {
   GLUE_HANDLER("embd_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(int, req_id)
 };
 
 /////////
@@ -630,6 +632,7 @@ struct glue_msg_rerank_res
 {
   GLUE_HANDLER("rrnk_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(int, req_id)
 };
 
 /////////
@@ -637,6 +640,7 @@ struct glue_msg_rerank_res
 struct glue_msg_get_result_req
 {
   GLUE_HANDLER("gres_req")
+  GLUE_FIELD(int, req_id)
 };
 
 struct glue_msg_get_result_res
@@ -646,6 +650,20 @@ struct glue_msg_get_result_res
   GLUE_FIELD(bool, has_more)
   GLUE_FIELD(bool, is_error)
   GLUE_FIELD(str, data_json)
+};
+
+/////////
+
+struct glue_msg_cancel_req
+{
+  GLUE_HANDLER("cncl_req")
+  GLUE_FIELD(int, req_id)
+};
+
+struct glue_msg_cancel_res
+{
+  GLUE_HANDLER("cncl_res")
+  GLUE_FIELD(bool, success)
 };
 
 /////////
