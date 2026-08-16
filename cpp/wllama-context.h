@@ -262,8 +262,7 @@ struct wllama_context
   std::function<bool()> should_stop = []()
   { return false; };
   std::string last_error;
-  // one reader per in-flight request (completion, embedding or rerank), keyed by req_id
-  // erasing an entry destroys the reader, which cancels its unfinished tasks
+  // one reader per in-flight request, keyed by req_id; erasing an entry cancels its unfinished tasks
   std::unordered_map<int, std::unique_ptr<server_response_reader>> readers;
   int next_req_id = 1;
   std::unique_ptr<const server_context_meta> meta;
@@ -829,8 +828,7 @@ struct wllama_context
     auto it = readers.find(req.req_id.value);
     if (it != readers.end())
     {
-      // destroying the reader posts cancel tasks for its unfinished work;
-      // run one loop iteration so the slot is released right away
+      // reader destructor posts cancel tasks; run one loop iteration to release the slot right away
       readers.erase(it);
       run_loop();
     }

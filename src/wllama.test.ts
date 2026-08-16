@@ -150,8 +150,7 @@ test.sequential('generates completions in parallel', async () => {
 
   await wllama.loadModelFromUrl(TINY_MODEL, {
     n_ctx: 1024,
-    // CPU-only: the ggml-webgpu backend currently fails on batches with
-    // multiple output rows (multi-slot decode), even with 0 layers offloaded
+    // CPU-only: ggml-webgpu currently fails on multi-output batches, even with 0 layers offloaded
     n_gpu_layers: 0,
   });
 

@@ -165,15 +165,8 @@ export interface WllamaCompat {
 }
 
 /**
- * TEMPORARY FIX, remove when the ggml-webgpu multi-output bug is fixed upstream.
- *
- * The WebGPU backend currently fails whenever one llama_decode produces more
- * than one logits row (i.e. two requests being decoded in the same batch),
- * even if no layer is offloaded to GPU. Until that is fixed, requests are
- * serialized whenever the WebGPU backend may be registered, so that only one
- * request is ever in-flight on the C++ side.
- *
- * See ./cache/bug0.md and https://github.com/ngxson/wllama/issues/261
+ * TEMPORARY FIX, remove when the ggml-webgpu multi-output bug is fixed upstream (see issue #261).
+ * The WebGPU backend fails when one llama_decode produces more than one logits row, so requests are serialized while WebGPU may be registered.
  */
 class TmpRequestSerializer {
   private tail: Promise<void> = Promise.resolve();
@@ -522,8 +515,7 @@ export class Wllama {
       // skip WebGPU device initialization when the user asks for CPU-only
       workerResources.noWebGPU = true;
     }
-    // TEMPORARY FIX: serialize requests when the WebGPU backend may be
-    // registered inside the worker, see TmpRequestSerializer
+    // TEMPORARY FIX: serialize requests when WebGPU may be registered, see TmpRequestSerializer
     this.tmpSerializeRequests =
       !workerResources.noWebGPU &&
       typeof navigator !== 'undefined' &&
@@ -582,8 +574,7 @@ export class Wllama {
       yarn_orig_ctx: params.yarn_orig_ctx,
       cache_type_k: params.cache_type_k as string,
       cache_type_v: params.cache_type_v as string,
-      // multiple sequences share one unified KV cache of n_ctx tokens by default,
-      // so each parallel request can still use up to the full context size
+      // with unified KV, all sequences share one n_ctx cache, so each request can still use the full context
       n_parallel: params.n_parallel ?? 4,
       kv_unified: params.kv_unified ?? true,
       flash_attn: params.flash_attn,
@@ -855,9 +846,7 @@ export class Wllama {
       options = tmp.params as any;
       files = tmp.files;
     }
-    // the lock covers the whole request lifecycle: once the task is posted, it
-    // can be picked up by a slot on the very next poll, so posting must also
-    // wait for the previous request to fully finish
+    // the lock must also cover the task posting: a posted task can enter a slot on the very next poll
     return await this.withTmpRequestLock(async () => {
       const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
         'completion',
