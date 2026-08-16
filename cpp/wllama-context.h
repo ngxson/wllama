@@ -19,6 +19,7 @@
 
 #include "server-context.h"
 #include "server-queue.h"
+#include "server-schema.h"
 
 #include "ggml-cpu.h"
 #include "ggml-backend.h"
@@ -300,10 +301,9 @@ struct wllama_context
       server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
       task.id = rd->get_new_id();
       task.index = 0;
-      task.params = server_task::params_from_json_cmpl(
+      task.params = server_schema::eval_llama_cmpl_schema(
           vocab,
           params,
-          meta->slot_n_ctx,
           meta->logit_bias_eog,
           body);
       task.params.res_type = res_type;
@@ -399,10 +399,16 @@ struct wllama_context
       params.image_max_tokens = req.image_max_tokens.value;
 
     // model params
-    if (req.use_mmap.not_null())
-      params.use_mmap = req.use_mmap.value;
-    if (req.use_mlock.not_null())
-      params.use_mlock = req.use_mlock.value;
+    // upstream merged use_mmap/use_mlock into a single load_mode enum,
+    // leave load_mode untouched (auto) if neither flag is given
+    if (req.use_mmap.not_null() || req.use_mlock.not_null())
+    {
+      const bool use_mmap = req.use_mmap.not_null() ? req.use_mmap.value : true;
+      const bool use_mlock = req.use_mlock.not_null() ? req.use_mlock.value : false;
+      params.load_mode = use_mmap
+                             ? (use_mlock ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MMAP)
+                             : (use_mlock ? LLAMA_LOAD_MODE_MLOCK : LLAMA_LOAD_MODE_NONE);
+    }
     if (req.n_gpu_layers.not_null())
       params.n_gpu_layers = req.n_gpu_layers.value;
     if (req.model_alias.not_null())
@@ -885,6 +891,28 @@ void server_queue::pop_deferred_task(int id_slot)
   // no deferred task in wllama, so this is a no-op
 }
 
+void server_queue::wait_until_no_sleep()
+{
+  // wllama never enters the sleeping state, so this is a no-op
+}
+
+void server_queue::terminate()
+{
+  running = false;
+}
+
+void server_queue::yield_to_queue(std::function<void()> &&work)
+{
+  // wllama is single-threaded, there is no worker thread to yield to.
+  // just run the work inline, no task is processed in the meantime
+  work();
+}
+
+void server_queue::worker_stop()
+{
+  // no worker thread in wllama, so this is a no-op
+}
+
 void server_response::send(server_task_result_ptr &&result)
 {
   if (test_stack_trace == TEST_STACK_TRACE_ABORT)
@@ -940,7 +968,8 @@ void server_queue::start_loop(int64_t idle_sleep_ms)
     queue_tasks.pop_front();
 
     LOG_DBG("processing task, id = %d\n", task.id);
-    callback_new_task(std::move(task));
+    // wllama never yields, so the task can never be declined
+    GGML_ASSERT(callback_new_task(std::move(task), false));
   }
   // all tasks in the current loop is processed, slots data is now ready
   LOG_DBG("%s", "update slots\n");
