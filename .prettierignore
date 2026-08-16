@@ -8,6 +8,7 @@
 **/docs
 
 /llama.cpp
+/dev
 
 /examples/advanced
 /examples/basic
