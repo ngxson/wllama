@@ -164,26 +164,6 @@ export interface WllamaCompat {
   wasm: string;
 }
 
-/**
- * TEMPORARY FIX, remove when the ggml-webgpu multi-output bug is fixed upstream (see issue #261).
- * The WebGPU backend fails when one llama_decode produces more than one logits row, so requests are serialized while WebGPU may be registered.
- */
-class TmpRequestSerializer {
-  private tail: Promise<void> = Promise.resolve();
-
-  async run<T>(fn: () => Promise<T>): Promise<T> {
-    const prev = this.tail;
-    let release!: () => void;
-    this.tail = new Promise((r) => (release = r));
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  }
-}
-
 export class Wllama {
   // The CacheManager and ModelManager are singleton, can be accessed by user
   public cacheManager: CacheManager;
@@ -198,9 +178,6 @@ export class Wllama {
   private nbThreads: number = 1;
   private useEmbeddings: boolean = false;
   private useRerank: boolean = false;
-  // TEMPORARY FIX for the ggml-webgpu multi-output bug, see TmpRequestSerializer
-  private tmpSerializeRequests: boolean = false;
-  private tmpRequestSerializer = new TmpRequestSerializer();
   // available when loaded
   private loadedContextInfo: LoadedContextInfo = null as any;
   private seed: number | undefined = undefined;
@@ -515,11 +492,6 @@ export class Wllama {
       // skip WebGPU device initialization when the user asks for CPU-only
       workerResources.noWebGPU = true;
     }
-    // TEMPORARY FIX: serialize requests when WebGPU may be registered, see TmpRequestSerializer
-    this.tmpSerializeRequests =
-      !workerResources.noWebGPU &&
-      typeof navigator !== 'undefined' &&
-      !!(navigator as any).gpu;
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
@@ -678,25 +650,23 @@ export class Wllama {
       );
     }
 
-    return await this.withTmpRequestLock(async () => {
-      const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
-        'embedding',
-        {
-          _name: 'embd_req',
-          data_json: JSON.stringify(options),
-          files: [], // TODO: support file input
-        }
-      );
-
-      if (!result.success) {
-        throw new WllamaError(
-          'Model failed to start inference',
-          'inference_error'
-        );
+    const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
+      'embedding',
+      {
+        _name: 'embd_req',
+        data_json: JSON.stringify(options),
+        files: [], // TODO: support file input
       }
+    );
 
-      return await this.getResponse(options as any, false, result.req_id);
-    });
+    if (!result.success) {
+      throw new WllamaError(
+        'Model failed to start inference',
+        'inference_error'
+      );
+    }
+
+    return await this.getResponse(options as any, false, result.req_id);
   }
 
   /**
@@ -719,28 +689,23 @@ export class Wllama {
     const rawResults: Array<{ index: number; score: number }> = [];
 
     for (let i = 0; i < options.documents.length; i++) {
-      const { score, tokens_evaluated } = await this.withTmpRequestLock(
-        async () => {
-          const result = await this.proxy.wllamaAction<GlueMsgRerankRes>(
-            'rerank',
-            {
-              _name: 'rrnk_req',
-              data_json: JSON.stringify({
-                query: options.query,
-                document: options.documents[i],
-              }),
-            }
-          );
+      const result = await this.proxy.wllamaAction<GlueMsgRerankRes>('rerank', {
+        _name: 'rrnk_req',
+        data_json: JSON.stringify({
+          query: options.query,
+          document: options.documents[i],
+        }),
+      });
 
-          if (!result.success) {
-            throw new WllamaError(
-              'Model failed to start reranking',
-              'inference_error'
-            );
-          }
+      if (!result.success) {
+        throw new WllamaError(
+          'Model failed to start reranking',
+          'inference_error'
+        );
+      }
 
-          return await this.getRerankResult(result.req_id);
-        }
+      const { score, tokens_evaluated } = await this.getRerankResult(
+        result.req_id
       );
       totalTokens += tokens_evaluated;
       rawResults.push({ index: i, score });
@@ -846,38 +811,28 @@ export class Wllama {
       options = tmp.params as any;
       files = tmp.files;
     }
-    // the lock must also cover the task posting: a posted task can enter a slot on the very next poll
-    return await this.withTmpRequestLock(async () => {
-      const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
-        'completion',
-        {
-          _name: 'cmpl_req',
-          is_chat: isChat,
-          data_json: JSON.stringify({ ...options, ...customOpt }),
-          files: files.map((f) => new Uint8Array(f)),
-        }
-      );
-
-      if (!result.success) {
-        throw new WllamaError(
-          'Model failed to start inference',
-          'inference_error'
-        );
+    const result = await this.proxy.wllamaAction<GlueMsgCompletionRes>(
+      'completion',
+      {
+        _name: 'cmpl_req',
+        is_chat: isChat,
+        data_json: JSON.stringify({ ...options, ...customOpt }),
+        files: files.map((f) => new Uint8Array(f)),
       }
+    );
 
-      return await this.getResponse(
-        options as StreamParams<TChunk> & { abortSignal?: AbortSignal },
-        isStream,
-        result.req_id
+    if (!result.success) {
+      throw new WllamaError(
+        'Model failed to start inference',
+        'inference_error'
       );
-    });
-  }
+    }
 
-  /**
-   * TEMPORARY FIX for the ggml-webgpu multi-output bug, see TmpRequestSerializer
-   */
-  private withTmpRequestLock<T>(fn: () => Promise<T>): Promise<T> {
-    return this.tmpSerializeRequests ? this.tmpRequestSerializer.run(fn) : fn();
+    return await this.getResponse(
+      options as StreamParams<TChunk> & { abortSignal?: AbortSignal },
+      isStream,
+      result.req_id
+    );
   }
 
   /**

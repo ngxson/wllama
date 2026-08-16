@@ -328,6 +328,49 @@ const callWrapper = (name, ret, args, isAsync) => {
   };
 };
 
+// re-entering the wasm while an action is suspended (JSPI / asyncify) corrupts its state, so only one action runs at a time and the rest wait in the queue
+let actionBusyName = null;
+const actionQueue = [];
+
+const runAction = async (data) => {
+  const { args, callbackId } = data;
+  const argAction = args[0];
+  const argEncodedMsg = args[1];
+  actionBusyName = argAction;
+  try {
+    const inputPtr = await wllamaMalloc(toSizeT(argEncodedMsg.byteLength), 0);
+    // copy data to wasm heap
+    const inputBuffer = new Uint8Array(
+      getHeapU8().buffer,
+      Number(inputPtr),
+      argEncodedMsg.byteLength
+    );
+    inputBuffer.set(argEncodedMsg, 0);
+    const outputPtr = await wllamaAction(argAction, inputPtr);
+    // length of output buffer is written at the first 4 bytes of input buffer
+    const outputLen = new Uint32Array(
+      getHeapU8().buffer,
+      Number(inputPtr),
+      1
+    )[0];
+    // copy the output buffer to JS heap
+    const outputBuffer = new Uint8Array(outputLen);
+    const outputSrcView = new Uint8Array(
+      getHeapU8().buffer,
+      Number(outputPtr),
+      outputLen
+    );
+    outputBuffer.set(outputSrcView, 0); // copy it
+    msg({ callbackId, result: outputBuffer }, [outputBuffer.buffer]);
+  } catch (err) {
+    handleError(err);
+  } finally {
+    actionBusyName = null;
+    const next = actionQueue.shift();
+    if (next) runAction(next);
+  }
+};
+
 function handleError(err) {
   // If WASM already aborted, onAbort already sent signal.abort; skip to avoid
   // re-reporting the resulting WebAssembly.RuntimeError as a JS exception.
@@ -456,36 +499,11 @@ onmessage = async (e) => {
   }
 
   if (verb === 'wllama.action') {
-    const argAction = args[0];
-    const argEncodedMsg = args[1];
-    try {
-      const inputPtr = await wllamaMalloc(toSizeT(argEncodedMsg.byteLength), 0);
-      // copy data to wasm heap
-      const inputBuffer = new Uint8Array(
-        getHeapU8().buffer,
-        Number(inputPtr),
-        argEncodedMsg.byteLength
-      );
-      inputBuffer.set(argEncodedMsg, 0);
-      const outputPtr = await wllamaAction(argAction, inputPtr);
-      // length of output buffer is written at the first 4 bytes of input buffer
-      const outputLen = new Uint32Array(
-        getHeapU8().buffer,
-        Number(inputPtr),
-        1
-      )[0];
-      // copy the output buffer to JS heap
-      const outputBuffer = new Uint8Array(outputLen);
-      const outputSrcView = new Uint8Array(
-        getHeapU8().buffer,
-        Number(outputPtr),
-        outputLen
-      );
-      outputBuffer.set(outputSrcView, 0); // copy it
-      msg({ callbackId, result: outputBuffer }, [outputBuffer.buffer]);
-    } catch (err) {
-      handleError(err);
+    if (actionBusyName !== null) {
+      actionQueue.push(e.data);
+      return;
     }
+    await runAction(e.data);
     return;
   }
 
