@@ -290,6 +290,8 @@ export class ModelManager {
     const cachedFiles = await this.cacheManager.list();
     let models: Model[] = [];
     for (const file of cachedFiles) {
+      // no metadata means no URL to map back to (i.e. interrupted download)
+      if (!file.metadata.originalURL) continue;
       const shards = ModelManager.parseModelUrl(file.metadata.originalURL);
       const mmprojUrl = file.metadata.mmprojURL;
       const isFirstShard =
