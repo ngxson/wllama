@@ -261,7 +261,6 @@ struct wllama_context
 
   std::function<bool()> should_stop = []()
   { return false; };
-  std::string last_error;
   // one reader per in-flight request, keyed by req_id; erasing an entry cancels its unfinished tasks
   std::unordered_map<int, std::unique_ptr<server_response_reader>> readers;
   int next_req_id = 1;
@@ -315,6 +314,13 @@ struct wllama_context
 
       rd.post_task({std::move(task)});
     }
+  }
+
+  int register_reader(std::unique_ptr<server_response_reader> rd)
+  {
+    const int req_id = next_req_id++;
+    readers.emplace(req_id, std::move(rd));
+    return req_id;
   }
 
   std::pair<server_task_result_ptr, bool> get_next_result(server_response_reader &rd)
@@ -642,7 +648,6 @@ struct wllama_context
 
     // prepare
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-    last_error = "";
     std::vector<raw_buffer> input_files;
     for (const auto &file : req.files.arr)
     {
@@ -652,11 +657,8 @@ struct wllama_context
     // create completion task and post to the queue
     create_completion_task(*rd, req.data_json.value, input_files, req.is_chat.value);
 
-    const int req_id = next_req_id++;
-    readers.emplace(req_id, std::move(rd));
-
     res.success.value = true;
-    res.req_id.value = req_id;
+    res.req_id.value = register_reader(std::move(rd));
     return res;
   }
 
@@ -712,15 +714,11 @@ struct wllama_context
     glue_msg_embedding_res res;
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-    last_error = "";
 
     create_embedding_tasks(*rd, req.data_json.value);
 
-    const int req_id = next_req_id++;
-    readers.emplace(req_id, std::move(rd));
-
     res.success.value = true;
-    res.req_id.value = req_id;
+    res.req_id.value = register_reader(std::move(rd));
     return res;
   }
 
@@ -742,7 +740,6 @@ struct wllama_context
     std::string document = body.at("document");
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-    last_error = "";
 
     auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document);
     server_task task = server_task(SERVER_TASK_TYPE_RERANK);
@@ -751,11 +748,8 @@ struct wllama_context
     task.tokens = std::move(tokens);
     rd->post_task(std::move(task));
 
-    const int req_id = next_req_id++;
-    readers.emplace(req_id, std::move(rd));
-
     res.success.value = true;
-    res.req_id.value = req_id;
+    res.req_id.value = register_reader(std::move(rd));
     return res;
   }
 

@@ -328,15 +328,30 @@ const callWrapper = (name, ret, args, isAsync) => {
   };
 };
 
-// re-entering the wasm while an action is suspended (JSPI / asyncify) corrupts its state, so only one action runs at a time and the rest wait in the queue
-let actionBusyName = null;
-const actionQueue = [];
+// re-entering the wasm while a call is suspended (JSPI / asyncify) corrupts its state, so only one call runs at a time and the rest wait in the queue
+let wasmCallBusy = false;
+const wasmCallQueue = [];
+
+const runWasmCall = async (fn) => {
+  if (wasmCallBusy) {
+    wasmCallQueue.push(fn);
+    return;
+  }
+  wasmCallBusy = true;
+  try {
+    await fn();
+  } finally {
+    wasmCallBusy = false;
+    const next = wasmCallQueue.shift();
+    // do not touch the wasm again after it aborted
+    if (next && !isAborted) runWasmCall(next);
+  }
+};
 
 const runAction = async (data) => {
   const { args, callbackId } = data;
   const argAction = args[0];
   const argEncodedMsg = args[1];
-  actionBusyName = argAction;
   try {
     const inputPtr = await wllamaMalloc(toSizeT(argEncodedMsg.byteLength), 0);
     // copy data to wasm heap
@@ -364,10 +379,6 @@ const runAction = async (data) => {
     msg({ callbackId, result: outputBuffer }, [outputBuffer.buffer]);
   } catch (err) {
     handleError(err);
-  } finally {
-    actionBusyName = null;
-    const next = actionQueue.shift();
-    if (next) runAction(next);
   }
 };
 
@@ -489,41 +500,43 @@ onmessage = async (e) => {
   }
 
   if (verb === 'wllama.start') {
-    try {
-      const result = await wllamaStart();
-      msg({ callbackId, result });
-    } catch (err) {
-      handleError(err);
-    }
+    await runWasmCall(async () => {
+      try {
+        const result = await wllamaStart();
+        msg({ callbackId, result });
+      } catch (err) {
+        handleError(err);
+      }
+    });
     return;
   }
 
   if (verb === 'wllama.action') {
-    if (actionBusyName !== null) {
-      actionQueue.push(e.data);
-      return;
-    }
-    await runAction(e.data);
+    await runWasmCall(() => runAction(e.data));
     return;
   }
 
   if (verb === 'wllama.exit') {
-    try {
-      const result = await wllamaExit();
-      msg({ callbackId, result });
-    } catch (err) {
-      handleError(err);
-    }
+    await runWasmCall(async () => {
+      try {
+        const result = await wllamaExit();
+        msg({ callbackId, result });
+      } catch (err) {
+        handleError(err);
+      }
+    });
     return;
   }
 
   if (verb === 'wllama.debug') {
-    try {
-      const result = await wllamaDebug();
-      msg({ callbackId, result });
-    } catch (err) {
-      handleError(err);
-    }
+    await runWasmCall(async () => {
+      try {
+        const result = await wllamaDebug();
+        msg({ callbackId, result });
+      } catch (err) {
+        handleError(err);
+      }
+    });
     return;
   }
 };
