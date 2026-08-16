@@ -130,6 +130,7 @@ export type ChatCompletionParams = {
   cache_prompt?: boolean;
   return_tokens?: boolean;
   timings_per_token?: boolean;
+  return_progress?: boolean;
 } & SamplingParams;
 
 // Response types----------
@@ -202,6 +203,13 @@ export interface ChatCompletionChunkChoice {
   logprobs: ChatCompletionChoiceLogprobs | null;
 }
 
+export interface ChatMessagePromptProgress {
+  total: number;
+  cache: number;
+  processed: number;
+  time_ms: number;
+}
+
 export interface ResultTimings {
   cache_n: number;
   prompt_n: number;
@@ -223,6 +231,7 @@ export interface ChatCompletionChunk {
   choices: ChatCompletionChunkChoice[];
   usage?: ChatCompletionUsage | null;
   timings?: ResultTimings;
+  prompt_progress?: ChatMessagePromptProgress;
 }
 
 // Raw (text) completion
@@ -246,6 +255,7 @@ export type RawCompletionParams = {
   logit_bias?: Record<string, number>;
   seed?: number;
   user?: string;
+  return_progress?: boolean;
 } & SamplingParams;
 
 export interface RawCompletionChoice {
@@ -286,6 +296,7 @@ export interface RawCompletionChunk {
   }>;
   usage?: ChatCompletionUsage | null;
   timings?: ResultTimings;
+  prompt_progress?: ChatMessagePromptProgress;
 }
 
 // Embeddings

@@ -19,6 +19,7 @@
 
 #include "server-context.h"
 #include "server-queue.h"
+#include "server-schema.h"
 
 #include "ggml-cpu.h"
 #include "ggml-backend.h"
@@ -300,10 +301,9 @@ struct wllama_context
       server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
       task.id = rd->get_new_id();
       task.index = 0;
-      task.params = server_task::params_from_json_cmpl(
+      task.params = server_schema::eval_llama_cmpl_schema(
           vocab,
           params,
-          meta->slot_n_ctx,
           meta->logit_bias_eog,
           body);
       task.params.res_type = res_type;
@@ -399,10 +399,15 @@ struct wllama_context
       params.image_max_tokens = req.image_max_tokens.value;
 
     // model params
-    if (req.use_mmap.not_null())
-      params.use_mmap = req.use_mmap.value;
-    if (req.use_mlock.not_null())
-      params.use_mlock = req.use_mlock.value;
+    // load_mode replaces the old use_mmap/use_mlock flags, keep it on auto if neither is given
+    if (req.use_mmap.not_null() || req.use_mlock.not_null())
+    {
+      const bool use_mmap = req.use_mmap.not_null() ? req.use_mmap.value : true;
+      const bool use_mlock = req.use_mlock.not_null() ? req.use_mlock.value : false;
+      params.load_mode = use_mmap
+                             ? (use_mlock ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MMAP)
+                             : (use_mlock ? LLAMA_LOAD_MODE_MLOCK : LLAMA_LOAD_MODE_NONE);
+    }
     if (req.n_gpu_layers.not_null())
       params.n_gpu_layers = req.n_gpu_layers.value;
     if (req.model_alias.not_null())
@@ -415,6 +420,8 @@ struct wllama_context
       params.embedding = req.embeddings.value;
     if (req.n_batch.not_null())
       params.n_batch = req.n_batch.value;
+    if (req.n_ubatch.not_null())
+      params.n_ubatch = req.n_ubatch.value;
     if (req.n_parallel.not_null())
       params.n_parallel = req.n_parallel.value;
     if (req.pooling_type.not_null())
@@ -743,6 +750,11 @@ struct wllama_context
 
     bool has_more = run_loop();
     auto [result, is_error] = get_next_result();
+    // the task queue can be empty while the request is still streaming, keep polling until we get the stop result
+    if (!has_more && rd)
+    {
+      has_more = rd->has_next();
+    }
 
     json data_json;
     if (result)
@@ -885,6 +897,27 @@ void server_queue::pop_deferred_task(int id_slot)
   // no deferred task in wllama, so this is a no-op
 }
 
+void server_queue::wait_until_no_sleep()
+{
+  // wllama never enters the sleeping state, so this is a no-op
+}
+
+void server_queue::terminate()
+{
+  running = false;
+}
+
+void server_queue::yield_to_queue(std::function<void()> &&work)
+{
+  // no worker thread in wllama, run the work inline
+  work();
+}
+
+void server_queue::worker_stop()
+{
+  // no worker thread in wllama, so this is a no-op
+}
+
 void server_response::send(server_task_result_ptr &&result)
 {
   if (test_stack_trace == TEST_STACK_TRACE_ABORT)
@@ -940,7 +973,8 @@ void server_queue::start_loop(int64_t idle_sleep_ms)
     queue_tasks.pop_front();
 
     LOG_DBG("processing task, id = %d\n", task.id);
-    callback_new_task(std::move(task));
+    // wllama never yields, so the task can never be declined
+    GGML_ASSERT(callback_new_task(std::move(task), false));
   }
   // all tasks in the current loop is processed, slots data is now ready
   LOG_DBG("%s", "update slots\n");
@@ -1017,6 +1051,10 @@ server_task_result_ptr server_response_reader::next(const std::function<bool()> 
   {
     LOG_DBG("%s: received error result, stop further processing\n", __func__);
     stop();
+  }
+  if (result && result->is_stop())
+  {
+    received_count++;
   }
   return result;
 }
