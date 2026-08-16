@@ -16,6 +16,7 @@ import {
 import CacheManager, { type DownloadOptions } from './cache-manager';
 import { ModelManager, Model, type ModelSource } from './model-manager';
 import type {
+  GlueMsgCancelRes,
   GlueMsgCompletionRes,
   GlueMsgEmbeddingRes,
   GlueMsgRerankRes,
@@ -487,6 +488,10 @@ export class Wllama {
 
     // initialize the worker
     const workerResources = this.getWorkerResources();
+    if (params.n_gpu_layers === 0) {
+      // skip WebGPU device initialization when the user asks for CPU-only
+      workerResources.noWebGPU = true;
+    }
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
@@ -541,8 +546,10 @@ export class Wllama {
       yarn_orig_ctx: params.yarn_orig_ctx,
       cache_type_k: params.cache_type_k as string,
       cache_type_v: params.cache_type_v as string,
-      n_parallel: 1, // only support single sequence for now
-      kv_unified: false, // TODO: support kv unified cache
+      // multiple sequences share one unified KV cache of n_ctx tokens by default,
+      // so each parallel request can still use up to the full context size
+      n_parallel: params.n_parallel ?? 4,
+      kv_unified: params.kv_unified ?? true,
       flash_attn: params.flash_attn,
       swa_full: params.swa_full,
       chat_template: params.chat_template,
@@ -660,7 +667,7 @@ export class Wllama {
       );
     }
 
-    return await this.getResponse(options as any, false);
+    return await this.getResponse(options as any, false, result.req_id);
   }
 
   /**
@@ -698,7 +705,9 @@ export class Wllama {
         );
       }
 
-      const { score, tokens_evaluated } = await this.getRerankResult();
+      const { score, tokens_evaluated } = await this.getRerankResult(
+        result.req_id
+      );
       totalTokens += tokens_evaluated;
       rawResults.push({ index: i, score });
     }
@@ -822,7 +831,8 @@ export class Wllama {
 
     return await this.getResponse(
       options as StreamParams<TChunk> & { abortSignal?: AbortSignal },
-      isStream
+      isStream,
+      result.req_id
     );
   }
 
@@ -1003,14 +1013,14 @@ export class Wllama {
     };
   }
 
-  private async getRerankResult(): Promise<{
+  private async getRerankResult(reqId: number): Promise<{
     score: number;
     tokens_evaluated: number;
   }> {
     while (true) {
       const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
         'get_result',
-        { _name: 'gres_req' }
+        { _name: 'gres_req', req_id: reqId }
       );
 
       const jsonString = chunk.data_json;
@@ -1033,18 +1043,25 @@ export class Wllama {
 
   private async getResponse(
     options: StreamParams<any> & { abortSignal?: AbortSignal },
-    isStream: boolean
+    isStream: boolean,
+    reqId: number
   ) {
     let finalResult: any = null;
 
     while (true) {
       if (options.abortSignal?.aborted) {
+        // release the slot occupied by this request before bailing out
+        await this.proxy.wllamaAction<GlueMsgCancelRes>('cancel', {
+          _name: 'cncl_req',
+          req_id: reqId,
+        });
         throw new WllamaAbortError();
       }
       const result_chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
         'get_result',
         {
           _name: 'gres_req',
+          req_id: reqId,
         }
       );
 

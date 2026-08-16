@@ -11,6 +11,11 @@ export interface LoadModelParams {
   n_threads?: number;
   embeddings?: boolean;
   offload_kqv?: boolean;
+  // maximum number of parallel requests (completions, embeddings, ...); default: 4
+  n_parallel?: number;
+  // all parallel sequences share one KV cache of n_ctx tokens (default: true);
+  // when disabled, each sequence gets its own cache of (n_ctx / n_parallel) tokens
+  kv_unified?: boolean;
   pooling_type?: // legacy values
   | 'LLAMA_POOLING_TYPE_UNSPECIFIED'
     | 'LLAMA_POOLING_TYPE_NONE'

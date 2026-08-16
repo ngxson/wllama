@@ -145,6 +145,42 @@ test.sequential('generates completion', async () => {
   await wllama.exit();
 });
 
+test.sequential('generates completions in parallel', async () => {
+  const wllama = createWllama();
+
+  await wllama.loadModelFromUrl(TINY_MODEL, {
+    n_ctx: 1024,
+    // CPU-only: the ggml-webgpu backend currently fails on batches with
+    // multiple output rows (multi-slot decode), even with 0 layers offloaded
+    n_gpu_layers: 0,
+  });
+
+  // concurrent requests must not interfere with each other (issue #261)
+  const prompts = [
+    'Once upon a time',
+    'The little girl said',
+    'One day, a boy named',
+  ];
+  const results = await Promise.all(
+    prompts.map((prompt) =>
+      wllama.createCompletion({
+        prompt,
+        max_tokens: 10,
+        temperature: 0.0,
+        seed: 42,
+      })
+    )
+  );
+
+  expect(results.length).toBe(prompts.length);
+  for (const res of results) {
+    expect(res).toBeDefined();
+    expect(res.choices[0].text.length).toBeGreaterThan(0);
+  }
+
+  await wllama.exit();
+});
+
 test.sequential('abort signal', async () => {
   const wllama = createWllama();
 
