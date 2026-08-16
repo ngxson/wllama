@@ -332,9 +332,14 @@ const callWrapper = (name, ret, args, isAsync) => {
 let wasmCallBusy = false;
 const wasmCallQueue = [];
 
-const runWasmCall = async (fn) => {
+const runWasmCall = async (callbackId, fn) => {
+  if (isAborted) {
+    // the wasm is dead, fail fast instead of calling into it
+    msg({ callbackId, err: 'wllama has crashed, please reload the module' });
+    return;
+  }
   if (wasmCallBusy) {
-    wasmCallQueue.push(fn);
+    wasmCallQueue.push({ callbackId, fn });
     return;
   }
   wasmCallBusy = true;
@@ -342,9 +347,13 @@ const runWasmCall = async (fn) => {
     await fn();
   } finally {
     wasmCallBusy = false;
-    const next = wasmCallQueue.shift();
-    // do not touch the wasm again after it aborted
-    if (next && !isAborted) runWasmCall(next);
+    if (isAborted) {
+      // do not touch the wasm again after it aborted; the main thread already rejected the queued tasks
+      wasmCallQueue.length = 0;
+    } else {
+      const next = wasmCallQueue.shift();
+      if (next) runWasmCall(next.callbackId, next.fn);
+    }
   }
 };
 
@@ -500,7 +509,7 @@ onmessage = async (e) => {
   }
 
   if (verb === 'wllama.start') {
-    await runWasmCall(async () => {
+    await runWasmCall(callbackId, async () => {
       try {
         const result = await wllamaStart();
         msg({ callbackId, result });
@@ -512,12 +521,12 @@ onmessage = async (e) => {
   }
 
   if (verb === 'wllama.action') {
-    await runWasmCall(() => runAction(e.data));
+    await runWasmCall(callbackId, () => runAction(e.data));
     return;
   }
 
   if (verb === 'wllama.exit') {
-    await runWasmCall(async () => {
+    await runWasmCall(callbackId, async () => {
       try {
         const result = await wllamaExit();
         msg({ callbackId, result });
@@ -529,7 +538,7 @@ onmessage = async (e) => {
   }
 
   if (verb === 'wllama.debug') {
-    await runWasmCall(async () => {
+    await runWasmCall(callbackId, async () => {
       try {
         const result = await wllamaDebug();
         msg({ callbackId, result });
