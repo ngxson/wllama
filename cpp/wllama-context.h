@@ -750,6 +750,11 @@ struct wllama_context
 
     bool has_more = run_loop();
     auto [result, is_error] = get_next_result();
+    // the task queue can be empty while the request is still streaming, keep polling until we get the stop result
+    if (!has_more && rd)
+    {
+      has_more = rd->has_next();
+    }
 
     json data_json;
     if (result)
@@ -1046,6 +1051,10 @@ server_task_result_ptr server_response_reader::next(const std::function<bool()> 
   {
     LOG_DBG("%s: received error result, stop further processing\n", __func__);
     stop();
+  }
+  if (result && result->is_stop())
+  {
+    received_count++;
   }
   return result;
 }
