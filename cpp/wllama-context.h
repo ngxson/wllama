@@ -399,8 +399,7 @@ struct wllama_context
       params.image_max_tokens = req.image_max_tokens.value;
 
     // model params
-    // upstream merged use_mmap/use_mlock into a single load_mode enum,
-    // leave load_mode untouched (auto) if neither flag is given
+    // load_mode replaces the old use_mmap/use_mlock flags, keep it on auto if neither is given
     if (req.use_mmap.not_null() || req.use_mlock.not_null())
     {
       const bool use_mmap = req.use_mmap.not_null() ? req.use_mmap.value : true;
@@ -421,6 +420,8 @@ struct wllama_context
       params.embedding = req.embeddings.value;
     if (req.n_batch.not_null())
       params.n_batch = req.n_batch.value;
+    if (req.n_ubatch.not_null())
+      params.n_ubatch = req.n_ubatch.value;
     if (req.n_parallel.not_null())
       params.n_parallel = req.n_parallel.value;
     if (req.pooling_type.not_null())
@@ -903,8 +904,7 @@ void server_queue::terminate()
 
 void server_queue::yield_to_queue(std::function<void()> &&work)
 {
-  // wllama is single-threaded, there is no worker thread to yield to.
-  // just run the work inline, no task is processed in the meantime
+  // no worker thread in wllama, run the work inline
   work();
 }
 
