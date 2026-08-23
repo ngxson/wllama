@@ -5,8 +5,7 @@ node_modules
 .npmrc
 /cache
 /build
-/build-compat
-/build-wasm
+/build-*
 /docs
 /dist
 /wasm
@@ -24,3 +23,4 @@ a.out.js
 a.out.wasm
 
 /compat/wasm/*.wasm
+/src/wasm/*.wasm
