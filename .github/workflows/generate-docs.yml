@@ -31,6 +31,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          persist-credentials: false
+
+      - name: Get llama.cpp commit
+        id: llamacpp
+        run: echo "sha=$(git rev-parse HEAD:llama.cpp)" >> $GITHUB_OUTPUT
+
+      - name: Cache wasm build directories
+        uses: actions/cache@v4
+        with:
+          path: |
+            build
+            build-compat
+          key: wasm-build-full-${{ runner.os }}-${{ steps.llamacpp.outputs.sha }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            wasm-build-full-${{ runner.os }}-
+
+      - name: Build wasm
+        run: ./scripts/build_wasm.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

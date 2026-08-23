@@ -68,6 +68,7 @@ git submodule update --init --recursive
 
 # run the build
 cd wllama
+npm ci
 npm run build:wasm && npm run build
 ```
 
