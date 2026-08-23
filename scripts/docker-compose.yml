@@ -40,7 +40,7 @@ services:
         fi
 
         emcmake cmake .. -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
-        emmake make wllama -j
+        emmake make wllama -j$$(nproc)
 
         # go back to root
         cd ..
@@ -55,7 +55,7 @@ services:
           mkdir -p build-compat
           cd build-compat
           emcmake cmake .. -DWLLAMA_COMPAT=ON -DLLAMA_WASM_MEM64=OFF -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=OFF -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
-          emmake make wllama -j
+          emmake make wllama -j$$(nproc)
 
           # go back to root
           cd ..

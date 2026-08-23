@@ -55,6 +55,25 @@ Install it:
 npm i @wllama/wllama
 ```
 
+<details>
+
+<summary>Install from this git repo</summary>
+
+Wasm binaries do not come pre-built with this repo. You need docker installed on your machine to build them:
+
+```bash
+# recommend to clone as git submodule
+git submodule add https://github.com/ngxson/wllama.git wllama
+git submodule update --init --recursive
+
+# run the build
+cd wllama
+npm ci
+npm run build:wasm && npm run build
+```
+
+</details>
+
 Then, import the module:
 
 ```ts

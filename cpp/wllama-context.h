@@ -683,7 +683,7 @@ struct wllama_context
     int embd_normalize = 2;
     if (body.count("embd_normalize") != 0)
     {
-      embd_normalize = body.at("embd_normalize");
+      embd_normalize = body.at("embd_normalize").get<int>();
     }
 
     auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true);
@@ -1226,6 +1226,7 @@ enum common_params_fit_status common_fit_params(
     llama_model_tensor_buft_override *tensor_buft_overrides,
     size_t *margins,
     uint32_t n_ctx_min,
+    const common_fit_extra_model *extra,
     ggml_log_level log_level)
 {
   return COMMON_PARAMS_FIT_STATUS_FAILURE;

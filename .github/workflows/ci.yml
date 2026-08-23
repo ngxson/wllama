@@ -13,6 +13,9 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
@@ -20,7 +23,7 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
 
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     strategy:
       matrix:
@@ -35,9 +38,27 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          persist-credentials: false
 
       - name: Check for debug build
         run: node scripts/check_debug_build.js
+
+      - name: Get llama.cpp commit
+        id: llamacpp
+        run: echo "sha=$(git rev-parse HEAD:llama.cpp)" >> $GITHUB_OUTPUT
+
+      - name: Cache wasm build directory
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: wasm-build-${{ runner.os }}-${{ steps.llamacpp.outputs.sha }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            wasm-build-${{ runner.os }}-
+
+      - name: Build wasm
+        run: SKIP_COMPAT=1 ./scripts/build_wasm.sh
 
       - name: Set node version to ${{ inputs.node-version }}
         uses: actions/setup-node@v4
