@@ -10,7 +10,12 @@ async function openFile(filename) {
 }
 
 async function writeFile(buf) {
-  accessHandle.write(buf);
+  const written = accessHandle.write(buf);
+  if (written !== buf.byteLength) {
+    throw new Error(
+      `OPFS partial write: wrote ${written} of ${buf.byteLength} bytes at size ${accessHandle.getSize()}`
+    );
+  }
 }
 
 async function closeFile() {

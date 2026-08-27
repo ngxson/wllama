@@ -940,6 +940,74 @@ export class Wllama {
     }
   }
 
+  /**
+   * [FOR DEBUGGING ONLY] POC for Memory64: alloc more than 4GB inside wasm via heapfs.
+   *
+   * Initializes the wasm runtime without loading any model, allocates a big heapfs buffer, then writes chunks at offsets beyond 4GB. A write only succeeds if the wasm memory really grew past that offset, otherwise HEAPU8.set() throws RangeError.
+   */
+  async _testMem64Alloc(sizeGB: number = 14, nbThreads: number = 0): Promise<any> {
+    if (!this.pathConfig['default']) {
+      throw new WllamaError(
+        '"default" is missing from pathConfig',
+        'load_error'
+      );
+    }
+
+    const tmpProxy = new ProxyToWorker(
+      this.getWorkerResources(),
+      nbThreads,
+      this.config.suppressNativeLog ?? false,
+      this.logger()
+    );
+
+    try {
+      await tmpProxy.moduleInit([]);
+
+      const startResult: any = await tmpProxy.wllamaStart();
+      if (!startResult.success) {
+        throw new WllamaError(
+          `Error while calling start function, result = ${startResult}`
+        );
+      }
+
+      const GB = 1024 * 1024 * 1024;
+      const size = sizeGB * GB;
+      const chunkSize = 4 * 1024 * 1024;
+
+      // bypass TS private visibility, this is a debug-only hack
+      const proxy = tmpProxy as any;
+      const fileId: number = await proxy.fileAlloc('test-mem64', size, true);
+
+      // write a chunk at both ends, across the 4GB boundary and in the middle
+      const offsets = [
+        0,
+        4 * GB - chunkSize / 2,
+        Math.floor(sizeGB / 2) * GB,
+        size - chunkSize,
+      ];
+      for (const offset of offsets) {
+        const chunk = new Uint8Array(chunkSize).fill(0xaa);
+        const { writtenBytes } = await proxy.pushTask(
+          {
+            verb: 'fs.write',
+            args: [fileId, chunk, offset],
+            callbackId: proxy.taskId++,
+          },
+          [chunk.buffer]
+        );
+        if (writtenBytes !== chunkSize) {
+          throw new WllamaError(
+            `fs.write at offset ${offset} wrote ${writtenBytes} bytes, expected ${chunkSize}`
+          );
+        }
+      }
+
+      return { allocated_bytes: size, write_offsets_ok: offsets.length };
+    } finally {
+      await tmpProxy.wllamaExit();
+    }
+  }
+
   //////////////////////////////////////////////
   // Low level API
 

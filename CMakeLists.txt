@@ -24,7 +24,6 @@ set(WLLAMA_LINK_OPTIONS
     -sEXPORT_ES6=0
     -sMODULARIZE=0
     -sINITIAL_MEMORY=128MB
-    -sMAXIMUM_MEMORY=4096MB
     -sSTACK_SIZE=5MB
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
@@ -57,6 +56,7 @@ if (WLLAMA_COMPAT)
         -fexceptions
         -sASYNCIFY=1
         -sASYNCIFY_ADD=['wllama_start','wllama_action']
+        -sMAXIMUM_MEMORY=4096MB
     )
 else()
     list(APPEND WLLAMA_COMPILE_OPTIONS
@@ -68,6 +68,8 @@ else()
         -fwasm-exceptions
         -sJSPI
         -sJSPI_EXPORTS=['wllama_start','wllama_action']
+        # browsers currently cap wasm64 memory at 16GB; a bigger maximum will throw on Memory creation
+        -sMAXIMUM_MEMORY=16384MB
     )
 endif()
 

@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 const SAFARI = process.env.BROWSER === 'safari';
 const WEBGPU = process.env.WEBGPU === '1';
+const MEM64 = process.env.MEM64 === '1';
 const AUTO = process.env.AUTO === '1';
 
 const chromeArgsCI = ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'];
@@ -24,8 +25,13 @@ export default defineConfig({
       '**/docs/**',
       '**/examples/**',
       ...(!WEBGPU ? ['**/src/*.wgpu.test.*'] : []),
+      ...(!MEM64 ? ['**/src/*.mem64.test.*'] : []),
     ],
-    include: WEBGPU ? ['**/src/*.wgpu.test.*'] : ['**/src/**/*.test.*'],
+    include: WEBGPU
+      ? ['**/src/*.wgpu.test.*']
+      : MEM64
+        ? ['**/src/*.mem64.test.*']
+        : ['**/src/**/*.test.*'],
     browser: {
       enabled: true,
       name: process.env.BROWSER ?? 'chromium',
