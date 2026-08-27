@@ -686,7 +686,7 @@ struct wllama_context
       embd_normalize = body.at("embd_normalize").get<int>();
     }
 
-    auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true);
+    auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
     for (const auto &tokens : tokenized_prompts)
     {
       if (tokens.empty())
@@ -741,7 +741,7 @@ struct wllama_context
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
 
-    auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document);
+    auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document, mtmd_helper_init_opt_default());
     server_task task = server_task(SERVER_TASK_TYPE_RERANK);
     task.id = rd->get_new_id();
     task.index = 0;
