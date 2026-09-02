@@ -11,6 +11,7 @@ node_modules
 /wasm
 /esm
 /models
+/tmp
 /test-results
 _tmp
 

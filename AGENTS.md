@@ -18,6 +18,26 @@ These points are extremely important - failing to follow them won't necessarily 
 Common mistakes that AI agents usually make:
 - Write comments first then write code: this usually leads to extensive redundant comments. Instead, write code first, then add comments later to places that absolutely need them
 
+### Syncing llama.cpp upstream
+
+The `llama.cpp` submodule is bumped weekly by `.github/workflows/sync-upstream.yml`. To do it by hand, or when the workflow asks you to fix a broken sync:
+
+1. Bump the submodule: `git -C llama.cpp fetch origin master && git -C llama.cpp checkout --detach FETCH_HEAD`
+2. Rebuild: `./scripts/sync_upstream.sh`. It runs the wasm build (default + compat), regenerates the glue message types and the worker code, then formats. Everything it touches is tracked in git and must land in the same commit as the submodule bump
+3. If the build fails, the break is almost always in `cpp/` - our glue calls a llama.cpp API that changed. Find the upstream change with `git -C llama.cpp log -p --since=2.weeks -- <path>`, then adapt our side to match
+4. Rerun `./scripts/sync_upstream.sh` until it passes
+5. Once it builds, run `npm run build` (some tests import from `esm/`), then `npm run test`. It runs the suite on Chrome, which is enough here - do NOT run `npm run test:firefox` or `npm run test:safari`
+6. Bump the minor version with `npm version minor --no-git-tag-version`, then run `npm run build` so the generated files pick it up
+
+Rules for this task:
+
+- Do NOT edit anything under `llama.cpp/` - it is upstream, our fix belongs in `cpp/` or `src/`
+- Do NOT comment out, stub or `#ifdef` away code to make the build pass. If the upstream API is gone, port to the new one
+- If several solutions work, always pick the one with the smallest diff. The human reviewer compares it against the upstream changelog
+- You have a 30 minute budget. `./tmp/start_time` holds the start time in epoch seconds, check how long you have been running with `echo $(( $(date +%s) - $(cat ./tmp/start_time) ))`. Once past 1200 seconds, stop trying and report where you got stuck - a partial PR a human can pick up is much better than a run that gets killed with nothing to show
+- Write a short PR description to `./tmp/pr_desc.md`: what changed upstream, what you changed on our side, and, if the build is still broken, the exact error and what you already ruled out. This is the one case where writing a PR description is allowed, see Prohibited Actions
+- Leave no scratch files behind except the two above (`tmp` directory is git-ignored), the whole worktree gets committed
+
 ### Prohibited Actions
 
 - Do NOT write PR descriptions, commit messages, or reviewer responses

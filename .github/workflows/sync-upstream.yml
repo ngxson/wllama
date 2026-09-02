@@ -1,0 +1,217 @@
+name: Sync upstream llama.cpp
+
+on:
+  schedule:
+    # every Sunday at 08:15 UTC
+    - cron: '15 8 * * 0'
+
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run even if the submodule is already up-to-date'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  PR_PREFIX: '[autosync]'
+  PI_VERSION: '0.84.4'
+  PI_SKIP_VERSION_CHECK: '1'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    # hard cap, in case the agent gets stuck
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          token: ${{ secrets.AUTOSYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          # the token must not stay in .git/config while upstream code is built,
+          # the push step re-adds it at the very end
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Record start time
+        run: |
+          mkdir -p tmp
+          date +%s > tmp/start_time
+
+      - name: Pull latest llama.cpp
+        id: upstream
+        run: |
+          cd llama.cpp
+          before="$(git rev-parse HEAD)"
+          git fetch --depth=500 origin master
+          git checkout --detach FETCH_HEAD
+          after="$(git rev-parse HEAD)"
+          echo "short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+          if [ "$before" = "$after" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "already up-to-date at $after"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Cache wasm build directories
+        if: steps.upstream.outputs.changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            build
+            build-compat
+          key: wasm-sync-${{ runner.os }}-${{ steps.upstream.outputs.short }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            wasm-sync-${{ runner.os }}-
+
+      - name: Install
+        if: steps.upstream.outputs.changed == 'true'
+        run: npm ci --include=dev
+
+      - name: Install Playwright Dependencies
+        if: steps.upstream.outputs.changed == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Build and test
+        id: build
+        if: steps.upstream.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          # "npm run build" is needed before the tests, some of them import from esm/
+          { ./scripts/sync_upstream.sh && npm run build && npm run test; } 2>&1 \
+            | tee "$RUNNER_TEMP/build.log"
+
+      - name: Fix build with pi agent
+        id: agent
+        if: steps.upstream.outputs.changed == 'true' && steps.build.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 12
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_MODEL_ID: ${{ vars.HF_MODEL_ID || 'deepseek-ai/DeepSeek-V4-Flash;bill=huggingface;provider=deepinfra' }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN is not set, skipping the agent"
+            exit 1
+          fi
+
+          # HF_MODEL_ID is "<model>[;provider=<name>][;bill=<org>]", same format as ggml-gh-bot.
+          # The HF router picks the inference provider from a ":<provider>" suffix on the model id.
+          IFS=';' read -ra segments <<< "$HF_MODEL_ID"
+          model="${segments[0]}"
+          bill=""
+          for seg in "${segments[@]:1}"; do
+            case "$seg" in
+              provider=*) model="$model:${seg#provider=}" ;;
+              bill=*)     bill="${seg#bill=}" ;;
+            esac
+          done
+          if [ -n "$bill" ]; then
+            mkdir -p ~/.pi/agent
+            printf '{"providers":{"huggingface":{"headers":{"X-HF-Bill-To":"%s"}}}}\n' "$bill" \
+              > ~/.pi/agent/models.json
+          fi
+
+          # let the agent try for 20 min, but always stop in time to test, bump and open the PR
+          elapsed=$(( $(date +%s) - $(cat tmp/start_time) ))
+          budget=$(( 20 * 60 ))
+          remaining=$(( 23 * 60 - elapsed ))
+          if [ "$remaining" -lt "$budget" ]; then budget="$remaining"; fi
+          if [ "$budget" -lt 60 ]; then
+            echo "no time left for the agent"
+            exit 1
+          fi
+
+          echo "using huggingface/$model, budget ${budget}s"
+          timeout "${budget}s" \
+          npx -y --package="@earendil-works/pi-coding-agent@${PI_VERSION}" pi -p \
+            --provider huggingface --model "$model" \
+            "Read AGENTS.md first, then fix it so that it builds.
+
+          The llama.cpp submodule was just bumped to upstream master and the build now fails.
+          Follow the 'Syncing llama.cpp upstream' section of AGENTS.md.
+          The log of the failed build is at $RUNNER_TEMP/build.log
+          Rebuild with ./scripts/sync_upstream.sh until it passes."
+
+      - name: Verify build and test after fix
+        id: verify
+        if: steps.agent.outcome != 'skipped'
+        continue-on-error: true
+        run: ./scripts/sync_upstream.sh && npm run build && npm run test
+
+      - name: Bump minor version
+        if: steps.upstream.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          npm version minor --no-git-tag-version
+          npm run build
+
+      - name: Push and open PR
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOSYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          HF_MODEL_ID: ${{ vars.HF_MODEL_ID || 'deepseek-ai/DeepSeek-V4-Flash;bill=huggingface;provider=deepinfra' }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "nothing to commit"
+            exit 0
+          fi
+
+          if [ "${{ steps.build.outcome }}" = "success" ]; then
+            status="build and tests passed, no fix needed"
+          elif [ "${{ steps.verify.outcome }}" = "success" ]; then
+            status="build or tests failed, fixed by the agent"
+          else
+            status="**build or tests still fail**, needs a human"
+          fi
+
+          # keep only one open autosync PR at a time
+          gh pr list --state open --base master --json number,title \
+            --jq ".[] | select(.title | startswith(\"$PR_PREFIX\")) | .number" \
+          | while read -r num; do
+              echo "closing #$num"
+              gh pr close "$num" --delete-branch --comment "Superseded by a newer autosync run."
+            done
+
+          branch="autosync/llama-cpp-${{ steps.upstream.outputs.short }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "sync latest llama.cpp"
+          git remote set-url origin "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git push -f origin "$branch"
+
+          # the agent writes its report to tmp/pr_desc.md, it is optional
+          {
+            if [ -f tmp/pr_desc.md ]; then
+              cat tmp/pr_desc.md
+              echo
+            fi
+            echo "Status: $status"
+            echo
+            echo "Model: \`$HF_MODEL_ID\`"
+            echo
+            echo "Generated by \`.github/workflows/sync-upstream.yml\`, please review before merging."
+          } > "$RUNNER_TEMP/pr_body.md"
+
+          gh pr create \
+            --base master --head "$branch" \
+            --title "$PR_PREFIX llama.cpp ${{ steps.upstream.outputs.short }}" \
+            --body-file "$RUNNER_TEMP/pr_body.md"
