@@ -26,7 +26,7 @@ The `llama.cpp` submodule is bumped weekly by `.github/workflows/sync-upstream.y
 2. Rebuild: `./scripts/sync_upstream.sh`. It runs the wasm build (default + compat), regenerates the glue message types and the worker code, then formats. Everything it touches is tracked in git and must land in the same commit as the submodule bump
 3. If the build fails, the break is almost always in `cpp/` - our glue calls a llama.cpp API that changed. Find the upstream change with `git -C llama.cpp log -p --since=2.weeks -- <path>`, then adapt our side to match
 4. Rerun `./scripts/sync_upstream.sh` until it passes
-5. Once it builds, run `npm run test`. It runs the suite on Chrome, which is enough here - do NOT run `npm run test:firefox` or `npm run test:safari`
+5. Once it builds, run `npm run build` (some tests import from `esm/`), then `npm run test`. It runs the suite on Chrome, which is enough here - do NOT run `npm run test:firefox` or `npm run test:safari`
 6. Bump the minor version with `npm version minor --no-git-tag-version`, then run `npm run build` so the generated files pick it up
 
 Rules for this task:

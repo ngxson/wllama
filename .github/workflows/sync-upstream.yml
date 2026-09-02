@@ -38,6 +38,9 @@ jobs:
         with:
           submodules: 'recursive'
           token: ${{ secrets.AUTOSYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          # the token must not stay in .git/config while upstream code is built,
+          # the push step re-adds it at the very end
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -80,13 +83,19 @@ jobs:
         if: steps.upstream.outputs.changed == 'true'
         run: npm ci --include=dev
 
-      - name: Build
+      - name: Install Playwright Dependencies
+        if: steps.upstream.outputs.changed == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Build and test
         id: build
         if: steps.upstream.outputs.changed == 'true'
         continue-on-error: true
         run: |
           set -o pipefail
-          ./scripts/sync_upstream.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
+          # "npm run build" is needed before the tests, some of them import from esm/
+          { ./scripts/sync_upstream.sh && npm run build && npm run test; } 2>&1 \
+            | tee "$RUNNER_TEMP/build.log"
 
       - name: Fix build with pi agent
         id: agent
@@ -119,10 +128,7 @@ jobs:
               > ~/.pi/agent/models.json
           fi
 
-          # the agent runs "npm run test" to check its fix, that needs a browser
-          npx playwright install --with-deps chromium
-
-          # let the agent try for 20 min, but always keep 7 min of the job cap to wrap up and open the PR
+          # let the agent try for 20 min, but always stop in time to test, bump and open the PR
           elapsed=$(( $(date +%s) - $(cat tmp/start_time) ))
           budget=$(( 20 * 60 ))
           remaining=$(( 23 * 60 - elapsed ))
@@ -143,11 +149,11 @@ jobs:
           The log of the failed build is at $RUNNER_TEMP/build.log
           Rebuild with ./scripts/sync_upstream.sh until it passes."
 
-      - name: Verify build after fix
+      - name: Verify build and test after fix
         id: verify
         if: steps.agent.outcome != 'skipped'
         continue-on-error: true
-        run: ./scripts/sync_upstream.sh
+        run: ./scripts/sync_upstream.sh && npm run build && npm run test
 
       - name: Bump minor version
         if: steps.upstream.outputs.changed == 'true'
@@ -168,11 +174,11 @@ jobs:
           fi
 
           if [ "${{ steps.build.outcome }}" = "success" ]; then
-            status="build passed, no fix needed"
+            status="build and tests passed, no fix needed"
           elif [ "${{ steps.verify.outcome }}" = "success" ]; then
-            status="build failed, fixed by the agent"
+            status="build or tests failed, fixed by the agent"
           else
-            status="**build still fails**, needs a human"
+            status="**build or tests still fail**, needs a human"
           fi
 
           # keep only one open autosync PR at a time
@@ -189,6 +195,7 @@ jobs:
           git checkout -b "$branch"
           git add -A
           git commit -m "sync latest llama.cpp"
+          git remote set-url origin "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
           git push -f origin "$branch"
 
           # the agent writes its report to tmp/pr_desc.md, it is optional
