@@ -36,7 +36,7 @@ Rules for this task:
 - If several solutions work, always pick the one with the smallest diff. The human reviewer compares it against the upstream changelog
 - You have a 30 minute budget. `./tmp/start_time` holds the start time in epoch seconds, check how long you have been running with `echo $(( $(date +%s) - $(cat ./tmp/start_time) ))`. Once past 1200 seconds, stop trying and report where you got stuck - a partial PR a human can pick up is much better than a run that gets killed with nothing to show
 - Write a short PR description to `./tmp/pr_desc.md`: what changed upstream, what you changed on our side, and, if the build is still broken, the exact error and what you already ruled out. This is the one case where writing a PR description is allowed, see Prohibited Actions
-- Leave no scratch files behind except the two above (`tmp` directory is git-ignored), the whole worktree gets committed
+- `./tmp/` is your scratchpad and is git-ignored, put every temporary file you need in there. Everything outside it gets committed, so leave no scratch files elsewhere
 
 ### Prohibited Actions
 
