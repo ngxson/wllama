@@ -37,7 +37,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-          token: ${{ secrets.AUTOSYNC_TOKEN || secrets.GITHUB_TOKEN }}
           # the token must not stay in .git/config while upstream code is built,
           # the push step re-adds it at the very end
           persist-credentials: false
@@ -176,7 +175,11 @@ jobs:
       - name: Push and open PR
         if: steps.upstream.outputs.changed == 'true'
         env:
+          # AUTOSYNC_TOKEN only needs "pull requests" and "issues" write. It exists so the PR
+          # is opened by a real user, otherwise CI does not run on it. The push uses the
+          # ephemeral GITHUB_TOKEN instead, so no long lived token can write to master
           GH_TOKEN: ${{ secrets.AUTOSYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HF_MODEL_ID: ${{ vars.HF_MODEL_ID || 'deepseek-ai/DeepSeek-V4-Flash;bill=huggingface;provider=deepinfra' }}
         run: |
           if [ -z "$(git status --porcelain)" ]; then
@@ -206,7 +209,7 @@ jobs:
           git checkout -b "$branch"
           git add -A
           git commit -m "sync latest llama.cpp"
-          git remote set-url origin "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git remote set-url origin "https://x-access-token:$PUSH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
           git push -f origin "$branch"
 
           # the agent writes its report to tmp/pr_desc.md, it is optional
