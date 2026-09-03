@@ -79,6 +79,17 @@ jobs:
           restore-keys: |
             wasm-sync-${{ runner.os }}-
 
+      - name: Skip the compat build
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          # the compat build doubles the build time. It is only safe to skip when the cached
+          # build-compat dir is there, otherwise the generated source map loses its compat half
+          if [ -d build-compat ]; then
+            echo "SKIP_COMPAT=1" >> $GITHUB_ENV
+          else
+            echo "no cached build-compat, doing a full build"
+          fi
+
       - name: Install
         if: steps.upstream.outputs.changed == 'true'
         run: npm ci --include=dev
