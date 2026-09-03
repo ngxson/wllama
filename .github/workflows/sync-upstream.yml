@@ -40,7 +40,7 @@ jobs:
           # full history, build_worker.sh counts llama.cpp commits for LIBLLAMA_VERSION
           fetch-depth: 0
           # the token must not stay in .git/config while upstream code is built,
-          # the push step re-adds it at the very end
+          # the push step re-adds it once the build is done
           persist-credentials: false
 
       - name: Setup Node.js
@@ -192,8 +192,11 @@ jobs:
         env:
           # AUTOSYNC_TOKEN only needs "pull requests" and "issues" write. It exists so the PR
           # is opened by a real user, otherwise CI does not run on it. The push uses the
-          # ephemeral GITHUB_TOKEN instead, so no long lived token can write to master
+          # ephemeral GITHUB_TOKEN instead, so no long lived token can write to master.
+          # Note: the GITHUB_TOKEN fallback can close PRs but cannot create one unless the repo
+          # setting "Allow GitHub Actions to create and approve pull requests" is turned on
           GH_TOKEN: ${{ secrets.AUTOSYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HF_MODEL_ID: ${{ vars.HF_MODEL_ID || 'deepseek-ai/DeepSeek-V4-Flash;bill=huggingface;provider=deepinfra' }}
         run: |
@@ -210,22 +213,29 @@ jobs:
             status="**build or tests still fail**, needs a human"
           fi
 
-          # keep only one open autosync PR at a time
-          gh pr list --state open --base master --json number,title \
-            --jq ".[] | select(.title | startswith(\"$PR_PREFIX\")) | .number" \
-          | while read -r num; do
-              echo "closing #$num"
-              gh pr close "$num" --delete-branch --comment "Superseded by a newer autosync run."
-            done
-
           branch="autosync/llama-cpp-${{ steps.upstream.outputs.short }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
+          git checkout -B "$branch"
           git add -A
           git commit -m "sync latest llama.cpp"
           git remote set-url origin "https://x-access-token:$PUSH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
           git push -f origin "$branch"
+
+          # keep only one open autosync PR at a time. This runs after the push on purpose, so a
+          # failed push leaves the previous PR in place. Deleting a branch is a contents write,
+          # so it goes through git with the ephemeral token, the PAT only closes the PR
+          old_prs="$(gh pr list --state open --base master --json number,title,headRefName \
+            --jq ".[] | select(.title | startswith(\"$PR_PREFIX\")) | [.number, .headRefName] | @tsv")"
+          while read -r num head; do
+            if [ -z "$num" ]; then continue; fi
+            echo "closing #$num"
+            gh pr close "$num" --comment "Superseded by a newer autosync run."
+            case "$head" in
+              "$branch") ;;
+              autosync/*) git push origin --delete "$head" || true ;;
+            esac
+          done <<< "$old_prs"
 
           # the agent writes its report to tmp/pr_desc.md, it is optional
           {
