@@ -308,9 +308,24 @@ struct wllama_context
           meta->logit_bias_eog,
           body);
       task.params.res_type = res_type;
-      task.cli_prompt = prompt;
-      task.cli_files = files;
-      task.cli = true;
+      if (is_chat && files.empty())
+      {
+        auto inputs = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
+        if (inputs.size() != 1)
+          throw app_exception("Chat completion must produce exactly one prompt");
+        task.tokens = std::move(inputs[0]);
+
+        json delims = json_value(body, "message_delimiters", json::array());
+        auto delimiters = common_chat_msg_delimiters_parse(delims);
+        delimiters.tokenize(vocab);
+        task.params.message_spans = task.tokens.find_message_spans(delimiters);
+      }
+      else
+      {
+        task.cli_prompt = prompt;
+        task.cli_files = files;
+        task.cli = true;
+      }
 
       rd.post_task({std::move(task)});
     }

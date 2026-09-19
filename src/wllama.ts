@@ -551,6 +551,8 @@ export class Wllama {
       kv_unified: params.kv_unified ?? true,
       flash_attn: params.flash_attn,
       swa_full: params.swa_full,
+      n_ctx_checkpoints: params.n_ctx_checkpoints,
+      checkpoint_min_step: params.checkpoint_min_step,
       chat_template: params.chat_template,
       jinja: params.jinja,
       reasoning: params.reasoning,

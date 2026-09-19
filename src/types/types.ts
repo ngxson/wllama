@@ -46,6 +46,8 @@ export interface LoadModelParams {
   cache_type_v?: 'f32' | 'f16' | 'q8_0' | 'q5_1' | 'q5_0' | 'q4_1' | 'q4_0';
   flash_attn?: boolean; // true is auto, false is disabled
   swa_full?: boolean;
+  n_ctx_checkpoints?: number;
+  checkpoint_min_step?: number;
   chat_template?: string;
   jinja?: boolean;
   reasoning?: boolean;
