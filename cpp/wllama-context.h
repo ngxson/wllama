@@ -796,7 +796,7 @@ struct wllama_context
       {
         server_task task = server_task(SERVER_TASK_TYPE_DECISION);
         task.id = rd->get_new_id();
-        decision.fill_task(state, question, variant, files, nullptr, mtmd_helper_init_opt_default(), task);
+        decision.fill_task(state, dreq.questions, question, variant, files, nullptr, mtmd_helper_init_opt_default(), task);
         tasks.push_back(std::move(task));
       }
     }
