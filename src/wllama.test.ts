@@ -33,6 +33,9 @@ const EMBD_MODEL = TINY_MODEL; // for better speed
 const RERANK_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/jina-reranker-v1-tiny-en/ggml-model-f16.gguf';
 
+const SYSTEMONE_MODEL =
+  'https://huggingface.co/ggml-org/tinyopenjev-for-testing-gguf/resolve/main/tinyopenjev-for-testing-Q8_0.gguf';
+
 test.sequential('loads single model file', async () => {
   const wllama = createWllama();
 
@@ -284,6 +287,68 @@ test.sequential('reranks documents', async () => {
   // the most relevant documents should outscore the other
   const weatherIdx = res.results.findIndex((r) => r.index === 1);
   expect(weatherIdx).toBeGreaterThan(0);
+
+  await wllama.exit();
+});
+
+test.sequential('answers systemone questions', async () => {
+  const wllama = createWllama();
+
+  await wllama.loadModelFromUrl(SYSTEMONE_MODEL, {
+    n_ctx: 4096,
+  });
+
+  const res = await wllama.createSystemOne({
+    state: 'I was charged twice for my order last week and nobody has replied.',
+    questions: {
+      route: {
+        type: 'choice',
+        instructions: 'Which team should handle this?',
+        criteria: {
+          billing: 'payments and refunds',
+          shipping: null,
+          technical: null,
+        },
+      },
+      urgency: {
+        type: 'score',
+        instructions: 'How urgent is this?',
+        criteria: ['can wait', 'this week', 'today', 'right now'],
+      },
+      angry: {
+        type: 'noul',
+        instructions: 'Is the customer angry?',
+      },
+    },
+  });
+
+  expect(res.usage.input_tokens).toBeGreaterThan(0);
+  expect(res.usage.output_tokens).toBe(0);
+  expect(Object.keys(res.answers)).toEqual(['route', 'urgency', 'angry']);
+
+  const sum = (p: Record<string, number>) =>
+    Object.values(p).reduce((a, b) => a + b, 0);
+
+  const route = res.answers.route;
+  if (route.type !== 'choice') throw new Error('bad type');
+  expect(Object.keys(route.probabilities)).toEqual([
+    'billing',
+    'shipping',
+    'technical',
+  ]);
+  expect(sum(route.probabilities)).toBeCloseTo(1, 4);
+  expect(route.confidence).toBeGreaterThanOrEqual(0);
+  expect(route.confidence).toBeLessThanOrEqual(1);
+
+  const urgency = res.answers.urgency;
+  if (urgency.type !== 'score') throw new Error('bad type');
+  expect(Object.keys(urgency.probabilities)).toEqual(['0', '1', '2', '3']);
+  expect(sum(urgency.probabilities)).toBeCloseTo(1, 4);
+
+  const angry = res.answers.angry;
+  if (angry.type !== 'noul') throw new Error('bad type');
+  expect(angry.noul).toBeGreaterThanOrEqual(0);
+  expect(angry.noul).toBeLessThanOrEqual(1);
 
   await wllama.exit();
 });

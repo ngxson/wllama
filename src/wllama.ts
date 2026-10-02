@@ -20,6 +20,7 @@ import type {
   GlueMsgCompletionRes,
   GlueMsgEmbeddingRes,
   GlueMsgRerankRes,
+  GlueMsgSystemoneRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
   GlueMsgTestBackendOpsRes,
@@ -42,6 +43,8 @@ import type {
   RawCompletionResponse,
   RerankParams,
   RerankResponse,
+  SystemOneParams,
+  SystemOneResponse,
 } from './types/oai-compat';
 import { LogLevel } from './types/types';
 import { getHFModelSource, type HuggingFaceParams } from './huggingface';
@@ -704,9 +707,10 @@ export class Wllama {
         );
       }
 
-      const { score, tokens_evaluated } = await this.getRerankResult(
-        result.req_id
-      );
+      const { score, tokens_evaluated } = await this.getSingleResult<{
+        score: number;
+        tokens_evaluated: number;
+      }>(result.req_id, 'reranking');
       totalTokens += tokens_evaluated;
       rawResults.push({ index: i, score });
     }
@@ -721,6 +725,36 @@ export class Wllama {
         relevance_score: score,
       })),
     };
+  }
+
+  /**
+   * Answer typed questions about a state, using a decision model (TypeSafe-compatible System One API).
+   * Image input is not supported yet.
+   * @param options The state and the questions
+   * @returns The answer of each question
+   */
+  async createSystemOne(options: SystemOneParams): Promise<SystemOneResponse> {
+    this.checkModelLoaded();
+
+    const result = await this.proxy.wllamaAction<GlueMsgSystemoneRes>(
+      'systemone',
+      {
+        _name: 'sys1_req',
+        data_json: JSON.stringify(options),
+      }
+    );
+
+    if (!result.success) {
+      throw new WllamaError(
+        'Model failed to start systemone',
+        'inference_error'
+      );
+    }
+
+    return await this.getSingleResult<SystemOneResponse>(
+      result.req_id,
+      'systemone'
+    );
   }
 
   /**
@@ -1024,10 +1058,7 @@ export class Wllama {
     }
   }
 
-  private async getRerankResult(reqId: number): Promise<{
-    score: number;
-    tokens_evaluated: number;
-  }> {
+  private async getSingleResult<T>(reqId: number, task: string): Promise<T> {
     let completed = false;
     try {
       while (true) {
@@ -1041,7 +1072,7 @@ export class Wllama {
           if (chunk.is_error) {
             const jsonData = this.jsonDecode(jsonString);
             throw new WllamaError(
-              jsonData.message || 'Unknown reranking error',
+              jsonData.message || `Unknown ${task} error`,
               'inference_error'
             );
           }
@@ -1055,7 +1086,7 @@ export class Wllama {
         }
       }
 
-      throw new WllamaError('No reranking result received', 'inference_error');
+      throw new WllamaError(`No ${task} result received`, 'inference_error');
     } finally {
       if (!completed) {
         await this.cancelRequest(reqId);
