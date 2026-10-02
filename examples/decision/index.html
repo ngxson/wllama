@@ -341,6 +341,7 @@
         } catch (err) {
           setStatus(`Error: ${err.message}`);
           console.error(err);
+          await wllama.exit().catch(console.error);
           wllama = null;
           elemBtnLoad.disabled = false;
           elemSelectModel.disabled = false;
@@ -437,6 +438,7 @@
       function showError(msg) {
         elemOutputAnswers.classList.add('hint');
         elemOutputAnswers.textContent = `Error: ${msg}`;
+        elemOutputRaw.textContent = '{}';
       }
 
       function setStatus(text) {
