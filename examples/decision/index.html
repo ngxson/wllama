@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wllama.cpp decision model demo</title>
+
+    <style>
+      body {
+        background-color: rgb(55, 55, 55);
+        color: rgb(222, 222, 222);
+        font-family: system-ui, sans-serif;
+        padding: 1em;
+        padding-bottom: 4em;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5em;
+      }
+
+      @media (max-width: 800px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .box {
+        border: 1px solid #777;
+        border-radius: 6px;
+        padding: 0.8em;
+        margin-bottom: 1em;
+        background: rgb(45, 45, 45);
+      }
+
+      .box > b {
+        display: block;
+        margin-bottom: 0.5em;
+      }
+
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        background: rgb(30, 30, 30);
+        color: inherit;
+        border: 1px solid #666;
+        border-radius: 4px;
+        padding: 0.5em;
+        resize: vertical;
+      }
+
+      #input_questions,
+      #output_raw {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.9em;
+      }
+
+      #output_raw {
+        white-space: pre-wrap;
+        margin: 0;
+        max-height: 30em;
+        overflow: auto;
+      }
+
+      select,
+      button {
+        font-size: 1em;
+        padding: 0.3em 0.6em;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      #btn_decide {
+        width: 100%;
+        padding: 0.6em;
+        font-weight: bold;
+      }
+
+      #progress_bar_wrap {
+        width: 100%;
+        background: #333;
+        border-radius: 4px;
+        height: 10px;
+        margin-top: 0.5em;
+        display: none;
+      }
+
+      #progress_bar {
+        height: 10px;
+        border-radius: 4px;
+        background: #5a9;
+        width: 0%;
+      }
+
+      .hint {
+        color: #aaa;
+        font-size: 0.85em;
+      }
+
+      .warn {
+        color: #e9a84c;
+      }
+
+      .answer {
+        margin-bottom: 1.2em;
+      }
+
+      .answer-title {
+        margin-bottom: 0.3em;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 9em 1fr 4em;
+        gap: 0.5em;
+        align-items: center;
+        font-size: 0.9em;
+        margin: 0.15em 0;
+      }
+
+      .row .label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .row .bar {
+        background: #333;
+        border-radius: 3px;
+        height: 0.8em;
+      }
+
+      .row .bar > div {
+        background: #789;
+        border-radius: 3px;
+        height: 100%;
+      }
+
+      .row.top .bar > div {
+        background: #5a9;
+      }
+
+      .row .value {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Decision models</h2>
+    <p>
+      A decision model reads a <i>state</i> and answers a list of typed
+      questions. It does not generate text: each answer comes with a probability
+      for every possible option.
+    </p>
+    <p class="hint">
+      Question types: <code>choice</code> (criteria = object of option to
+      description), <code>score</code> (criteria = list of levels, lowest
+      first), <code>noul</code> (yes/no, no criteria needed).
+    </p>
+
+    <div class="box">
+      <b>Model</b>
+      <select id="select_model"></select>
+      <button id="btn_load">Load</button>
+      <span id="status_text" class="hint"></span>
+      <div id="model_warning" class="hint warn"></div>
+      <div id="progress_bar_wrap"><div id="progress_bar"></div></div>
+    </div>
+
+    <div class="grid">
+      <div>
+        <div class="box">
+          <b>State</b>
+          <textarea id="input_state" rows="5"></textarea>
+        </div>
+
+        <div class="box">
+          <b>Questions (JSON)</b>
+          <textarea id="input_questions" rows="22"></textarea>
+        </div>
+
+        <button id="btn_decide" disabled>Decide</button>
+      </div>
+
+      <div>
+        <div class="box">
+          <b>Answers</b>
+          <div id="output_answers" class="hint">Answers appear here.</div>
+        </div>
+
+        <div class="box">
+          <b>Raw output</b>
+          <pre id="output_raw" class="hint">{}</pre>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Wllama } from '../../esm/index.js';
+
+      const CONFIG_PATHS = {
+        default: '../../esm/wasm/wllama.wasm',
+      };
+
+      // see https://huggingface.co/collections/ggml-org/decision-models
+      const MODELS = [
+        {
+          name: 'Laya',
+          repo: 'ggml-org/Laya-GGUF',
+          quant: 'Q8_0',
+          size: '449 MB',
+        },
+        {
+          name: 'Julia-1',
+          repo: 'ggml-org/Julia-1-GGUF',
+          quant: 'Q8_0',
+          size: '168 MB',
+        },
+        {
+          name: 'Kev-4B',
+          repo: 'ggml-org/Kev-4B-GGUF',
+          quant: 'Q4_K_M',
+          size: '3.0 GB',
+          needWebGPU: true,
+        },
+        {
+          name: 'lev',
+          repo: 'ggml-org/lev-GGUF',
+          quant: 'Q4_K_M',
+          size: '3.0 GB',
+          needWebGPU: true,
+        },
+      ];
+
+      const DEFAULT_STATE =
+        'My package showed up nine days after the promised date and the box was torn open. The item itself works fine, but I would like the delivery fee back.';
+
+      const DEFAULT_QUESTIONS = {
+        topic: {
+          type: 'choice',
+          instructions: 'What is the main topic of this message?',
+          criteria: {
+            delivery: 'Late, lost or damaged deliveries',
+            product: 'Defects or problems with the item itself',
+            account: 'Login, password or profile settings',
+          },
+        },
+        mood: {
+          type: 'score',
+          instructions: 'How satisfied is the writer?',
+          criteria: ['very unhappy', 'unhappy', 'neutral', 'happy'],
+        },
+        refund: {
+          type: 'noul',
+          instructions: 'Does the writer ask for money back?',
+        },
+      };
+
+      let wllama = null;
+
+      function main() {
+        for (const [i, m] of MODELS.entries()) {
+          const opt = document.createElement('option');
+          opt.value = i;
+          opt.textContent = `${m.name} (${m.quant}, ${m.size})${m.needWebGPU ? ' - WebGPU required' : ''}`;
+          elemSelectModel.appendChild(opt);
+        }
+        elemSelectModel.onchange = updateModelWarning;
+        updateModelWarning();
+
+        elemInputState.value = DEFAULT_STATE;
+        elemInputQuestions.value = JSON.stringify(DEFAULT_QUESTIONS, null, 2);
+
+        elemBtnLoad.onclick = loadModel;
+        elemBtnDecide.onclick = decide;
+      }
+
+      function updateModelWarning() {
+        const model = MODELS[elemSelectModel.value];
+        if (!model.needWebGPU) {
+          elemModelWarning.textContent = '';
+        } else if (!createWllama().isSupportWebGPU()) {
+          elemModelWarning.textContent =
+            'WebGPU is not available in this browser, this model may fail to load.';
+        } else {
+          elemModelWarning.textContent =
+            'This model is large, it needs WebGPU and may fail to load on some devices.';
+        }
+      }
+
+      function createWllama() {
+        const w = new Wllama(CONFIG_PATHS);
+        // when running demo locally, we want to point the compat to local for debugging; when deployed, we point it to CDN
+        if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
+          w.setCompat({
+            wasm: '../../compat/wasm/wllama.wasm',
+            worker: '../../compat/wasm/wllama.js',
+          });
+        } else {
+          w.setCompat('default');
+        }
+        return w;
+      }
+
+      async function loadModel() {
+        const model = MODELS[elemSelectModel.value];
+        elemBtnLoad.disabled = true;
+        elemSelectModel.disabled = true;
+        elemBtnDecide.disabled = true;
+
+        showProgressBar(true);
+        setStatus(`Loading ${model.name}...`);
+        try {
+          wllama = createWllama();
+          await wllama.loadModelFromHF(
+            { repo: model.repo, quant: model.quant },
+            {
+              n_ctx: 2048,
+              n_batch: 1024,
+              n_ubatch: 1024,
+              progressCallback: ({ loaded, total }) => {
+                const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+                setStatus(`Downloading ${model.name}... ${pct}%`);
+                elemProgressBar.style.width = `${pct}%`;
+              },
+            }
+          );
+          setStatus(`${model.name} loaded`);
+          elemBtnDecide.disabled = false;
+        } catch (err) {
+          setStatus(`Error: ${err.message}`);
+          console.error(err);
+          wllama = null;
+          elemBtnLoad.disabled = false;
+          elemSelectModel.disabled = false;
+        }
+        showProgressBar(false);
+      }
+
+      async function decide() {
+        let questions;
+        try {
+          questions = JSON.parse(elemInputQuestions.value);
+        } catch (err) {
+          showError(`Invalid questions JSON: ${err.message}`);
+          return;
+        }
+
+        elemBtnDecide.disabled = true;
+        elemOutputAnswers.textContent = 'Running...';
+        try {
+          const t0 = Date.now();
+          const res = await wllama.createSystemOne({
+            state: elemInputState.value,
+            questions,
+          });
+          elemOutputRaw.textContent = JSON.stringify(res, null, 2);
+          renderAnswers(res, Date.now() - t0);
+        } catch (err) {
+          showError(err.message);
+          console.error(err);
+        }
+        elemBtnDecide.disabled = false;
+      }
+
+      /////////////////////////////////////////////////////////////////////
+
+      function renderAnswers(res, elapsed) {
+        elemOutputAnswers.textContent = '';
+        elemOutputAnswers.classList.remove('hint');
+        for (const [id, ans] of Object.entries(res.answers)) {
+          const elem = document.createElement('div');
+          elem.className = 'answer';
+          const title = document.createElement('div');
+          title.className = 'answer-title';
+          elem.appendChild(title);
+
+          if (ans.type === 'choice') {
+            title.innerHTML = `<b>${esc(id)}</b> (choice): <b>${esc(ans.choice)}</b> - confidence ${ans.confidence.toFixed(2)}`;
+            for (const [opt, p] of Object.entries(ans.probabilities)) {
+              elem.appendChild(makeRow(opt, p, opt === ans.choice));
+            }
+          } else if (ans.type === 'score') {
+            title.innerHTML = `<b>${esc(id)}</b> (score): <b>${ans.score.toFixed(2)}</b> - confidence ${ans.confidence.toFixed(2)}`;
+            const best = maxKey(ans.probabilities);
+            for (const [lvl, p] of Object.entries(ans.probabilities)) {
+              const legend = ans.legend[lvl];
+              const label = `${lvl}: ${typeof legend === 'string' ? legend : JSON.stringify(legend)}`;
+              elem.appendChild(makeRow(label, p, lvl === best));
+            }
+          } else if (ans.type === 'noul') {
+            title.innerHTML = `<b>${esc(id)}</b> (noul): <b>${ans.noul >= 0.5 ? 'true' : 'false'}</b>`;
+            elem.appendChild(makeRow('true', ans.noul, ans.noul >= 0.5));
+            elem.appendChild(makeRow('false', 1 - ans.noul, ans.noul < 0.5));
+          }
+          elemOutputAnswers.appendChild(elem);
+        }
+
+        const usage = document.createElement('div');
+        usage.className = 'hint';
+        usage.textContent = `${res.usage.input_tokens} input tokens, ${elapsed} ms`;
+        elemOutputAnswers.appendChild(usage);
+      }
+
+      function makeRow(label, p, isTop) {
+        const row = document.createElement('div');
+        row.className = isTop ? 'row top' : 'row';
+        row.innerHTML = `<span class="label"></span><div class="bar"><div></div></div><span class="value">${p.toFixed(3)}</span>`;
+        row.querySelector('.label').textContent = label;
+        row.querySelector('.label').title = label;
+        row.querySelector('.bar > div').style.width =
+          `${(p * 100).toFixed(1)}%`;
+        return row;
+      }
+
+      function maxKey(obj) {
+        return Object.keys(obj).reduce((a, b) => (obj[a] >= obj[b] ? a : b));
+      }
+
+      function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+      }
+
+      function showError(msg) {
+        elemOutputAnswers.classList.add('hint');
+        elemOutputAnswers.textContent = `Error: ${msg}`;
+      }
+
+      function setStatus(text) {
+        elemStatusText.textContent = text;
+      }
+
+      function showProgressBar(show) {
+        elemProgressBarWrap.style.display = show ? 'block' : 'none';
+        elemProgressBar.style.width = '0%';
+      }
+
+      /////////////////////////////////////////////////////////////////////
+
+      const elemSelectModel = document.getElementById('select_model');
+      const elemBtnLoad = document.getElementById('btn_load');
+      const elemStatusText = document.getElementById('status_text');
+      const elemModelWarning = document.getElementById('model_warning');
+      const elemProgressBarWrap = document.getElementById('progress_bar_wrap');
+      const elemProgressBar = document.getElementById('progress_bar');
+      const elemInputState = document.getElementById('input_state');
+      const elemInputQuestions = document.getElementById('input_questions');
+      const elemBtnDecide = document.getElementById('btn_decide');
+      const elemOutputAnswers = document.getElementById('output_answers');
+      const elemOutputRaw = document.getElementById('output_raw');
+
+      main();
+    </script>
+  </body>
+</html>
