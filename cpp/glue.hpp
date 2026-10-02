@@ -637,6 +637,21 @@ struct glue_msg_rerank_res
 
 /////////
 
+struct glue_msg_systemone_req
+{
+  GLUE_HANDLER("sys1_req")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_systemone_res
+{
+  GLUE_HANDLER("sys1_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(int, req_id)
+};
+
+/////////
+
 struct glue_msg_get_result_req
 {
   GLUE_HANDLER("gres_req")

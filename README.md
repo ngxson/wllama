@@ -44,6 +44,7 @@ Demo:
 - Embedding and cosine distance: https://github.ngxson.com/wllama/examples/embeddings/ ([source code](./examples/embeddings/index.html))
 - Multimodal (vision) completion: https://github.ngxson.com/wllama/examples/multimodal/ ([source code](./examples/multimodal/index.html))
 - Tool calling: https://github.ngxson.com/wllama/examples/tools/ ([source code](./examples/tools/index.html))
+- Decision models: https://github.ngxson.com/wllama/examples/decision/ ([source code](./examples/decision/index.html))
 
 ## How to use
 

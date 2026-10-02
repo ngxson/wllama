@@ -351,3 +351,55 @@ export interface RerankResponse {
   usage: RerankUsage;
   results: RerankResult[];
 }
+
+// System One (TypeSafe-compatible API, see llama.cpp server /v1/systemone)
+
+export type SystemOneQuestion =
+  | {
+      type: 'choice';
+      instructions: any;
+      criteria: Record<string, any>;
+    }
+  | {
+      type: 'score';
+      instructions: any;
+      criteria: any[];
+    }
+  | {
+      type: 'noul';
+      instructions: any;
+      criteria?: { true?: any; false?: any };
+    };
+
+export interface SystemOneParams {
+  state: any;
+  questions: Record<string, SystemOneQuestion>;
+}
+
+export type SystemOneAnswer =
+  | {
+      type: 'choice';
+      choice: string;
+      probabilities: Record<string, number>;
+      confidence: number;
+    }
+  | {
+      type: 'score';
+      score: number;
+      legend: Record<string, any>;
+      probabilities: Record<string, number>;
+      confidence: number;
+    }
+  | {
+      type: 'noul';
+      noul: number;
+    };
+
+export interface SystemOneResponse {
+  model: string;
+  answers: Record<string, SystemOneAnswer>;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+}
