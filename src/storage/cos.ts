@@ -47,7 +47,7 @@ class COSInternalBackend implements StorageBackend {
   async write(key: string, stream: ReadableStream): Promise<void> {
     const handle = await navigator.crossOriginStorage!.requestFileHandle(
       makeHash(key),
-      { create: true }
+      { create: true, origins: '*' }
     );
     const writable = await (handle as any).createWritable();
     const reader = stream.getReader();
