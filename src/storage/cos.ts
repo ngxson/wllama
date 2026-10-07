@@ -27,7 +27,8 @@ function makeHash(key: string): CrossOriginStorageGetFileHandleHash {
 class COSInternalBackend implements StorageBackend {
   isSupported(): boolean {
     return (
-      typeof navigator !== 'undefined' && 'crossOriginStorage' in navigator
+      typeof navigator !== 'undefined' &&
+      typeof navigator.crossOriginStorage?.getFileHandle === 'function'
     );
   }
 
