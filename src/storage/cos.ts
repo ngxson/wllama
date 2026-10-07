@@ -1,14 +1,14 @@
 import type { StorageBackend, StorageFileHint } from './index';
 import { OPFSBackend } from './opfs';
 
-interface CrossOriginStorageRequestFileHandleHash {
+interface CrossOriginStorageGetFileHandleHash {
   value: string;
   algorithm: string;
 }
 
 interface CrossOriginStorageManager {
-  requestFileHandle(
-    hash: CrossOriginStorageRequestFileHandleHash,
+  getFileHandle(
+    hash: CrossOriginStorageGetFileHandleHash,
     options?: { create?: boolean; origins?: string[] | string }
   ): Promise<FileSystemFileHandle>;
 }
@@ -19,7 +19,7 @@ declare global {
   }
 }
 
-function makeHash(key: string): CrossOriginStorageRequestFileHandleHash {
+function makeHash(key: string): CrossOriginStorageGetFileHandleHash {
   return { algorithm: 'SHA-256', value: key };
 }
 
@@ -34,7 +34,7 @@ class COSInternalBackend implements StorageBackend {
   // IMPORTANT: key must be SHA-256 hash of the data
   async read(key: string): Promise<Blob | null> {
     try {
-      const handle = await navigator.crossOriginStorage!.requestFileHandle(
+      const handle = await navigator.crossOriginStorage!.getFileHandle(
         makeHash(key)
       );
       return handle.getFile();
@@ -45,7 +45,7 @@ class COSInternalBackend implements StorageBackend {
 
   // IMPORTANT: key must be SHA-256 hash of the data
   async write(key: string, stream: ReadableStream): Promise<void> {
-    const handle = await navigator.crossOriginStorage!.requestFileHandle(
+    const handle = await navigator.crossOriginStorage!.getFileHandle(
       makeHash(key),
       { create: true, origins: '*' }
     );
@@ -65,7 +65,7 @@ class COSInternalBackend implements StorageBackend {
   // IMPORTANT: key must be SHA-256 hash of the data
   async getSize(key: string): Promise<number> {
     try {
-      const handle = await navigator.crossOriginStorage!.requestFileHandle(
+      const handle = await navigator.crossOriginStorage!.getFileHandle(
         makeHash(key)
       );
       const file = await handle.getFile();
@@ -139,8 +139,8 @@ export function mockCOS(): void {
   const store = new Map<string, Blob>();
 
   (navigator as any).crossOriginStorage = {
-    async requestFileHandle(
-      { value }: CrossOriginStorageRequestFileHandleHash,
+    async getFileHandle(
+      { value }: CrossOriginStorageGetFileHandleHash,
       options?: { create?: boolean }
     ): Promise<FileSystemFileHandle> {
       if (!options?.create && !store.has(value)) {
