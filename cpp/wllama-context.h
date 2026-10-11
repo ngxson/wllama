@@ -294,14 +294,17 @@ struct wllama_context
   {
     json body = json::parse(req_raw);
     task_response_type res_type = TASK_RESPONSE_TYPE_OAI_CMPL;
+    common_chat_session chat_session;
 
     if (is_chat)
     {
       std::vector<raw_buffer> dummy_files; // unused
       json body_parsed = oaicompat_chat_params_parse(
+          vocab,
           body,
           meta->chat_params,
-          dummy_files);
+          dummy_files,
+          chat_session);
       body = std::move(body_parsed);
       res_type = TASK_RESPONSE_TYPE_OAI_CHAT;
     }
@@ -322,8 +325,11 @@ struct wllama_context
       task.cli_prompt = prompt;
       task.cli_files = files;
       task.cli = true;
+      task.apply_chat_session(chat_session);
 
-      rd.post_task({std::move(task)});
+      std::vector<server_task> tasks;
+      tasks.push_back(std::move(task));
+      rd.post_tasks(std::move(tasks), chat_session);
     }
   }
 
@@ -1152,12 +1158,12 @@ void server_response_reader::post_task(server_task &&task, bool front)
   GGML_ASSERT(!task.is_parent() && "not supported, use post_tasks() instead");
   task.index = 0;
   id_tasks.insert(task.id);
-  states.push_back(task.create_state());
+  states.push_back(task_result_state());
   queue_results.add_waiting_task_id(task.id);
   queue_tasks.post(std::move(task), front);
 }
 
-void server_response_reader::post_tasks(std::vector<server_task> &&tasks, bool front)
+void server_response_reader::post_tasks(std::vector<server_task> &&tasks, const common_chat_session &session, bool front)
 {
   LOG_DBG("%s\n", __func__);
   GGML_ASSERT(id_tasks.empty() && "post_tasks() can only be called once per reader");
@@ -1167,12 +1173,12 @@ void server_response_reader::post_tasks(std::vector<server_task> &&tasks, bool f
   for (auto &task : tasks)
   {
     task.index = index++;
-    states.push_back(task.create_state());
+    states.push_back(task_result_state(session));
     // for child tasks
     for (auto &child_task : task.child_tasks)
     {
       child_task.index = index++;
-      states.push_back(child_task.create_state());
+      states.push_back(task_result_state(session));
     }
   }
   GGML_ASSERT(states.size() == id_tasks.size());
