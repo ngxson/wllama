@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <unordered_map>
+#include <algorithm>
 
 #include "llama.h"
 #include "common.h"
@@ -276,6 +277,7 @@ struct wllama_context
     int32_t n_tokens = 0;
   };
   std::unordered_map<int, decision_request> decision_reqs; // keyed by req_id
+  std::unordered_map<int, std::vector<json>> embedding_reqs; // keyed by req_id
 
   struct console
   {
@@ -680,7 +682,7 @@ struct wllama_context
     return res;
   }
 
-  void create_embedding_tasks(server_response_reader &rd, std::string &req_raw)
+  void create_embedding_tasks(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &input_files)
   {
     json body = json::parse(req_raw);
 
@@ -704,25 +706,103 @@ struct wllama_context
       embd_normalize = body.at("embd_normalize").get<int>();
     }
 
-    auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
-    for (const auto &tokens : tokenized_prompts)
-    {
+    std::vector<server_task> tasks;
+
+    auto add_task = [&](server_tokens &&tokens) {
       if (tokens.empty())
       {
         throw app_exception("Input content cannot be empty");
       }
-    }
-
-    std::vector<server_task> tasks;
-    for (size_t i = 0; i < tokenized_prompts.size(); i++)
-    {
       server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
       task.id = rd.get_new_id();
-      task.tokens = std::move(tokenized_prompts[i]);
+      task.tokens = std::move(tokens);
       task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
       task.params.embd_normalize = embd_normalize;
       tasks.push_back(std::move(task));
+    };
+
+    // cli mode lets the server tokenize with the mtmd context
+    auto add_cli_task = [&](std::string text, std::vector<raw_buffer> &&files) {
+      server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
+      task.id = rd.get_new_id();
+      task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
+      task.params.embd_normalize = embd_normalize;
+      task.cli_prompt = std::move(text);
+      task.cli_files = std::move(files);
+      task.cli = true;
+      tasks.push_back(std::move(task));
+    };
+
+    const std::string media_marker = get_media_marker();
+
+    auto add_content = [&](const json &content) {
+      std::string text;
+      std::vector<raw_buffer> entry_files;
+
+      for (const auto &part : content)
+      {
+        const std::string type = json_value(part, "type", std::string());
+        if (type == "text")
+        {
+          text += json_value(part, "text", std::string());
+        }
+        else if (type == "image")
+        {
+          // native image input: the binary payload is sent via req.files
+          if (input_files.empty())
+          {
+            throw app_exception("Not enough media files");
+          }
+          entry_files.push_back(std::move(input_files.front()));
+          input_files.erase(input_files.begin());
+          text += media_marker;
+        }
+      }
+
+      if (entry_files.empty())
+      {
+        add_task(tokenize_input_subprompt(vocab, nullptr, text, true, true, mtmd_helper_init_opt_default()));
+      }
+      else
+      {
+        add_cli_task(std::move(text), std::move(entry_files));
+      }
+    };
+
+    if (prompt.is_array() && !prompt.empty() &&
+        std::all_of(prompt.begin(), prompt.end(), [](const json &p) {
+          if (!p.is_object() || !p.contains("type"))
+          {
+            return false;
+          }
+          const std::string type = json_value(p, "type", std::string());
+          return type == "text" || type == "image";
+        }))
+    {
+      add_content(prompt);
     }
+    else if (prompt.is_array() && !json_is_array_and_contains_numbers(prompt))
+    {
+      for (const auto &p : prompt)
+      {
+        add_task(tokenize_input_subprompt(vocab, nullptr, p, true, true, mtmd_helper_init_opt_default()));
+      }
+    }
+    else
+    {
+      add_task(tokenize_input_subprompt(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default()));
+    }
+
+    if (!input_files.empty())
+    {
+      throw app_exception("Unused media files");
+    }
+
+    if (tasks.empty())
+    {
+      throw app_exception("Input content cannot be empty");
+    }
+
     rd.post_tasks(std::move(tasks));
   }
 
@@ -732,8 +812,13 @@ struct wllama_context
     glue_msg_embedding_res res;
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
+    std::vector<raw_buffer> input_files;
+    for (const auto &file : req.files.arr)
+    {
+      input_files.push_back(file);
+    }
 
-    create_embedding_tasks(*rd, req.data_json.value);
+    create_embedding_tasks(*rd, req.data_json.value, input_files);
 
     res.success.value = true;
     res.req_id.value = register_reader(std::move(rd));
@@ -870,12 +955,28 @@ struct wllama_context
       if (auto *embd = dynamic_cast<server_task_result_embd *>(result.get()))
       {
         (void)embd;
-        // special handling for embeddings OAI-compat
-        json body = {{"model", meta->model_name}};
-        json responses = json::array();
-        responses.push_back(result->to_json());
-        // TODO: support base64 output
-        data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
+        // collect all embeddings of a batch and send them in one response
+        auto &responses = embedding_reqs[req.req_id.value];
+        if (responses.size() <= result->index)
+        {
+          responses.resize(result->index + 1);
+        }
+        responses[result->index] = result->to_json();
+        if (has_more)
+        {
+          result = nullptr;
+        }
+        else
+        {
+          json ordered = json::array();
+          for (auto &item : responses)
+          {
+            ordered.push_back(std::move(item));
+          }
+          json body = {{"model", meta->model_name}};
+          // TODO: support base64 output
+          data_json = format_embeddings_response_oaicompat(body, meta->model_name, ordered, false);
+        }
       }
       else if (auto *rerank = dynamic_cast<server_task_result_rerank *>(result.get()))
       {
@@ -916,6 +1017,7 @@ struct wllama_context
     {
       readers.erase(it);
       decision_reqs.erase(req.req_id.value);
+      embedding_reqs.erase(req.req_id.value);
     }
     return res;
   }
@@ -931,6 +1033,7 @@ struct wllama_context
       // reader destructor posts cancel tasks; run one loop iteration to release the slot right away
       readers.erase(it);
       decision_reqs.erase(req.req_id.value);
+      embedding_reqs.erase(req.req_id.value);
       run_loop();
     }
 
