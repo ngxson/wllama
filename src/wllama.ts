@@ -37,6 +37,7 @@ import type {
   ChatCompletionResponse,
   ChatCompletionUserMessage,
   CreateEmbeddingResponse,
+  EmbeddingContent,
   EmbeddingCreateParams,
   RawCompletionChunk,
   RawCompletionParams,
@@ -637,7 +638,7 @@ export class Wllama {
   // High level API
 
   /**
-   * Calculate embedding vector for a given text.
+   * Calculate embedding vector for a given text or multimodal input.
    * By default, BOS and EOS tokens will be added automatically. You can use the "skipBOS" and "skipEOS" option to disable it.
    * @param options OAI-compatible embedding creation options
    * @returns OAI-compatible embedding response
@@ -653,12 +654,30 @@ export class Wllama {
       );
     }
 
+    const files: ArrayBuffer[] = [];
+    const isContentPart = (entry: unknown): entry is EmbeddingContent =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      'type' in entry &&
+      (entry.type === 'text' || entry.type === 'image');
+    if (
+      Array.isArray(options.input) &&
+      options.input.length > 0 &&
+      options.input.every(isContentPart)
+    ) {
+      for (const c of options.input as EmbeddingContent[]) {
+        if (c.type === 'image') {
+          files.push(c.data);
+        }
+      }
+    }
+
     const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
       'embedding',
       {
         _name: 'embd_req',
         data_json: JSON.stringify(options),
-        files: [], // TODO: support file input
+        files: files.map((f) => new Uint8Array(f)),
       }
     );
 

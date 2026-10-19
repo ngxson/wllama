@@ -301,10 +301,22 @@ export interface RawCompletionChunk {
 
 // Embeddings
 
+export type EmbeddingInput =
+  | string
+  | number[]
+  | string[]
+  | number[][]
+  | (ChatCompletionMessageText | ChatCompletionMessageImage)[];
+
 export interface EmbeddingCreateParams {
-  input: string | string[] | number[] | number[][];
+  input: EmbeddingInput;
   model?: string;
   encoding_format?: 'float' | 'base64';
+  /**
+   * Embedding normalization mode: -1 = none, 0 = max absolute int16,
+   * 1 = taxicab, 2 = Euclidean/L2 (default), >2 = p-norm.
+   */
+  embd_normalize?: number;
   // dimensions?: number; // unsupported by llama.cpp
   // user?: string;
 }
