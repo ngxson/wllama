@@ -228,6 +228,11 @@ test.sequential('generates embeddings', async () => {
   expect(wllama.isModelLoaded()).toBe(true);
 
   const text = 'This is a test sentence';
+
+  await expect(
+    wllama.createEmbedding({ input: text, embd_normalize: 0.5 })
+  ).rejects.toThrow('embd_normalize must be an integer');
+
   const res = await wllama.createEmbedding({ input: text });
 
   expect(res).toBeDefined();
