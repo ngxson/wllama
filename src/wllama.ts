@@ -667,6 +667,12 @@ export class Wllama {
     ) {
       for (const c of options.input as EmbeddingContent[]) {
         if (c.type === 'image') {
+          if (!(c.data instanceof ArrayBuffer)) {
+            throw new WllamaError(
+              'Image input must contain an ArrayBuffer in "data"',
+              'inference_error'
+            );
+          }
           files.push(c.data);
         }
       }

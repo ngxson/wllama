@@ -301,12 +301,16 @@ export interface RawCompletionChunk {
 
 // Embeddings
 
+export type EmbeddingContent =
+  | ChatCompletionMessageText
+  | ChatCompletionMessageImage;
+
 export type EmbeddingInput =
   | string
   | number[]
   | string[]
   | number[][]
-  | (ChatCompletionMessageText | ChatCompletionMessageImage)[];
+  | EmbeddingContent[];
 
 export interface EmbeddingCreateParams {
   input: EmbeddingInput;
