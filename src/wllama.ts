@@ -654,6 +654,16 @@ export class Wllama {
       );
     }
 
+    if (
+      options.embd_normalize !== undefined &&
+      !Number.isInteger(options.embd_normalize)
+    ) {
+      throw new WllamaError(
+        'embd_normalize must be an integer',
+        'inference_error'
+      );
+    }
+
     const files: ArrayBuffer[] = [];
     const isContentPart = (entry: unknown): entry is EmbeddingContent =>
       typeof entry === 'object' &&
