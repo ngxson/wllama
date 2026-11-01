@@ -9,7 +9,7 @@ if (typeof __GITHUB_CI__ !== 'undefined' && __GITHUB_CI__) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   });
 }
-import { Wllama, type WllamaConfig } from './wllama';
+import { Wllama, WllamaError, type WllamaConfig } from './wllama';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',
@@ -123,6 +123,22 @@ test.sequential('loads split model files', async () => {
 
   expect(wllama.isModelLoaded()).toBe(true);
   await wllama.exit();
+});
+
+test.sequential('throws load_error if context cannot be created', async () => {
+  const wllama = createWllama();
+
+  // KV cache for this n_ctx does not fit in wasm memory
+  const err = await wllama
+    .loadModelFromUrl(TINY_MODEL, {
+      n_ctx: 1 << 20,
+      n_threads: 2,
+      n_gpu_layers: 0,
+    })
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WllamaError);
+  expect((err as WllamaError).type).toBe('load_error');
+  expect(wllama.isModelLoaded()).toBe(false);
 });
 
 test.sequential('generates completion', async () => {

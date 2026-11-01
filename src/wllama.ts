@@ -589,6 +589,13 @@ export class Wllama {
       skip_chat_parsing: params.skip_chat_parsing,
       prefill_assistant: params.prefill_assistant,
     });
+    if (!loadResult.success) {
+      await this.exit();
+      throw new WllamaError(
+        'Failed to load the model or create its context, see the log for details (a smaller n_ctx may help)',
+        'load_error'
+      );
+    }
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
       metadata: {},
