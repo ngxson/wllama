@@ -111,6 +111,9 @@ onmessage = async (e) => {
       let loaded = 0;
       let total = NaN;
       let etag = '';
+      // The ETag as the server sent it, for If-Range: a resume gets the rest
+      // only of the same version, and the whole file if it changed.
+      let version = '';
       const throttledProgress = throttled(resProgress, 100);
       // A dropped connection, or the browser closing the file mid-download
       // (Safari can), doesn't start over: it retries, asking only for the
@@ -119,7 +122,10 @@ onmessage = async (e) => {
         const start = loaded;
         try {
           const headers = new Headers(options.headers || {});
-          if (loaded > 0) headers.set('Range', 'bytes=' + loaded + '-');
+          if (loaded > 0) {
+            headers.set('Range', 'bytes=' + loaded + '-');
+            if (version) headers.set('If-Range', version);
+          }
           const response = await fetch(url, {
             ...options,
             headers,
@@ -129,7 +135,8 @@ onmessage = async (e) => {
             throw new HttpError('HTTP ' + response.status + ' for ' + url);
           }
           if (loaded > 0 && response.status !== 206) {
-            // The server sent the whole file instead of the rest.
+            // The server sent the whole file instead of the rest (it ignores
+            // ranges, or the file changed).
             accessHandle.truncate(0);
             loaded = 0;
           } else if (loaded > 0) {
@@ -147,6 +154,7 @@ onmessage = async (e) => {
             }
           }
           if (loaded === 0) {
+            version = response.headers.get('etag') || '';
             total = parseInt(response.headers.get('content-length'), 10);
             etag = (response.headers.get('etag') || '').replace(
               /[^A-Za-z0-9]/g,
