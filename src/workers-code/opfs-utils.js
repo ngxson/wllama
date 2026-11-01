@@ -1,13 +1,18 @@
 let accessHandle;
 let abortController = new AbortController();
 
-async function openFile(filename) {
+async function openFile(filename, keep = false) {
   const opfsRoot = await navigator.storage.getDirectory();
   const cacheDir = await opfsRoot.getDirectoryHandle('cache', { create: true });
   const fileHandler = await cacheDir.getFileHandle(filename, { create: true });
   accessHandle = await fileHandler.createSyncAccessHandle();
-  accessHandle.truncate(0); // clear file content
+  if (!keep) accessHandle.truncate(0); // clear file content
 }
+
+// Tries in a row with no bytes gained before a download fails.
+const DOWNLOAD_ATTEMPTS = 6;
+
+class HttpError extends Error {}
 
 async function writeFile(buf) {
   accessHandle.write(buf);
@@ -102,26 +107,74 @@ onmessage = async (e) => {
       assertNonNull(options.aborted);
       abortController = new AbortController();
       if (options.aborted) abortController.abort();
-      const response = await fetch(url, {
-        ...options,
-        signal: abortController.signal,
-      });
-      const contentLength = response.headers.get('content-length');
-      const etag = (response.headers.get('etag') || '').replace(
-        /[^A-Za-z0-9]/g,
-        ''
-      );
-      const total = parseInt(contentLength, 10);
-      const reader = response.body.getReader();
       await openFile(filename);
       let loaded = 0;
+      let total = NaN;
+      let etag = '';
       const throttledProgress = throttled(resProgress, 100);
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        loaded += value.byteLength;
-        await writeFile(value);
-        throttledProgress(loaded, total);
+      // A dropped connection, or the browser closing the file mid-download
+      // (Safari can), doesn't start over: it retries, asking only for the
+      // bytes still missing, through a new handle if the old one was closed.
+      for (let attempt = 1; ;) {
+        const start = loaded;
+        try {
+          const headers = new Headers(options.headers || {});
+          if (loaded > 0) headers.set('Range', 'bytes=' + loaded + '-');
+          const response = await fetch(url, {
+            ...options,
+            headers,
+            signal: abortController.signal,
+          });
+          if (!response.ok) {
+            throw new HttpError('HTTP ' + response.status + ' for ' + url);
+          }
+          if (loaded > 0 && response.status !== 206) {
+            // The server sent the whole file instead of the rest.
+            accessHandle.truncate(0);
+            loaded = 0;
+          }
+          if (loaded === 0) {
+            total = parseInt(response.headers.get('content-length'), 10);
+            etag = (response.headers.get('etag') || '').replace(
+              /[^A-Za-z0-9]/g,
+              ''
+            );
+          }
+          const reader = response.body.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              accessHandle.write(value, { at: loaded });
+              loaded += value.byteLength;
+              throttledProgress(loaded, total);
+            }
+          } catch (err) {
+            // (A write failed: stop the response rather than let it run on.)
+            reader.cancel().catch(() => {});
+            throw err;
+          }
+          break;
+        } catch (err) {
+          if (abortController.signal.aborted || err instanceof HttpError) {
+            throw err;
+          }
+          try {
+            loaded = accessHandle.getSize();
+          } catch {
+            // The browser closed the file: a new handle, keeping what's there.
+            try {
+              accessHandle.close();
+            } catch {}
+            await openFile(filename, true);
+            loaded = accessHandle.getSize();
+          }
+          attempt = loaded > start ? 1 : attempt + 1;
+          if (attempt > DOWNLOAD_ATTEMPTS) throw err;
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** (attempt - 1))
+          );
+        }
       }
       resProgress(total, total); // 100% done
       await closeFile();
