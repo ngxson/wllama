@@ -132,6 +132,19 @@ onmessage = async (e) => {
             // The server sent the whole file instead of the rest.
             accessHandle.truncate(0);
             loaded = 0;
+          } else if (loaded > 0) {
+            // A range that starts anywhere else would put its bytes in the
+            // wrong place: start over instead. (Checked when Content-Range
+            // is readable, as it is cross-origin only if the server exposes it.)
+            const range = /^bytes (\d+)-/.exec(
+              response.headers.get('content-range') || ''
+            );
+            if (range && Number(range[1]) !== loaded) {
+              response.body.cancel().catch(() => {});
+              accessHandle.truncate(0);
+              loaded = 0;
+              continue;
+            }
           }
           if (loaded === 0) {
             total = parseInt(response.headers.get('content-length'), 10);
