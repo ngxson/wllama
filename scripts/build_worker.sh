@@ -6,6 +6,10 @@ CURRENT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 # change to the llama.cpp directory
 cd $CURRENT_PATH
+if [ ! -e ../llama.cpp/.git ]; then
+  echo "llama.cpp submodule is missing, run: git submodule update --init --recursive"
+  exit 1
+fi
 cd ../llama.cpp
 BUILD_NUMBER="$(git rev-list --count HEAD)"
 SHORT_HASH="$(git rev-parse --short=7 HEAD)"
