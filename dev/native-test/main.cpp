@@ -28,6 +28,12 @@ extern "C" struct ggml_cplan __real_ggml_graph_plan(
     const struct ggml_cgraph *cgraph, int n_threads, struct ggml_threadpool *tp) {
   return ggml_graph_plan(cgraph, n_threads, tp);
 }
+extern "C" struct ggml_threadpool *__real_ggml_threadpool_new(struct ggml_threadpool_params *params) {
+  return ggml_threadpool_new(params);
+}
+extern "C" void __real_ggml_threadpool_free(struct ggml_threadpool *tp) {
+  ggml_threadpool_free(tp);
+}
 
 #include "wllama-context.h"
 

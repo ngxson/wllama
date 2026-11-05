@@ -41,8 +41,7 @@ const toSizeT = (num) => {
 // Get module config that forwards stdout/err to main thread
 const getWModuleConfig = (_argMainScriptBlob) => {
   var pathConfig = RUN_OPTIONS.pathConfig;
-  // llama.cpp keeps one thread pool alive and clip makes a second one. A worker added later cannot start while the main thread waits at a barrier
-  var pthreadPoolSize = RUN_OPTIONS.nbThread * 2;
+  var pthreadPoolSize = RUN_OPTIONS.nbThread;
   var argMainScriptBlob = _argMainScriptBlob;
 
   isCompat = RUN_OPTIONS.compat;
