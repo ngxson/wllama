@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <unordered_map>
+#include <algorithm>
 
 #include "llama.h"
 #include "common.h"
@@ -276,6 +277,7 @@ struct wllama_context
     int32_t n_tokens = 0;
   };
   std::unordered_map<int, decision_request> decision_reqs; // keyed by req_id
+  std::unordered_map<int, std::vector<json>> embedding_reqs; // keyed by req_id
 
   struct console
   {
@@ -680,7 +682,7 @@ struct wllama_context
     return res;
   }
 
-  void create_embedding_tasks(server_response_reader &rd, std::string &req_raw)
+  void create_embedding_tasks(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &input_files)
   {
     json body = json::parse(req_raw);
 
@@ -704,25 +706,77 @@ struct wllama_context
       embd_normalize = body.at("embd_normalize").get<int>();
     }
 
-    auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
-    for (const auto &tokens : tokenized_prompts)
+    std::vector<server_task> tasks;
+
+    auto new_task = [&]() {
+      server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
+      task.id = rd.get_new_id();
+      task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
+      task.params.embd_normalize = embd_normalize;
+      return task;
+    };
+
+    if (input_files.empty())
     {
-      if (tokens.empty())
+      auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
+      for (auto &tokens : tokenized_prompts)
       {
-        throw app_exception("Input content cannot be empty");
+        if (tokens.empty())
+        {
+          throw app_exception("Input content cannot be empty");
+        }
+        server_task task = new_task();
+        task.tokens = std::move(tokens);
+        tasks.push_back(std::move(task));
+      }
+    }
+    else
+    {
+      llama_context *lctx = ctx_server.get_llama_context();
+      const bool has_memory = llama_get_memory(lctx) != nullptr;
+      const bool is_last_pooling = llama_pooling_type(lctx) == LLAMA_POOLING_TYPE_LAST;
+
+      // server decodes image in its own batch here, so pooled output has only the text tokens
+      if (has_memory && !is_last_pooling && llama_get_causal_attn(lctx))
+      {
+        throw app_exception("Image embedding on a causal model requires pooling_type = last");
+      }
+
+      // cli mode lets the server tokenize with the mtmd context
+      const std::string media_marker = get_media_marker();
+      auto texts = prompt.is_array() ? prompt.get<std::vector<std::string>>() : std::vector<std::string>{prompt.get<std::string>()};
+      size_t i_file = 0;
+      for (auto &text : texts)
+      {
+        server_task task = new_task();
+        for (size_t pos = text.find(media_marker); pos != std::string::npos; pos = text.find(media_marker, pos + media_marker.size()))
+        {
+          if (i_file >= input_files.size())
+          {
+            throw app_exception("Not enough media files");
+          }
+          task.cli_files.push_back(std::move(input_files[i_file++]));
+        }
+        // image can not be the last token here, server needs a text token for the final batch
+        if (has_memory && is_last_pooling && string_ends_with(text, media_marker))
+        {
+          text += "\n";
+        }
+        task.cli_prompt = std::move(text);
+        task.cli = true;
+        tasks.push_back(std::move(task));
+      }
+      if (i_file != input_files.size())
+      {
+        throw app_exception("Unused media files");
       }
     }
 
-    std::vector<server_task> tasks;
-    for (size_t i = 0; i < tokenized_prompts.size(); i++)
+    if (tasks.empty())
     {
-      server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
-      task.id = rd.get_new_id();
-      task.tokens = std::move(tokenized_prompts[i]);
-      task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
-      task.params.embd_normalize = embd_normalize;
-      tasks.push_back(std::move(task));
+      throw app_exception("Input content cannot be empty");
     }
+
     rd.post_tasks(std::move(tasks));
   }
 
@@ -732,8 +786,16 @@ struct wllama_context
     glue_msg_embedding_res res;
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-
-    create_embedding_tasks(*rd, req.data_json.value);
+    try
+    {
+      create_embedding_tasks(*rd, req.data_json.value, req.files.arr);
+    }
+    catch (const std::exception &e)
+    {
+      res.success.value = false;
+      res.message.value = e.what();
+      return res;
+    }
 
     res.success.value = true;
     res.req_id.value = register_reader(std::move(rd));
@@ -870,12 +932,23 @@ struct wllama_context
       if (auto *embd = dynamic_cast<server_task_result_embd *>(result.get()))
       {
         (void)embd;
-        // special handling for embeddings OAI-compat
-        json body = {{"model", meta->model_name}};
-        json responses = json::array();
-        responses.push_back(result->to_json());
-        // TODO: support base64 output
-        data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
+        // collect all embeddings of a batch and send them in one response
+        auto &responses = embedding_reqs[req.req_id.value];
+        if (responses.size() <= result->index)
+        {
+          responses.resize(result->index + 1);
+        }
+        responses[result->index] = result->to_json();
+        if (has_more)
+        {
+          result = nullptr;
+        }
+        else
+        {
+          json body = {{"model", meta->model_name}};
+          // TODO: support base64 output
+          data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
+        }
       }
       else if (auto *rerank = dynamic_cast<server_task_result_rerank *>(result.get()))
       {
@@ -916,6 +989,7 @@ struct wllama_context
     {
       readers.erase(it);
       decision_reqs.erase(req.req_id.value);
+      embedding_reqs.erase(req.req_id.value);
     }
     return res;
   }
@@ -931,6 +1005,7 @@ struct wllama_context
       // reader destructor posts cancel tasks; run one loop iteration to release the slot right away
       readers.erase(it);
       decision_reqs.erase(req.req_id.value);
+      embedding_reqs.erase(req.req_id.value);
       run_loop();
     }
 
@@ -1037,12 +1112,25 @@ void server_queue::cleanup_pending_task(int id_target)
 
 void server_queue::defer(server_task &&task)
 {
-  assert(false && "should not be called in wllama");
+  // cli input is already tokenized and cleared, do not tokenize it again on retry
+  task.cli = false;
+  queue_tasks_deferred.push_back(std::move(task));
 }
 
 void server_queue::pop_deferred_task(int id_slot)
 {
-  // no deferred task in wllama, so this is a no-op
+  if (queue_tasks_deferred.empty())
+  {
+    return;
+  }
+  auto it = std::find_if(queue_tasks_deferred.begin(), queue_tasks_deferred.end(), [id_slot](const server_task &task)
+                         { return task.id_slot == id_slot; });
+  if (it == queue_tasks_deferred.end())
+  {
+    it = queue_tasks_deferred.begin();
+  }
+  queue_tasks.emplace_front(std::move(*it));
+  queue_tasks_deferred.erase(it);
 }
 
 void server_queue::wait_until_no_sleep()

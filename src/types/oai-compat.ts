@@ -301,10 +301,29 @@ export interface RawCompletionChunk {
 
 // Embeddings
 
+export type EmbeddingContent =
+  | ChatCompletionMessageText
+  | ChatCompletionMessageImage;
+
+/**
+ * A `EmbeddingContent[]` is one input: its parts are joined with no separator and give one embedding. Use `EmbeddingContent[][]` to get one embedding per entry.
+ */
+export type EmbeddingInput =
+  | string
+  | number[]
+  | string[]
+  | number[][]
+  | EmbeddingContent[]
+  | EmbeddingContent[][];
+
 export interface EmbeddingCreateParams {
-  input: string | string[] | number[] | number[][];
+  input: EmbeddingInput;
   model?: string;
   encoding_format?: 'float' | 'base64';
+  /**
+   * Embedding normalization mode: -1 = none, 0 = max absolute int16, 1 = taxicab, 2 = Euclidean/L2 (default), >2 = p-norm.
+   */
+  embd_normalize?: number;
   // dimensions?: number; // unsupported by llama.cpp
   // user?: string;
 }
