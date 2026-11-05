@@ -617,6 +617,7 @@ struct glue_msg_embedding_res
 {
   GLUE_HANDLER("embd_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
   GLUE_FIELD(int, req_id)
 };
 

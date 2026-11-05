@@ -30,6 +30,27 @@ const SPLIT_MODEL =
 
 const EMBD_MODEL = TINY_MODEL; // for better speed
 
+const VISION_MODEL = {
+  url: 'https://huggingface.co/ggml-org/tinygemma3-GGUF/resolve/main/tinygemma3-Q8_0.gguf',
+  mmprojUrl:
+    'https://huggingface.co/ggml-org/tinygemma3-GGUF/resolve/main/mmproj-tinygemma3.gguf',
+};
+
+const cosineSim = (a: number[], b: number[]) => {
+  const dot = a.reduce((acc, v, i) => acc + v * b[i], 0);
+  const norm = (v: number[]) => Math.sqrt(v.reduce((acc, x) => acc + x * x, 0));
+  return dot / (norm(a) * norm(b));
+};
+
+const createTestImage = async (color: string) => {
+  const canvas = new OffscreenCanvas(32, 32);
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 32, 32);
+  const blob = await canvas.convertToBlob({ type: 'image/png' });
+  return await blob.arrayBuffer();
+};
+
 const RERANK_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/jina-reranker-v1-tiny-en/ggml-model-f16.gguf';
 
@@ -232,6 +253,20 @@ test.sequential('generates embeddings', async () => {
   await expect(
     wllama.createEmbedding({ input: text, embd_normalize: 0.5 })
   ).rejects.toThrow('embd_normalize must be an integer');
+  await expect(
+    wllama.createEmbedding({ input: text, embd_normalize: -2 })
+  ).rejects.toThrow('embd_normalize must be an integer');
+  await expect(
+    wllama.createEmbedding({ input: [{ type: 'text' } as any] })
+  ).rejects.toThrow('Text input must contain a string');
+  await expect(
+    wllama.createEmbedding({ input: [{ type: 'text', text: '' }] })
+  ).rejects.toThrow('Input content cannot be empty');
+  await expect(
+    wllama.createEmbedding({
+      input: [{ type: 'image', data: new ArrayBuffer(8) }],
+    })
+  ).rejects.toThrow('Image input is not supported');
 
   const res = await wllama.createEmbedding({ input: text });
 
@@ -252,6 +287,96 @@ test.sequential('generates embeddings', async () => {
   const cosineSim = dot / (norm1 * norm2);
   expect(cosineSim).toBeGreaterThan(1 - 0.05);
   expect(cosineSim).toBeLessThan(1);
+
+  await wllama.exit();
+});
+
+test.sequential('embeds more inputs than n_parallel', async () => {
+  const wllama = createWllama();
+
+  await wllama.loadModelFromUrl(EMBD_MODEL, {
+    n_ctx: 1024,
+    embeddings: true,
+    n_parallel: 2,
+  });
+
+  const input = ['one', 'two', 'three', 'four', 'five'];
+  const res = await wllama.createEmbedding({ input });
+  expect(res.data.map((d) => d.index)).toEqual([0, 1, 2, 3, 4]);
+
+  const single = await wllama.createEmbedding({ input: input[3] });
+  expect(
+    cosineSim(
+      res.data[3].embedding as number[],
+      single.data[0].embedding as number[]
+    )
+  ).toBeGreaterThan(0.99);
+
+  await wllama.exit();
+});
+
+test.sequential(
+  'embeds images',
+  async () => {
+    const wllama = createWllama();
+
+    await wllama.loadModelFromUrl(VISION_MODEL, {
+      n_ctx: 1024,
+      embeddings: true,
+      pooling_type: 'last',
+      n_parallel: 2,
+      n_threads: 1, // TODO: image encode hangs on CPU with multiple threads
+    });
+
+    const data = await createTestImage('red');
+    const image = { type: 'image' as const, data };
+    const text = { type: 'text' as const, text: 'a picture' };
+
+    const ref = await wllama.createEmbedding({ input: [image, text] });
+    const refEmbd = ref.data[0].embedding as number[];
+    expect(ref.data.length).toBe(1);
+
+    // a prompt that ends with an image must not abort
+    const res = await wllama.createEmbedding({ input: [text, image] });
+    expect((res.data[0].embedding as number[]).length).toBe(refEmbd.length);
+
+    // more requests than slots: the extra ones wait for a free slot and keep their image
+    const all = await Promise.all(
+      [0, 1, 2, 3].map(() => wllama.createEmbedding({ input: [image, text] }))
+    );
+    for (const r of all) {
+      expect(
+        cosineSim(r.data[0].embedding as number[], refEmbd)
+      ).toBeGreaterThan(0.99);
+    }
+
+    // one embedding per entry
+    const batch = await wllama.createEmbedding({
+      input: [[image, text], [{ type: 'text', text: 'no image here' }]],
+    });
+    expect(batch.data.length).toBe(2);
+    expect(
+      cosineSim(batch.data[0].embedding as number[], refEmbd)
+    ).toBeGreaterThan(0.99);
+
+    await wllama.exit();
+  },
+  120000
+);
+
+test.sequential('rejects images if pooling loses them', async () => {
+  const wllama = createWllama();
+
+  await wllama.loadModelFromUrl(VISION_MODEL, {
+    n_ctx: 1024,
+    embeddings: true,
+    pooling_type: 'mean',
+  });
+
+  const data = await createTestImage('red');
+  await expect(
+    wllama.createEmbedding({ input: [{ type: 'image', data }] })
+  ).rejects.toThrow('requires pooling_type = last');
 
   await wllama.exit();
 });

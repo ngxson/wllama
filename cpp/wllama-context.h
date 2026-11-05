@@ -708,94 +708,68 @@ struct wllama_context
 
     std::vector<server_task> tasks;
 
-    auto add_task = [&](server_tokens &&tokens) {
-      if (tokens.empty())
-      {
-        throw app_exception("Input content cannot be empty");
-      }
-      server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
-      task.id = rd.get_new_id();
-      task.tokens = std::move(tokens);
-      task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
-      task.params.embd_normalize = embd_normalize;
-      tasks.push_back(std::move(task));
-    };
-
-    // cli mode lets the server tokenize with the mtmd context
-    auto add_cli_task = [&](std::string text, std::vector<raw_buffer> &&files) {
+    auto new_task = [&]() {
       server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
       task.id = rd.get_new_id();
       task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
       task.params.embd_normalize = embd_normalize;
-      task.cli_prompt = std::move(text);
-      task.cli_files = std::move(files);
-      task.cli = true;
-      tasks.push_back(std::move(task));
+      return task;
     };
 
-    const std::string media_marker = get_media_marker();
-
-    auto add_content = [&](const json &content) {
-      std::string text;
-      std::vector<raw_buffer> entry_files;
-
-      for (const auto &part : content)
-      {
-        const std::string type = json_value(part, "type", std::string());
-        if (type == "text")
-        {
-          text += json_value(part, "text", std::string());
-        }
-        else if (type == "image")
-        {
-          // native image input: the binary payload is sent via req.files
-          if (input_files.empty())
-          {
-            throw app_exception("Not enough media files");
-          }
-          entry_files.push_back(std::move(input_files.front()));
-          input_files.erase(input_files.begin());
-          text += media_marker;
-        }
-      }
-
-      if (entry_files.empty())
-      {
-        add_task(tokenize_input_subprompt(vocab, nullptr, text, true, true, mtmd_helper_init_opt_default()));
-      }
-      else
-      {
-        add_cli_task(std::move(text), std::move(entry_files));
-      }
-    };
-
-    if (prompt.is_array() && !prompt.empty() &&
-        std::all_of(prompt.begin(), prompt.end(), [](const json &p) {
-          if (!p.is_object() || !p.contains("type"))
-          {
-            return false;
-          }
-          const std::string type = json_value(p, "type", std::string());
-          return type == "text" || type == "image";
-        }))
+    if (input_files.empty())
     {
-      add_content(prompt);
-    }
-    else if (prompt.is_array() && !json_is_array_and_contains_numbers(prompt))
-    {
-      for (const auto &p : prompt)
+      auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
+      for (auto &tokens : tokenized_prompts)
       {
-        add_task(tokenize_input_subprompt(vocab, nullptr, p, true, true, mtmd_helper_init_opt_default()));
+        if (tokens.empty())
+        {
+          throw app_exception("Input content cannot be empty");
+        }
+        server_task task = new_task();
+        task.tokens = std::move(tokens);
+        tasks.push_back(std::move(task));
       }
     }
     else
     {
-      add_task(tokenize_input_subprompt(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default()));
-    }
+      llama_context *lctx = ctx_server.get_llama_context();
+      const bool has_memory = llama_get_memory(lctx) != nullptr;
+      const bool is_last_pooling = llama_pooling_type(lctx) == LLAMA_POOLING_TYPE_LAST;
 
-    if (!input_files.empty())
-    {
-      throw app_exception("Unused media files");
+      // server decodes image in its own batch here, so pooled output has only the text tokens
+      if (has_memory && !is_last_pooling && llama_get_causal_attn(lctx))
+      {
+        throw app_exception("Image embedding on a causal model requires pooling_type = last");
+      }
+
+      // cli mode lets the server tokenize with the mtmd context
+      const std::string media_marker = get_media_marker();
+      auto texts = prompt.is_array() ? prompt.get<std::vector<std::string>>() : std::vector<std::string>{prompt.get<std::string>()};
+      size_t i_file = 0;
+      for (auto &text : texts)
+      {
+        server_task task = new_task();
+        for (size_t pos = text.find(media_marker); pos != std::string::npos; pos = text.find(media_marker, pos + media_marker.size()))
+        {
+          if (i_file >= input_files.size())
+          {
+            throw app_exception("Not enough media files");
+          }
+          task.cli_files.push_back(std::move(input_files[i_file++]));
+        }
+        // image can not be the last token here, server needs a text token for the final batch
+        if (has_memory && is_last_pooling && string_ends_with(text, media_marker))
+        {
+          text += "\n";
+        }
+        task.cli_prompt = std::move(text);
+        task.cli = true;
+        tasks.push_back(std::move(task));
+      }
+      if (i_file != input_files.size())
+      {
+        throw app_exception("Unused media files");
+      }
     }
 
     if (tasks.empty())
@@ -812,13 +786,16 @@ struct wllama_context
     glue_msg_embedding_res res;
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-    std::vector<raw_buffer> input_files;
-    for (const auto &file : req.files.arr)
+    try
     {
-      input_files.push_back(file);
+      create_embedding_tasks(*rd, req.data_json.value, req.files.arr);
     }
-
-    create_embedding_tasks(*rd, req.data_json.value, input_files);
+    catch (const std::exception &e)
+    {
+      res.success.value = false;
+      res.message.value = e.what();
+      return res;
+    }
 
     res.success.value = true;
     res.req_id.value = register_reader(std::move(rd));
@@ -968,14 +945,9 @@ struct wllama_context
         }
         else
         {
-          json ordered = json::array();
-          for (auto &item : responses)
-          {
-            ordered.push_back(std::move(item));
-          }
           json body = {{"model", meta->model_name}};
           // TODO: support base64 output
-          data_json = format_embeddings_response_oaicompat(body, meta->model_name, ordered, false);
+          data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
         }
       }
       else if (auto *rerank = dynamic_cast<server_task_result_rerank *>(result.get()))
@@ -1140,12 +1112,25 @@ void server_queue::cleanup_pending_task(int id_target)
 
 void server_queue::defer(server_task &&task)
 {
-  assert(false && "should not be called in wllama");
+  // cli input is already tokenized and cleared, do not tokenize it again on retry
+  task.cli = false;
+  queue_tasks_deferred.push_back(std::move(task));
 }
 
 void server_queue::pop_deferred_task(int id_slot)
 {
-  // no deferred task in wllama, so this is a no-op
+  if (queue_tasks_deferred.empty())
+  {
+    return;
+  }
+  auto it = std::find_if(queue_tasks_deferred.begin(), queue_tasks_deferred.end(), [id_slot](const server_task &task)
+                         { return task.id_slot == id_slot; });
+  if (it == queue_tasks_deferred.end())
+  {
+    it = queue_tasks_deferred.begin();
+  }
+  queue_tasks.emplace_front(std::move(*it));
+  queue_tasks_deferred.erase(it);
 }
 
 void server_queue::wait_until_no_sleep()

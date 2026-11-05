@@ -46,6 +46,9 @@ import type {
   RerankResponse,
   SystemOneParams,
   SystemOneResponse,
+  ChatCompletionMessageContent,
+  ChatCompletionMessageText,
+  EmbeddingInput,
 } from './types/oai-compat';
 import { LogLevel } from './types/types';
 import { getHFModelSource, type HuggingFaceParams } from './huggingface';
@@ -656,50 +659,28 @@ export class Wllama {
 
     if (
       options.embd_normalize !== undefined &&
-      !Number.isInteger(options.embd_normalize)
+      (!Number.isInteger(options.embd_normalize) || options.embd_normalize < -1)
     ) {
       throw new WllamaError(
-        'embd_normalize must be an integer',
+        'embd_normalize must be an integer >= -1',
         'inference_error'
       );
     }
 
-    const files: ArrayBuffer[] = [];
-    const isContentPart = (entry: unknown): entry is EmbeddingContent =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      'type' in entry &&
-      (entry.type === 'text' || entry.type === 'image');
-    if (
-      Array.isArray(options.input) &&
-      options.input.length > 0 &&
-      options.input.every(isContentPart)
-    ) {
-      for (const c of options.input as EmbeddingContent[]) {
-        if (c.type === 'image') {
-          if (!(c.data instanceof ArrayBuffer)) {
-            throw new WllamaError(
-              'Image input must contain an ArrayBuffer in "data"',
-              'inference_error'
-            );
-          }
-          files.push(c.data);
-        }
-      }
-    }
+    const { input, files } = this.prepareEmbeddingInput(options.input);
 
     const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
       'embedding',
       {
         _name: 'embd_req',
-        data_json: JSON.stringify(options),
+        data_json: JSON.stringify({ ...options, input }),
         files: files.map((f) => new Uint8Array(f)),
       }
     );
 
     if (!result.success) {
       throw new WllamaError(
-        'Model failed to start inference',
+        result.message || 'Model failed to start inference',
         'inference_error'
       );
     }
@@ -1034,6 +1015,22 @@ export class Wllama {
     }
   }
 
+  private replaceMedia(
+    content: ChatCompletionMessageContent[],
+    files: ArrayBuffer[]
+  ): ChatCompletionMessageText[] {
+    return content.map((c) => {
+      if (c.type === 'text') {
+        return c;
+      }
+      if (!this.mediaMarker) {
+        throw new WllamaError('Media marker is undefined', 'inference_error');
+      }
+      files.push(c.data);
+      return { type: 'text', text: this.mediaMarker };
+    });
+  }
+
   private prepareMultimodalInput(params: ChatCompletionParams): {
     params: ChatCompletionParams;
     files: ArrayBuffer[];
@@ -1043,29 +1040,9 @@ export class Wllama {
     const files: ArrayBuffer[] = [];
     for (const m of msg) {
       if (Array.isArray(m.content)) {
-        const newContent: typeof m.content = [];
-        for (const c of m.content) {
-          if (c.type === 'text') {
-            // no transform for text content
-            newContent.push(c);
-          } else {
-            // replace multimodal input with media marker
-            if (!this.mediaMarker) {
-              throw new WllamaError(
-                'Media marker is undefined',
-                'inference_error'
-              );
-            }
-            files.push(c.data);
-            newContent.push({
-              type: 'text',
-              text: this.mediaMarker,
-            });
-          }
-        }
         msgNew.push({
           ...m,
-          content: newContent,
+          content: this.replaceMedia(m.content, files),
         } as ChatCompletionUserMessage);
       } else {
         // no transform for non-typed content
@@ -1079,6 +1056,59 @@ export class Wllama {
       },
       files,
     };
+  }
+
+  private prepareEmbeddingInput(input: EmbeddingInput): {
+    input: EmbeddingInput;
+    files: ArrayBuffer[];
+  } {
+    const files: ArrayBuffer[] = [];
+    const isContentPart = (entry: unknown): entry is EmbeddingContent =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      'type' in entry &&
+      (entry.type === 'text' || entry.type === 'image');
+    const isContent = (entry: unknown): entry is EmbeddingContent[] =>
+      Array.isArray(entry) && entry.length > 0 && entry.every(isContentPart);
+    const toText = (content: EmbeddingContent[]): string => {
+      if (
+        content.some((c) => c.type === 'text' && typeof c.text !== 'string')
+      ) {
+        throw new WllamaError(
+          'Text input must contain a string in "text"',
+          'inference_error'
+        );
+      }
+      const text = this.replaceMedia(content, files)
+        .map((c) => c.text)
+        .join('');
+      if (text.length === 0) {
+        throw new WllamaError(
+          'Input content cannot be empty',
+          'inference_error'
+        );
+      }
+      return text;
+    };
+
+    let prepared = input;
+    if (isContent(input)) {
+      prepared = toText(input);
+    } else if (
+      Array.isArray(input) &&
+      input.length > 0 &&
+      (input as unknown[]).every(isContent)
+    ) {
+      prepared = (input as EmbeddingContent[][]).map(toText);
+    }
+
+    if (files.length > 0 && !this.supportInputModality('image')) {
+      throw new WllamaError(
+        'Image input is not supported by the loaded model',
+        'inference_error'
+      );
+    }
+    return { input: prepared, files };
   }
 
   // release the slot occupied by the request; cancelling an already-finished request is a no-op

@@ -519,6 +519,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "str",
+        "name": "message",
+        "isNullable": false
+      },
+      {
         "type": "int",
         "name": "req_id",
         "isNullable": false
@@ -803,6 +808,7 @@ export interface GlueMsgEmbeddingReq {
 export interface GlueMsgEmbeddingRes {
   _name: "embd_res";
   success: boolean;
+  message: string;
   req_id: number;
 }
 
