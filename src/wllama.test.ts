@@ -325,7 +325,7 @@ test.sequential(
       embeddings: true,
       pooling_type: 'last',
       n_parallel: 2,
-      n_threads: 1, // TODO: image encode hangs on CPU with multiple threads
+      n_threads: 4,
     });
 
     const data = await createTestImage('red');
