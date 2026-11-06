@@ -67,6 +67,24 @@ extern "C" void __wrap_abort(void)
   __real_abort();
 }
 
+// graphs with no pool (clip, draft model) use this pool. A second pool needs more workers, and a new worker cannot start while the main thread waits at a barrier
+static struct ggml_threadpool *shared_threadpool = nullptr;
+
+extern "C" struct ggml_threadpool *__real_ggml_threadpool_new(struct ggml_threadpool_params *params);
+extern "C" struct ggml_threadpool *__wrap_ggml_threadpool_new(struct ggml_threadpool_params *params)
+{
+  shared_threadpool = __real_ggml_threadpool_new(params);
+  return shared_threadpool;
+}
+
+extern "C" void __real_ggml_threadpool_free(struct ggml_threadpool *threadpool);
+extern "C" void __wrap_ggml_threadpool_free(struct ggml_threadpool *threadpool)
+{
+  if (threadpool == shared_threadpool)
+    shared_threadpool = nullptr;
+  __real_ggml_threadpool_free(threadpool);
+}
+
 static bool force_single_thread = false;
 extern "C" struct ggml_cplan __real_ggml_graph_plan(
     const struct ggml_cgraph *cgraph,
@@ -78,7 +96,7 @@ extern "C" struct ggml_cplan __wrap_ggml_graph_plan(
     int n_threads,
     struct ggml_threadpool *threadpool)
 {
-  return __real_ggml_graph_plan(cgraph, force_single_thread ? 1 : n_threads, threadpool);
+  return __real_ggml_graph_plan(cgraph, force_single_thread ? 1 : n_threads, threadpool ? threadpool : shared_threadpool);
 }
 
 inline std::vector<char> convert_string_to_buf(std::string &input)
@@ -821,7 +839,7 @@ struct wllama_context
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
 
-    auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document, mtmd_helper_init_opt_default());
+    auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document, {}, {}, mtmd_helper_init_opt_default());
     server_task task = server_task(SERVER_TASK_TYPE_RERANK);
     task.id = rd->get_new_id();
     task.index = 0;
