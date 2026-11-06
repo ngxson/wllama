@@ -77,23 +77,15 @@ jobs:
         if: steps.upstream.outputs.changed == 'true'
         uses: actions/cache/restore@v4
         with:
-          path: |
-            build
-            build-compat
+          path: build
           key: wasm-sync-${{ runner.os }}-${{ steps.upstream.outputs.short }}-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
             wasm-sync-${{ runner.os }}-
 
       - name: Skip the compat build
         if: steps.upstream.outputs.changed == 'true'
-        run: |
-          # the compat build doubles the build time. It is only safe to skip when the cached
-          # build-compat dir is there, otherwise the generated source map loses its compat half
-          if [ -d build-compat ]; then
-            echo "SKIP_COMPAT=1" >> $GITHUB_ENV
-          else
-            echo "no cached build-compat, doing a full build"
-          fi
+        # the compat build doubles the build time
+        run: echo "SKIP_COMPAT=1" >> $GITHUB_ENV
 
       - name: Install
         if: steps.upstream.outputs.changed == 'true'
@@ -175,16 +167,13 @@ jobs:
         continue-on-error: true
         run: ./scripts/sync_upstream.sh && npm run build && npm run test
 
-      # save even when something above failed, otherwise the next run loses the warm build-compat
-      # dir and has to do the slow full build again
-      - name: Save wasm build directories
+      # save even when something above failed, otherwise the next run loses the warm build dir
+      - name: Save wasm build directory
         if: always() && steps.upstream.outputs.changed == 'true'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
-          path: |
-            build
-            build-compat
+          path: build
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
       - name: Bump minor version

@@ -13,7 +13,6 @@
 
 import { glueDeserialize, glueSerialize } from './glue/glue';
 import type { GlueMsg } from './glue/messages';
-import { Debug } from './debug';
 import {
   canUseAsyncFileRead,
   createWorker,
@@ -368,7 +367,6 @@ export class ProxyToWorker {
   private onRecvMsg(e: MessageEvent<any>) {
     if (!e.data) return; // ignore
     const { verb, args } = e.data;
-    const isCompatBuild = this.resources.compat;
     if (verb && verb.startsWith('console.')) {
       if (this.suppressNativeLog) {
         return;
@@ -388,22 +386,19 @@ export class ProxyToWorker {
       if (originalErr) {
         this.logger.error(originalErr);
       }
-      (async () => {
-        let stack = '';
-        let newMsg = message.replace(
-          'Build with -sASSERTIONS for more info.',
-          ''
-        );
-        if (signalType === 'abort') {
-          newMsg = `(ABORT) ${newMsg}`;
-          stack = rawStack.replace(/\|/g, '\n');
-        } else if (signalType === 'exception') {
-          stack = rawStack;
-        }
-        const decoded = await Debug.decodeStackTrace(stack, isCompatBuild);
-        this.logger.error(`Stack trace (${signalType}):\n` + decoded);
-        this.abort(newMsg, decoded);
-      })();
+      let stack = '';
+      let newMsg = message.replace(
+        'Build with -sASSERTIONS for more info.',
+        ''
+      );
+      if (signalType === 'abort') {
+        newMsg = `(ABORT) ${newMsg}`;
+        stack = rawStack.replace(/\|/g, '\n');
+      } else if (signalType === 'exception') {
+        stack = rawStack;
+      }
+      this.logger.error(`Stack trace (${signalType}):\n` + stack);
+      this.abort(newMsg, stack);
       return;
     }
 

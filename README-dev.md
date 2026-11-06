@@ -98,21 +98,16 @@ These steps are performed:
 
 The main downside of this approach is that on WebGPU, even though some tensors can be offloaded to the GPU, we still need to allocate the full model in main memory. For example, a 4GB model will still occupy 4GB of main memory, even if half of the layers (~2GB) are offloaded to the GPU.
 
-## Compressed source map
+## Function names in stack traces
 
-Emscripten's `--emit-symbol-map` flag produces a `.js.symbols` file mapping each wasm function index to its demangled C++ name. `scripts/build_source_map.js` reads this file alongside the `.wasm` binary and produces a single TypeScript file (`src/wasm/source-map.ts`) containing a compact deduplicated name table per build, gzip-compressed and base64-encoded.
+The release wasm has no debug info, so `scripts/add_wasm_names.js` adds a standard wasm `name` section with cleaned names after each build. Browsers read this section themselves, so a stack trace shows `server_response::send` without any decoding in JS.
 
-The script runs automatically as part of the docker build (see `scripts/docker-compose.yml`). It can also be run manually:
+Emscripten's `--emit-symbol-map` flag produces a `.js.symbols` file mapping each wasm function index to its demangled C++ name. The script reads this file from the build directory and writes the result to `src/wasm/` or `compat/wasm/`. It always reads from the build directory, so running it twice does not add a second section.
+
+The script runs as part of the docker build (see `scripts/docker-compose.yml`). It can also be run by hand:
 
 ```sh
-# uses build/ and build-compat/ by default
-node scripts/build_source_map.js
-
-# or with explicit paths
-node scripts/build_source_map.js \
-  --input default:build \
-  --input compat:build-compat \
-  --output src/wasm/source-map.ts
+node scripts/add_wasm_names.js build/wllama.wasm src/wasm/wllama.wasm
 ```
 
 ### Name cleaning rules
@@ -120,37 +115,13 @@ node scripts/build_source_map.js \
 Raw demangled names can be hundreds of characters. The following rules are applied in order:
 
 1. **std:: collapse** - any name starting with `std::` is replaced with the single hint `std::...`
-2. **Lambda/closure extraction** - names containing `::$_N` or `::'lambda'` are replaced with the nearest enclosing context (the segment inside the last `<…>` before the marker)
+2. **Lambda/closure extraction** - names containing `::$_N` or `::'lambda'` are replaced with the nearest enclosing context (the segment inside the last `<...>` before the marker)
 3. **Parameter stripping** - parameter lists are dropped; empty `()` is kept, non-empty is removed entirely
 4. **libc++ internals** - `::__1::`, `::__2::`, etc. are collapsed to `::`
-5. **ABI tags** - `[abi:…]` annotations are removed
+5. **ABI tags** - `[abi:...]` annotations are removed
 6. **Template truncation** - template argument content longer than 10 characters is truncated to `<first10chars...>`
 7. **Final cleanup** - double `::::` collapsed, whitespace normalised
 
-### Binary format (before gzip)
-
-All integers are little-endian.
-
-```
-┌──────────────────────────────────────────────────────────┐
-│ HEADER (12 bytes)                                        │
-│   u32  first_func_id  - wasm function index of entry 0  │
-│   u32  num_funcs      - number of functions              │
-│   u32  num_names      - number of unique names           │
-├──────────────────────────────────────────────────────────┤
-│ NAME TABLE  (num_names entries)                          │
-│   for each name:                                         │
-│     u8   length       - byte length of name (max 254)   │
-│     u8[] name         - UTF-8 string (no null term)      │
-├──────────────────────────────────────────────────────────┤
-│ INDEX ARRAY  (num_funcs × u16)                           │
-│   u16  name_idx       - index into name table            │
-│                         0xFFFF = no name / unknown       │
-└──────────────────────────────────────────────────────────┘
-```
-
-To decode at runtime: base64-decode -> `DecompressionStream('gzip')` -> parse binary. Given a wasm function index `id`, look up `index_array[id - first_func_id]` to get the name table slot.
-%
 ## Debugging backend ops
 
 > [!IMPORTANT]
