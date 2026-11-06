@@ -1,5 +1,5 @@
 // See: https://vitejs.dev/guide/assets#explicit-url-imports
-import wllamaWasm from '@wllama/wllama/src/wasm/wllama.wasm?url';
+import wllamaWasm from '@wllama/wllama/esm/wasm/wllama.wasm?url';
 import wllamaPackageJson from '@wllama/wllama/package.json';
 import compatConfig from 'virtual:wllama-compat';
 import { InferenceParams } from './utils/types';

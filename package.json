@@ -2,8 +2,18 @@
   "name": "@wllama/wllama",
   "version": "3.12.0",
   "description": "WebAssembly binding for llama.cpp - Enabling on-browser LLM inference",
-  "main": "index.js",
+  "main": "esm/index.cjs",
+  "module": "esm/index.js",
+  "types": "esm/index.d.ts",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "import": "./esm/index.js",
+      "require": "./esm/index.cjs"
+    },
+    "./*": "./*"
+  },
   "directories": {
     "example": "examples"
   },
@@ -13,7 +23,7 @@
     "clean": "rm -rf ./esm && rm -rf ./docs && rm -rf ./wasm",
     "build:worker": "./scripts/build_worker.sh",
     "build:glue": "node ./cpp/generate_glue_prototype.js",
-    "build:wasm": "./scripts/build_wasm.sh && npm run build:glue",
+    "build:wasm": "./scripts/build_wasm.sh && npm run build:glue && npm run build:worker",
     "build:test": "WLLAMA_TEST_BACKEND=1 npm run build:wasm",
     "build:tsup": "tsup src/index.ts --format cjs,esm --clean",
     "build:minified": "terser esm/index.js -o esm/index.min.js --compress --mangle --source-map",

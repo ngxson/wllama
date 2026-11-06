@@ -122,6 +122,14 @@ Raw demangled names can be hundreds of characters. The following rules are appli
 6. **Template truncation** - template argument content longer than 10 characters is truncated to `<first10chars...>`
 7. **Final cleanup** - double `::::` collapsed, whitespace normalised
 
+## Version check
+
+`LIBLLAMA_VERSION` exists on both sides: `scripts/build_worker.sh` writes it to `src/workers-code/generated.ts`, and `CMakeLists.txt` compiles it into the wasm. `wllama_start()` returns the wasm version, and `Wllama` raises a `version_mismatch` error before it loads the model if the two commits differ. Set `WllamaConfig.skipVersionCheck` to get a warning instead.
+
+Only the commit is compared, because the build number is wrong in a shallow clone.
+
+`scripts/check_wasm_version.js` does the same check on the wasm files without running them. CI runs it before `npm run build`, and `scripts/check_package_size.js` runs it before publish. Publish also requires the compat wasm, so a build with `SKIP_COMPAT=1` cannot be published.
+
 ## Debugging backend ops
 
 > [!IMPORTANT]
