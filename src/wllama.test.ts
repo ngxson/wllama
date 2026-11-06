@@ -1,4 +1,4 @@
-import { test, expect, beforeEach } from 'vitest';
+import { test, expect, beforeEach, vi } from 'vitest';
 
 declare const __GITHUB_CI__: boolean;
 
@@ -567,6 +567,31 @@ test.sequential('generates chat completion using async iterator', async () => {
   expect(finalText).toMatch(/(Sudden|big|scary)+/);
 
   await wllama.exit();
+});
+
+test('checks wasm version', async () => {
+  const check = (version?: string, options: WllamaConfig = {}) =>
+    (createWllama(CONFIG_PATHS, options) as any).checkWasmVersion(version);
+  const expected = Wllama.getLibllamaVersion();
+  const commit = expected.split('-').pop();
+
+  await expect(check(expected)).resolves.toBeUndefined();
+  // the build number is wrong in a shallow clone
+  await expect(check(`b1-${commit}`)).resolves.toBeUndefined();
+
+  const mismatch = { type: 'version_mismatch' };
+  await expect(check('b1-0000000')).rejects.toMatchObject(mismatch);
+  // a wasm file from before the version check
+  await expect(check(undefined)).rejects.toMatchObject(mismatch);
+
+  const warn = vi.fn();
+  await expect(
+    check('b1-0000000', {
+      skipVersionCheck: true,
+      logger: { ...console, warn },
+    })
+  ).resolves.toBeUndefined();
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('b1-0000000'));
 });
 
 test.sequential('stack trace (abort)', async () => {

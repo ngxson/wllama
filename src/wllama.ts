@@ -91,6 +91,12 @@ export interface WllamaConfig {
    * Custom model manager (only for advanced usage)
    */
   modelManager?: ModelManager;
+  /**
+   * If true, allow a wasm file built from a different llama.cpp version
+   *
+   * Default: skipVersionCheck = false
+   */
+  skipVersionCheck?: boolean;
 }
 
 export interface WllamaChatMessage {
@@ -126,6 +132,7 @@ export type WllamaErrorType =
   | 'model_not_loaded'
   | 'download_error'
   | 'load_error'
+  | 'version_mismatch'
   | 'kv_cache_full'
   | 'unknown_error'
   | 'inference_error';
@@ -521,6 +528,7 @@ export class Wllama {
         `Error while calling start function, result = ${startResult}`
       );
     }
+    await this.checkWasmVersion(startResult.version);
 
     // load the model
     this.logger().debug('Loading model...');
@@ -1228,6 +1236,24 @@ export class Wllama {
     }
 
     return finalResult;
+  }
+
+  private async checkWasmVersion(wasmVersion?: string) {
+    // compare the commit only, the build number is wrong in a shallow clone
+    const getCommit = (version?: string) => version?.split('-').pop();
+    if (getCommit(wasmVersion) === getCommit(LIBLLAMA_VERSION)) {
+      return;
+    }
+    const message = `wasm file version (${wasmVersion ?? 'unknown'}) does not match the expected version (${LIBLLAMA_VERSION})`;
+    if (this.config.skipVersionCheck) {
+      this.logger().warn(message);
+      return;
+    }
+    await this.exit();
+    throw new WllamaError(
+      `${message}. Use the wasm file from the same release, or set skipVersionCheck to ignore this error`,
+      'version_mismatch'
+    );
   }
 
   getWorkerResources(): WllamaWorkerResources {

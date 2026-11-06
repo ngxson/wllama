@@ -16,11 +16,11 @@ fi
 
 function patch_esm_import_js {
   if [[ "$OSTYPE" == "darwin"* ]]; then
-    find $1 -name "*.js" -exec sed -i '' -E "s#export (.*) from '\.(.*)';#export \1 from '.\2\.js';#g" {} +;
-    find $1 -name "*.js" -exec sed -i '' -E "s#import (.*) from '\.(.*)';#import \1 from '.\2\.js';#g" {} +;
+    find $1 \( -name "*.js" -o -name "*.d.ts" \) -exec sed -i '' -E "s#export (.*) from '\.(.*)';#export \1 from '.\2\.js';#g" {} +;
+    find $1 \( -name "*.js" -o -name "*.d.ts" \) -exec sed -i '' -E "s#import (.*) from '\.(.*)';#import \1 from '.\2\.js';#g" {} +;
   else
-    find $1 -name "*.js" -exec sed -i -E "s#export (.*) from '\.(.*)';#export \1 from '.\2\.js';#g" {} +;
-    find $1 -name "*.js" -exec sed -i -E "s#import (.*) from '\.(.*)';#import \1 from '.\2\.js';#g" {} +;
+    find $1 \( -name "*.js" -o -name "*.d.ts" \) -exec sed -i -E "s#export (.*) from '\.(.*)';#export \1 from '.\2\.js';#g" {} +;
+    find $1 \( -name "*.js" -o -name "*.d.ts" \) -exec sed -i -E "s#import (.*) from '\.(.*)';#import \1 from '.\2\.js';#g" {} +;
   fi
 }
 
