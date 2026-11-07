@@ -38,3 +38,4 @@ Expected output ends with `== ALL OK`.
 - `call_action()` + `set_all_null()` mimic the JS glue encoder: null every field first, then set `value` **and** `dtype` for each field you need (fields default to "present", and e.g. an empty `pooling_type` string would be parsed and rejected).
 - The stubs at the top replace emscripten-only symbols and the build-info / `common_log` functions that the wasm link resolves differently; if the linker reports a new undefined symbol after a llama.cpp sync, add a stub for it there.
 - Keep the source lists in `CMakeLists.txt` in sync with the root `CMakeLists.txt` when the wasm build's file lists change.
+- The `-Wl,--wrap` options of the wasm link are not used here (the macOS linker does not have them), so the `__wrap_*` functions are never called. The `__real_*` stubs only make it link. TTS and realtime need the mtmd context that `__wrap_mtmd_init_from_file` records, so they do not work in this harness.

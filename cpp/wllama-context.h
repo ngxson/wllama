@@ -1364,6 +1364,14 @@ struct wllama_context
       return res;
     }
 
+    // a session holds its slot until it is closed, the start would wait forever for a free one
+    if ((int)realtime_sessions.size() >= params.n_parallel)
+    {
+      res.success.value = false;
+      res.message.value = "No free slot, close a realtime session first";
+      return res;
+    }
+
     json body = json::parse(req.data_json.value);
     common_params_sampling sampling = params.sampling;
     sampling.seed = json_value(body, "seed", sampling.seed);

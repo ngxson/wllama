@@ -877,11 +877,39 @@ test.sequential(
   'stops speech on abort',
   async () => {
     const wllama = await loadAudioModel();
+    const aborted = new AbortController();
+    aborted.abort();
+    const err = await wllama
+      .createSpeech({ input: 'Hello', abortSignal: aborted.signal })
+      .catch((e: unknown) => e);
+    expect((err as Error).name).toBe('AbortError');
+
+    // abort while the request is being read, then the slots must still be free
+    for (let i = 0; i < 6; i++) {
+      const abort = new AbortController();
+      const stream = await wllama.createSpeech({
+        input: 'Hello world',
+        response_format: 'pcm',
+        stream: true,
+        abortSignal: abort.signal,
+      });
+      const err = await (async () => {
+        for await (const _ of stream) {
+          abort.abort();
+        }
+      })().catch((e: unknown) => e);
+      expect((err as Error).name).toBe('AbortError');
+    }
+    // a stream that is never read is cancelled by the abort too
     const abort = new AbortController();
+    await wllama.createSpeech({
+      input: 'Hello world',
+      stream: true,
+      abortSignal: abort.signal,
+    });
     abort.abort();
-    await expect(
-      wllama.createSpeech({ input: 'Hello', abortSignal: abort.signal })
-    ).rejects.toThrow();
+    const res = await wllama.createSpeech({ input: 'Hi', n_predict: 4 });
+    expect(res.audio.byteLength).toBeGreaterThan(44);
     await wllama.exit();
   },
   120000
@@ -947,6 +975,9 @@ test.sequential.each([1, 2, 4])(
       e.type.endsWith('input_audio_transcription.completed')
     );
     expect(events.filter((e) => e.type === 'error')).toEqual([]);
+    expect(events.at(-1)!.type).toBe(
+      'conversation.item.input_audio_transcription.completed'
+    );
     await session.close();
     await wllama.exit();
   },
@@ -1229,6 +1260,40 @@ test.sequential(
 
     await live.close();
     await session.close();
+    await wllama.exit();
+  },
+  120000
+);
+
+test.sequential(
+  'keeps unread realtime events for the next reader',
+  async () => {
+    const wllama = await loadAudioModel();
+    const session = await wllama.createRealtimeSession();
+    // session.created and session.updated can come in the same poll
+    await session.send({ type: 'session.update', session: {} });
+    const first = await readUntil(session, (e) => e.type === 'session.created');
+    expect(first.at(-1)!.type).toBe('session.created');
+    const next = await readUntil(session, (e) => e.type === 'session.updated');
+    expect(next.at(-1)!.type).toBe('session.updated');
+    await session.close();
+    await wllama.exit();
+  },
+  120000
+);
+
+test.sequential(
+  'rejects a realtime session when no slot is free',
+  async () => {
+    const wllama = createWllama();
+    await wllama.loadModelFromUrl(AUDIO_MODEL, { n_ctx: 2048, n_parallel: 1 });
+    const first = await wllama.createRealtimeSession();
+    await expect(wllama.createRealtimeSession()).rejects.toThrow(
+      'No free slot'
+    );
+    await first.close();
+    const second = await wllama.createRealtimeSession();
+    await second.close();
     await wllama.exit();
   },
   120000

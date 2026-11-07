@@ -228,6 +228,7 @@ const REALTIME_IDLE_MS = 20;
  */
 export class WllamaRealtimeSession {
   private closed = false;
+  private pending: RealtimeEvent[] = []; // read from the worker, not yet given to a reader
   private wakeUp: () => void = () => {};
 
   constructor(
@@ -269,7 +270,12 @@ export class WllamaRealtimeSession {
    */
   async *events(): AsyncGenerator<RealtimeEvent> {
     let nEmpty = 0;
-    while (!this.closed) {
+    while (this.pending.length > 0 || !this.closed) {
+      // a reader that stops early leaves the rest for the next one
+      if (this.pending.length > 0) {
+        yield this.pending.shift()!;
+        continue;
+      }
       const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
         'get_result',
         { _name: 'gres_req', req_id: this.reqId }
@@ -279,9 +285,7 @@ export class WllamaRealtimeSession {
       }
       if (chunk.data_json) {
         nEmpty = 0;
-        for (const event of JSON.parse(chunk.data_json) as RealtimeEvent[]) {
-          yield event;
-        }
+        this.pending.push(...(JSON.parse(chunk.data_json) as RealtimeEvent[]));
       } else if (++nEmpty > REALTIME_BUSY_POLLS) {
         // nothing to do until the next client event
         await new Promise<void>((resolve) => {
@@ -303,6 +307,7 @@ export class WllamaRealtimeSession {
       return;
     }
     this.closed = true;
+    this.pending = [];
     this.wakeUp();
     await this.proxy.wllamaAction<GlueMsgCancelRes>('cancel', {
       _name: 'cncl_req',
@@ -930,6 +935,9 @@ export class Wllama {
   ): Promise<SpeechResponse | AsyncIterable<SpeechChunk>> {
     this.checkModelLoaded();
     const { speaker_ref, abortSignal, ...params } = options;
+    if (abortSignal?.aborted) {
+      throw new WllamaAbortError();
+    }
     const customOpt = this.seed !== undefined ? { seed: this.seed } : {};
     const result = await this.proxy.wllamaAction<GlueMsgTtsRes>('tts', {
       _name: 'tts__req',
@@ -943,6 +951,12 @@ export class Wllama {
       );
     }
 
+    // the generator only runs once it is read, so cancel from here too
+    abortSignal?.addEventListener(
+      'abort',
+      () => void this.cancelRequest(result.req_id),
+      { once: true }
+    );
     const chunks = this.getSpeechChunks(result.req_id, abortSignal);
     if (options.stream) {
       return chunks;
@@ -1393,6 +1407,9 @@ export class Wllama {
           'get_result',
           { _name: 'gres_req', req_id: reqId }
         );
+        if (abortSignal?.aborted) {
+          throw new WllamaAbortError();
+        }
         completed = !chunk.has_more;
         if (chunk.data_json) {
           const data = this.jsonDecode(chunk.data_json);

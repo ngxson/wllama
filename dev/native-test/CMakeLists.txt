@@ -40,7 +40,6 @@ set(LLAMA_SERVER_SRC
     ${WLLAMA_ROOT}/llama.cpp/tools/server/server-common.cpp
     ${WLLAMA_ROOT}/llama.cpp/tools/server/server-schema.cpp
     ${WLLAMA_ROOT}/llama.cpp/tools/server/server-stream.cpp
-    ${WLLAMA_ROOT}/llama.cpp/tools/server/server-realtime.cpp
 )
 
 include_directories(${WLLAMA_ROOT}/cpp)

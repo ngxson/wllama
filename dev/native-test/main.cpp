@@ -35,6 +35,31 @@ extern "C" void __real_ggml_threadpool_free(struct ggml_threadpool *tp) {
   ggml_threadpool_free(tp);
 }
 
+// the wasm link wraps these too (see the root CMakeLists.txt), here the wraps are not hooked and the real functions are called directly
+#include <pthread.h>
+#include "mtmd.h"
+extern "C" mtmd_context *__real_mtmd_init_from_file(const char *mmproj_fname, const struct llama_model *text_model, const struct mtmd_context_params ctx_params) {
+  return mtmd_init_from_file(mmproj_fname, text_model, ctx_params);
+}
+extern "C" int32_t __real_mtmd_tokenize(mtmd_context *ctx, mtmd_input_chunks *output, const mtmd_input_text *text, const mtmd_bitmap **bitmaps, size_t n_bitmaps) {
+  return mtmd_tokenize(ctx, output, text, bitmaps, n_bitmaps);
+}
+extern "C" int32_t __real_mtmd_audio_stream_push(mtmd_audio_stream *stream, const float *samples, size_t n_samples) {
+  return mtmd_audio_stream_push(stream, samples, n_samples);
+}
+extern "C" int32_t __real_mtmd_audio_stream_flush(mtmd_audio_stream *stream, bool end) {
+  return mtmd_audio_stream_flush(stream, end);
+}
+extern "C" int32_t __real_mtmd_audio_stream_step(mtmd_audio_stream *stream, llama_token last_token) {
+  return mtmd_audio_stream_step(stream, last_token);
+}
+extern "C" int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void *), void *arg) {
+  return pthread_create(thread, attr, start_routine, arg);
+}
+extern "C" int __real_pthread_join(pthread_t thread, void **retval) {
+  return pthread_join(thread, retval);
+}
+
 #include "wllama-context.h"
 
 // common/log.cpp is excluded from the build (wllama-context.h has its own common_log), stub the rest
