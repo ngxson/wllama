@@ -47,12 +47,6 @@ set(WLLAMA_LINK_OPTIONS
     -Wl,--wrap,ggml_threadpool_new
     -Wl,--wrap,ggml_threadpool_free
     -Wl,--wrap,mtmd_init_from_file
-    -Wl,--wrap,mtmd_tokenize
-    -Wl,--wrap,mtmd_audio_stream_push
-    -Wl,--wrap,mtmd_audio_stream_flush
-    -Wl,--wrap,mtmd_audio_stream_step
-    -Wl,--wrap,pthread_create
-    -Wl,--wrap,pthread_join
 )
 
 if (WLLAMA_COMPAT)

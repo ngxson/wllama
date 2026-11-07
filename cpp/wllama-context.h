@@ -9,7 +9,6 @@
 #include <fstream>
 #include <unordered_map>
 #include <algorithm>
-#include <pthread.h>
 
 #include "llama.h"
 #include "common.h"
@@ -96,62 +95,6 @@ extern "C" mtmd_context *__wrap_mtmd_init_from_file(const char *mmproj_fname, co
 {
   shared_mctx = __real_mtmd_init_from_file(mmproj_fname, text_model, ctx_params);
   return shared_mctx;
-}
-
-// audio preprocessing starts 3 threads and joins them, but the pool has no free worker, and a new worker cannot start while we wait
-// so run them in place: each thread works on its own frames, the order does not matter
-#define INLINE_THREAD ((pthread_t)1)
-static bool inline_threads = false;
-struct inline_threads_scope
-{
-  inline_threads_scope() { inline_threads = true; }
-  ~inline_threads_scope() { inline_threads = false; }
-};
-
-extern "C" int __real_pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void *), void *arg);
-extern "C" int __wrap_pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void *), void *arg)
-{
-  if (!inline_threads)
-  {
-    return __real_pthread_create(thread, attr, start_routine, arg);
-  }
-  start_routine(arg);
-  *thread = INLINE_THREAD;
-  return 0;
-}
-
-extern "C" int __real_pthread_join(pthread_t thread, void **retval);
-extern "C" int __wrap_pthread_join(pthread_t thread, void **retval)
-{
-  return thread == INLINE_THREAD ? 0 : __real_pthread_join(thread, retval);
-}
-
-extern "C" int32_t __real_mtmd_tokenize(mtmd_context *ctx, mtmd_input_chunks *output, const mtmd_input_text *text, const mtmd_bitmap **bitmaps, size_t n_bitmaps);
-extern "C" int32_t __wrap_mtmd_tokenize(mtmd_context *ctx, mtmd_input_chunks *output, const mtmd_input_text *text, const mtmd_bitmap **bitmaps, size_t n_bitmaps)
-{
-  inline_threads_scope scope;
-  return __real_mtmd_tokenize(ctx, output, text, bitmaps, n_bitmaps);
-}
-
-extern "C" int32_t __real_mtmd_audio_stream_push(mtmd_audio_stream *stream, const float *samples, size_t n_samples);
-extern "C" int32_t __wrap_mtmd_audio_stream_push(mtmd_audio_stream *stream, const float *samples, size_t n_samples)
-{
-  inline_threads_scope scope;
-  return __real_mtmd_audio_stream_push(stream, samples, n_samples);
-}
-
-extern "C" int32_t __real_mtmd_audio_stream_flush(mtmd_audio_stream *stream, bool end);
-extern "C" int32_t __wrap_mtmd_audio_stream_flush(mtmd_audio_stream *stream, bool end)
-{
-  inline_threads_scope scope;
-  return __real_mtmd_audio_stream_flush(stream, end);
-}
-
-extern "C" int32_t __real_mtmd_audio_stream_step(mtmd_audio_stream *stream, llama_token last_token);
-extern "C" int32_t __wrap_mtmd_audio_stream_step(mtmd_audio_stream *stream, llama_token last_token)
-{
-  inline_threads_scope scope;
-  return __real_mtmd_audio_stream_step(stream, last_token);
 }
 
 static bool force_single_thread = false;

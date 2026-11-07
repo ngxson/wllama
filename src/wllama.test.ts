@@ -948,7 +948,7 @@ test.sequential(
   120000
 );
 
-// audio preprocessing wants 3 more threads than the pool has, see inline_threads
+// audio preprocessing used to start more threads than the pool has, and hang
 test.sequential.each([1, 2, 4])(
   'takes audio input with %i thread(s)',
   async (n_threads) => {
