@@ -203,21 +203,22 @@ export class CacheManager {
       },
     });
 
+    await this.sb.write(
+      fileKey,
+      response.body.pipeThrough(progressStream),
+      hint
+    );
+
     const metadata: CacheEntryMetadata = {
       originalURL: url,
-      originalSize: total,
+      // without Content-Length, the size is only known once the body is fully read
+      originalSize: total || loaded,
       etag,
       ...(options.metadataAdditional ?? {}),
     };
     if (sha256) {
       metadata.sha256 = sha256;
     }
-
-    await this.sb.write(
-      fileKey,
-      response.body.pipeThrough(progressStream),
-      hint
-    );
     await this.writeMetadata(fileKey, metadata);
   }
 
