@@ -1,0 +1,941 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wllama.cpp omni demo</title>
+
+    <style>
+      body {
+        background-color: rgb(55, 55, 55);
+        color: rgb(222, 222, 222);
+        font-family: 'Courier New', Courier, monospace;
+        padding: 1em;
+        padding-bottom: 4em;
+      }
+
+      .output {
+        border: 1px solid #aaa;
+        border-radius: 5px;
+        padding: 0.7em;
+        min-height: 3em;
+        white-space: pre-wrap;
+        margin-top: 0.5em;
+      }
+
+      .panel {
+        border-top: 1px solid #666;
+        margin-top: 1.5em;
+        padding-top: 0.5em;
+        display: none;
+      }
+
+      #progress_bar_wrap {
+        width: 100%;
+        background: #333;
+        border-radius: 4px;
+        height: 18px;
+        margin: 0.5em 0;
+        display: none;
+      }
+
+      #progress_bar {
+        height: 18px;
+        border-radius: 4px;
+        background: #5a9;
+        width: 0%;
+        transition: width 0.2s;
+      }
+
+      label {
+        display: inline-block;
+        min-width: 10em;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      small {
+        color: #aaa;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Omni: voice chat, text to speech, speech to text</h2>
+
+    <b>Step 1: Load a model</b><br /><br />
+
+    <label for="select_model">Model:</label>
+    <select id="select_model"></select>
+    <button id="btn_load_remote">Load</button><br />
+    <small id="model_note"></small><br /><br />
+
+    Or pick local GGUF files (select both the model and the mmproj file):<br />
+    <input type="file" id="btn_pick_files" accept=".gguf" multiple /><br />
+
+    <div id="progress_bar_wrap"><div id="progress_bar"></div></div>
+    <span id="status_text"></span><br />
+
+    <!-- each panel is shown only if the loaded model can do it -->
+
+    <div class="panel" id="panel_chat">
+      <h3>Voice chat (speech to speech)</h3>
+      <small
+        >Hands-free: once started, just talk. When you stop talking, the model
+        answers with text and voice, then listens again. Headphones work
+        best.</small
+      ><br /><br />
+      <button id="btn_chat_talk">Start voice chat</button>
+      <button id="btn_chat_stop_reply" disabled>Stop the reply</button>
+      <span id="chat_state"></span>
+      <div class="output" id="output_chat"></div>
+    </div>
+
+    <div class="panel" id="panel_live">
+      <h3>Realtime speech to text</h3>
+      <small id="live_note"></small><br /><br />
+      <button id="btn_live">Start</button>
+      <div class="output" id="output_live"></div>
+    </div>
+
+    <div class="panel" id="panel_tts">
+      <h3>Text to speech</h3>
+      <label for="input_tts">Text:</label>
+      <input
+        id="input_tts"
+        value="Hello! This voice was generated in your browser."
+        style="width: 40em"
+      /><br /><br />
+      <span id="tts_voice_wrap">
+        <label for="select_voice">Voice:</label>
+        <select id="select_voice"></select
+        ><br /><br />
+      </span>
+      <span id="tts_ref_wrap">
+        <label>Voice to clone:</label>
+        <button id="btn_ref_record">Record</button>
+        <input type="file" id="btn_ref_pick" accept="audio/*" />
+        <span id="ref_status">none</span><br />
+        <small
+          >A few seconds of clear speech, recommended (without it the voice may
+          sound wrong). WAV, MP3 or FLAC, other formats must be converted
+          first.</small
+        ><br /><br />
+      </span>
+      <label for="input_tts_lang">Language:</label>
+      <input id="input_tts_lang" value="en" style="width: 5em" /><br /><br />
+      <button id="btn_tts">Speak</button>
+      <div>
+        <audio id="audio_tts" controls style="margin-top: 0.5em"></audio>
+      </div>
+    </div>
+
+    <div class="panel" id="panel_file">
+      <h3>Transcribe an audio file</h3>
+      <button id="btn_file_record">Record</button>
+      <input type="file" id="btn_file_pick" accept="audio/*" />
+      <span id="file_status">none</span><br /><br />
+      <label for="input_file_lang">Language:</label>
+      <input id="input_file_lang" value="en" style="width: 5em" /><br /><br />
+      <button id="btn_file_transcribe">Transcribe</button>
+      <div class="output" id="output_file"></div>
+    </div>
+
+    <script type="module">
+      import { Wllama, decodeRealtimeAudio } from '../../esm/index.js';
+
+      const CONFIG_PATHS = {
+        default: '../../esm/wasm/wllama.wasm',
+      };
+
+      const MODELS = [
+        {
+          label: 'LFM3-Omni 2B: voice chat, TTS, ASR',
+          note: 'Downloads ~1.3GB from Hugging Face',
+          hf: {
+            repo: 'LiquidAI/LFM3-Omni-2B-GGUF',
+            quant: 'Q4_0',
+            mmprojQuant: 'Q4_0',
+          },
+        },
+        {
+          label: 'Voxtral Mini 4B Realtime: live ASR',
+          note: 'Downloads ~3.6GB from Hugging Face',
+          hf: {
+            repo: 'ggml-org/Voxtral-Mini-4B-Realtime-2602-GGUF',
+            quant: 'Q4_K_M',
+            mmprojQuant: 'Q8_0',
+          },
+        },
+        {
+          label: 'Qwen3-TTS 1.7B: TTS with voice cloning',
+          note: 'Downloads ~1.5GB from Hugging Face',
+          hf: {
+            repo: 'ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF',
+            quant: 'Q4_K_M',
+            mmprojQuant: 'Q8_0',
+          },
+        },
+      ];
+
+      // 2 slots: an open voice chat holds one, the other is for TTS and file transcription
+      const LOAD_PARAMS = { n_ctx: 4096, n_parallel: 2 };
+
+      let wllama = null;
+      let info = null; // getLoadedContextInfo()
+      let refAudio = null; // voice to clone, as an audio file
+      let fileAudio = null; // audio to transcribe, as an audio file
+      let refPicker = null;
+      let filePicker = null;
+
+      // bumped when another model is loaded: an audio start that finishes after it must undo itself
+      let epoch = 0;
+
+      // for session calls that need no answer: the session can end at any time, e.g. when another model is loaded
+      const noWait = (promise) => promise?.catch(() => {});
+
+      function main() {
+        MODELS.forEach((m, i) => elemSelectModel.add(new Option(m.label, i)));
+        const showNote = () =>
+          (elemModelNote.textContent = MODELS[elemSelectModel.value].note);
+        elemSelectModel.onchange = showNote;
+        showNote();
+
+        elemBtnLoadRemote.onclick = () =>
+          load(() =>
+            wllama.loadModelFromHF(MODELS[elemSelectModel.value].hf, {
+              ...LOAD_PARAMS,
+              progressCallback: ({ loaded, total }) => {
+                const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+                setStatus(`Downloading... ${pct}%`);
+                setProgressBar(pct);
+              },
+            })
+          );
+        elemBtnPickFiles.onchange = (e) => {
+          if (e.target.files.length > 0) {
+            load(() =>
+              wllama.loadModel(Array.from(e.target.files), LOAD_PARAMS)
+            );
+          }
+        };
+
+        elemBtnChatTalk.onclick = toggleChat;
+        elemBtnChatStopReply.onclick = stopReply;
+        elemBtnLive.onclick = toggleLive;
+        elemBtnTts.onclick = runTts;
+        elemBtnFileTranscribe.onclick = runFileTranscription;
+        refPicker = setupAudioPicker(
+          elemBtnRefRecord,
+          elemBtnRefPick,
+          elemRefStatus,
+          (audio) => (refAudio = audio)
+        );
+        filePicker = setupAudioPicker(
+          elemBtnFileRecord,
+          elemBtnFilePick,
+          elemFileStatus,
+          (audio) => (fileAudio = audio)
+        );
+      }
+
+      async function load(loadFn) {
+        elemBtnLoadRemote.disabled = true;
+        elemBtnPickFiles.disabled = true;
+        showProgressBar(true);
+        try {
+          epoch++;
+          // hidden first, so nothing can start while the old model is cleaned up
+          [elemPanelChat, elemPanelLive, elemPanelTts, elemPanelFile].forEach(
+            (p) => show(p, false)
+          );
+          await stopAll();
+          setStatus('Loading model...');
+          if (wllama) await wllama.exit();
+          wllama = new Wllama(CONFIG_PATHS);
+          // when running demo locally, we want to point the compat to local for debugging; when deployed, we point it to CDN
+          if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
+            wllama.setCompat({
+              wasm: '../../compat/wasm/wllama.wasm',
+              worker: '../../compat/wasm/wllama.js',
+            });
+          } else {
+            wllama.setCompat('default');
+          }
+          await loadFn();
+          info = wllama.getLoadedContextInfo();
+          setStatus('Model loaded!');
+          showPanels();
+        } catch (err) {
+          setStatus(`Error: ${err.message}`);
+          console.error(err);
+        }
+        showProgressBar(false);
+        elemBtnLoadRemote.disabled = false;
+        elemBtnPickFiles.disabled = false;
+      }
+
+      // stops every microphone, session and sound, before another model is loaded
+      async function stopAll() {
+        await endChat();
+        await endLive();
+        await refPicker.cancel();
+        await filePicker.cancel();
+        ttsPlayer.stop();
+        elemAudioTts.pause();
+      }
+
+      // show what the model can do, from its capabilities
+      function showPanels() {
+        const canChat = info.has_chat;
+        show(
+          elemPanelChat,
+          info.has_audio_stream && info.has_audio_output && canChat
+        );
+        show(elemPanelLive, info.has_audio_stream);
+        show(elemPanelTts, info.has_audio_output);
+        show(elemPanelFile, info.has_audio_input && canChat);
+
+        elemLiveNote.textContent = info.has_live_asr
+          ? 'The text comes out while you talk.'
+          : 'The audio is sent while you talk, and transcribed every few seconds.';
+
+        // a voice from the model, or a voice to clone
+        elemSelectVoice.innerHTML = '';
+        info.audio_voices.forEach((v) => elemSelectVoice.add(new Option(v, v)));
+        show(elemTtsVoiceWrap, info.audio_voices.length > 0, 'inline');
+        show(
+          elemTtsRefWrap,
+          info.audio_voices.length === 0 && info.has_audio_input,
+          'inline'
+        );
+      }
+
+      /////////////////////////////////////////////////////////////////////
+      // voice chat
+
+      // there is no turn detection in the session: a volume detector finds the end of what you say
+      const VAD = {
+        startRms: 0.02, // louder than this starts a turn
+        endRms: 0.012, // quieter than this counts as silence
+        endSilenceMs: 900, // this much silence ends the turn
+        preRollMs: 300, // audio kept from before the turn starts, so the first word is not cut
+        maxTurnMs: 30000,
+      };
+
+      // state: 'listening' -> 'talking' -> 'responding' -> 'listening' ...
+      let chat = null; // { session, mic, state, preRoll, silenceMs, turnMs, muted, replyDone, replyTimer }
+
+      async function toggleChat() {
+        if (chat) {
+          await endChat();
+          return;
+        }
+        // made in the click, so the browser lets it play later
+        chatPlayer.prepare(info.audio_output_rate);
+        elemBtnChatTalk.disabled = true;
+        const e = epoch;
+        let session = null;
+        try {
+          session = await wllama.createRealtimeSession();
+          await session.send({
+            type: 'session.update',
+            session: {
+              instructions: 'Respond with interleaved text and audio.',
+              output_modalities: ['audio', 'text'],
+              max_output_tokens: 512,
+            },
+          });
+          const c = {
+            session,
+            mic: null,
+            state: 'listening',
+            preRoll: [],
+            silenceMs: 0,
+            turnMs: 0,
+          };
+          c.mic = await startMic(info.audio_input_rate, (samples) =>
+            onChatAudio(c, samples)
+          );
+          if (e !== epoch) {
+            await c.mic.stop(); // another model was loaded meanwhile, its worker took the session with it
+            return;
+          }
+          chat = c;
+          readChatEvents(c);
+          elemBtnChatTalk.textContent = 'End voice chat';
+          setChatState(c, 'listening');
+        } catch (err) {
+          if (e === epoch) noWait(session?.close());
+          elemOutputChat.textContent += `\nError: ${err.message}`;
+          console.error(err);
+        } finally {
+          elemBtnChatTalk.disabled = false;
+        }
+      }
+
+      async function endChat(note) {
+        const c = chat;
+        if (!c) return;
+        chat = null;
+        clearTimeout(c.replyTimer);
+        await c.mic.stop();
+        chatPlayer.stop();
+        noWait(c.session.close());
+        if (note) elemOutputChat.textContent += `\n${note}`;
+        elemBtnChatTalk.textContent = 'Start voice chat';
+        elemBtnChatStopReply.disabled = true;
+        elemChatState.textContent = '';
+      }
+
+      function onChatAudio(c, samples) {
+        const ms = (samples.length / info.audio_input_rate) * 1000;
+        const rms = Math.sqrt(
+          samples.reduce((sum, v) => sum + v * v, 0) / samples.length
+        );
+        if (c.state === 'listening') {
+          c.preRoll.push(samples);
+          while (c.preRoll.length * ms > VAD.preRollMs) c.preRoll.shift();
+          if (rms > VAD.startRms) {
+            setChatState(c, 'talking');
+            c.silenceMs = 0;
+            c.turnMs = 0;
+            c.preRoll.forEach((s) => noWait(c.session.appendAudio(s)));
+            c.preRoll = [];
+          }
+        } else if (c.state === 'talking') {
+          // the audio goes into the session while you talk, so the reply can start right after
+          noWait(c.session.appendAudio(samples));
+          c.turnMs += ms;
+          c.silenceMs = rms < VAD.endRms ? c.silenceMs + ms : 0;
+          if (c.silenceMs >= VAD.endSilenceMs || c.turnMs >= VAD.maxTurnMs) {
+            setChatState(c, 'responding');
+            elemOutputChat.textContent += `\nYou: (spoke ${(c.turnMs / 1000).toFixed(1)}s)`;
+            noWait(c.session.send({ type: 'input_audio_buffer.commit' }));
+            noWait(c.session.send({ type: 'response.create' }));
+          }
+        }
+        // while responding, the microphone is ignored: it would hear the reply on the speakers
+      }
+
+      function setChatState(c, state) {
+        c.state = state;
+        elemChatState.textContent = {
+          listening: 'Listening...',
+          talking: 'Hearing you...',
+          responding: 'Answering...',
+        }[state];
+      }
+
+      // inference runs while the events are read, so read them for the whole session
+      async function readChatEvents(c) {
+        try {
+          for await (const event of c.session.events()) {
+            if (event.type === 'response.created') {
+              c.muted = false;
+              c.replyDone = false;
+              elemOutputChat.textContent += '\nModel: ';
+              elemBtnChatStopReply.disabled = false;
+            } else if (event.type === 'response.output_text.delta') {
+              elemOutputChat.textContent += event.delta;
+            } else if (event.type === 'response.output_audio.delta') {
+              if (!c.muted) {
+                chatPlayer.play(
+                  decodeRealtimeAudio(event.delta),
+                  info.audio_output_rate
+                );
+              }
+            } else if (event.type === 'response.done') {
+              // the reply can still be playing: listen again once it is over
+              c.replyDone = true;
+              c.replyTimer = setTimeout(
+                () => listenAgain(c),
+                chatPlayer.remaining() * 1000 + 200
+              );
+            } else if (event.type === 'error') {
+              elemOutputChat.textContent += `\nError: ${event.error.message}`;
+            }
+          }
+        } catch (err) {
+          if (chat === c)
+            elemOutputChat.textContent += `\nError: ${err.message}`;
+        }
+        // the session ends by itself on a server error
+        if (chat === c) await endChat('(the session ended)');
+      }
+
+      function listenAgain(c) {
+        clearTimeout(c.replyTimer);
+        if (chat !== c) return;
+        elemBtnChatStopReply.disabled = true;
+        setChatState(c, 'listening');
+      }
+
+      async function stopReply() {
+        const c = chat;
+        if (!c) return;
+        c.muted = true; // audio of this reply that is still on its way is not played
+        chatPlayer.stop();
+        if (c.replyDone) {
+          listenAgain(c);
+        } else {
+          await c.session.send({ type: 'response.cancel' });
+        }
+      }
+
+      /////////////////////////////////////////////////////////////////////
+      // realtime speech to text
+
+      const COMMIT_EVERY_MS = 4000; // for models that transcribe each committed buffer on its own
+      let live = null; // { session, mic, timer, pending, stopping }
+      let liveShown = null; // the session whose text is shown, an older one can still be finishing
+
+      async function toggleLive() {
+        elemBtnLive.disabled = true;
+        try {
+          if (live) {
+            await stopLive();
+          } else {
+            await startLive();
+          }
+        } finally {
+          elemBtnLive.disabled = false;
+        }
+      }
+
+      async function startLive() {
+        elemOutputLive.textContent = '';
+        const e = epoch;
+        let session = null;
+        try {
+          session = await wllama.createRealtimeSession(
+            info.has_live_asr ? { intent: 'transcription' } : {}
+          );
+          if (!info.has_live_asr) {
+            await session.send({
+              type: 'session.update',
+              session: { type: 'transcription' },
+            });
+          }
+          const state = {
+            session,
+            mic: null,
+            timer: null,
+            pending: 0,
+            stopping: false,
+          };
+          state.mic = await startMic(info.audio_input_rate, (samples) =>
+            noWait(session.appendAudio(samples))
+          );
+          if (e !== epoch) {
+            await state.mic.stop();
+            return;
+          }
+          live = state;
+          liveShown = state;
+          readLiveEvents(state);
+          if (!info.has_live_asr) {
+            state.timer = setInterval(() => commitLive(state), COMMIT_EVERY_MS);
+          }
+          elemBtnLive.textContent = 'Stop';
+        } catch (err) {
+          if (e === epoch) noWait(session?.close());
+          elemOutputLive.textContent = `Error: ${err.message}`;
+          console.error(err);
+        }
+      }
+
+      async function stopLive() {
+        const state = live;
+        await endLive();
+        state.stopping = true;
+        if (info.has_live_asr) {
+          // a final commit ends a live ASR session, the last text comes after it
+          noWait(
+            state.session.send({
+              type: 'input_audio_buffer.commit',
+              final: true,
+            })
+          );
+        } else {
+          commitLive(state);
+        }
+      }
+
+      // stops the microphone, the session goes on until its last text is in
+      async function endLive() {
+        const state = live;
+        if (!state) return;
+        live = null;
+        clearInterval(state.timer);
+        await state.mic.stop();
+        elemBtnLive.textContent = 'Start';
+      }
+
+      function commitLive(state) {
+        state.pending++;
+        noWait(state.session.send({ type: 'input_audio_buffer.commit' }));
+      }
+
+      // free the slot once the text of the last commit is in
+      function closeLiveIfDone(state) {
+        if (state.stopping && state.pending === 0)
+          noWait(state.session.close());
+      }
+
+      async function readLiveEvents(state) {
+        const write = (text) => {
+          if (liveShown === state) elemOutputLive.textContent += text;
+        };
+        try {
+          for await (const event of state.session.events()) {
+            if (
+              event.type === 'conversation.item.input_audio_transcription.delta'
+            ) {
+              write(event.delta);
+            } else if (
+              event.type ===
+                'conversation.item.input_audio_transcription.completed' &&
+              !info.has_live_asr
+            ) {
+              write(' ');
+              state.pending--;
+              closeLiveIfDone(state);
+            } else if (
+              event.type === 'error' &&
+              event.error.type === 'input_audio_buffer_commit_empty'
+            ) {
+              // nothing was said since the last commit
+              state.pending--;
+              closeLiveIfDone(state);
+            } else if (event.type === 'error') {
+              write(`\nError: ${event.error.message}`);
+            }
+          }
+        } catch (err) {
+          write(`\nError: ${err.message}`);
+          noWait(state.session.close());
+        }
+        if (live === state) await endLive();
+      }
+
+      /////////////////////////////////////////////////////////////////////
+      // text to speech
+
+      async function runTts() {
+        elemBtnTts.disabled = true;
+        try {
+          ttsPlayer.stop();
+          // made in the click, so the browser lets it play later
+          ttsPlayer.prepare(info.audio_output_rate);
+          const params = {
+            input: elemInputTts.value,
+            lang: elemInputTtsLang.value,
+            response_format: 'pcm', // float32 samples, played as they come
+            stream: true,
+          };
+          if (info.audio_voices.length > 0)
+            params.voice = elemSelectVoice.value;
+          if (refAudio && info.audio_voices.length === 0)
+            params.speaker_ref = refAudio;
+          const all = [];
+          for await (const chunk of await wllama.createSpeech(params)) {
+            const samples = new Float32Array(chunk.audio);
+            ttsPlayer.play(samples, chunk.sample_rate);
+            all.push(samples);
+          }
+          if (elemAudioTts.src) URL.revokeObjectURL(elemAudioTts.src);
+          elemAudioTts.src = URL.createObjectURL(
+            new Blob([encodeWav(concat(all), info.audio_output_rate)], {
+              type: 'audio/wav',
+            })
+          );
+        } catch (err) {
+          setStatus(`Error: ${err.message}`);
+          console.error(err);
+        }
+        elemBtnTts.disabled = false;
+      }
+
+      /////////////////////////////////////////////////////////////////////
+      // transcribe an audio file
+
+      async function runFileTranscription() {
+        if (!fileAudio) return;
+        elemBtnFileTranscribe.disabled = true;
+        elemOutputFile.textContent = '';
+        try {
+          const stream = await wllama.createTranscription({
+            file: fileAudio,
+            language: elemInputFileLang.value,
+            stream: true,
+          });
+          for await (const chunk of stream) {
+            if (chunk.type === 'transcript.text.delta') {
+              elemOutputFile.textContent += chunk.delta;
+            } else if (chunk.type === 'transcript.text.done') {
+              // the final text is cleaned up: some models start the deltas with a stray </think>
+              elemOutputFile.textContent = chunk.text;
+            }
+          }
+        } catch (err) {
+          elemOutputFile.textContent = `Error: ${err.message}`;
+          console.error(err);
+        }
+        elemBtnFileTranscribe.disabled = false;
+      }
+
+      /////////////////////////////////////////////////////////////////////
+      // audio helpers
+
+      // microphone as mono float samples at the given rate, in chunks of ~100 ms
+      const CAPTURE_WORKLET = `
+        class Capture extends AudioWorkletProcessor {
+          process(inputs) {
+            if (inputs[0][0]) this.port.postMessage(inputs[0][0].slice(0));
+            return true;
+          }
+        }
+        registerProcessor('capture', Capture);`;
+
+      async function startMic(sampleRate, onSamples) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
+        });
+        let ctx = null;
+        const workletUrl = URL.createObjectURL(
+          new Blob([CAPTURE_WORKLET], { type: 'text/javascript' })
+        );
+        try {
+          // the browser resamples the microphone to this rate
+          ctx = new AudioContext({ sampleRate });
+          await ctx.audioWorklet.addModule(workletUrl);
+        } catch (err) {
+          stream.getTracks().forEach((t) => t.stop());
+          await ctx?.close();
+          throw err;
+        } finally {
+          URL.revokeObjectURL(workletUrl);
+        }
+        const source = ctx.createMediaStreamSource(stream);
+        const node = new AudioWorkletNode(ctx, 'capture');
+        let pending = [];
+        const flush = () => {
+          if (pending.length > 0) onSamples(concat(pending));
+          pending = [];
+        };
+        node.port.onmessage = (e) => {
+          pending.push(e.data);
+          if (pending.length * 128 >= sampleRate / 10) flush();
+        };
+        source.connect(node);
+        node.connect(ctx.destination); // the node outputs silence, but must be connected to run
+        return {
+          stop: async () => {
+            flush();
+            source.disconnect();
+            node.disconnect();
+            stream.getTracks().forEach((t) => t.stop());
+            await ctx.close();
+          },
+        };
+      }
+
+      // record or pick an audio file, as an ArrayBuffer of a WAV, MP3 or FLAC file
+      function setupAudioPicker(btnRecord, inputPick, elemStatus, onAudio) {
+        let rec = null;
+        btnRecord.onclick = async () => {
+          if (!rec) {
+            btnRecord.disabled = true;
+            const e = epoch;
+            const chunks = [];
+            try {
+              const mic = await startMic(16000, (s) => chunks.push(s));
+              if (e !== epoch) {
+                await mic.stop();
+                return;
+              }
+              rec = { chunks, mic, prevStatus: elemStatus.textContent };
+              btnRecord.textContent = 'Stop recording';
+              elemStatus.textContent = 'recording...';
+            } catch (err) {
+              elemStatus.textContent = `error: ${err.message}`;
+            } finally {
+              btnRecord.disabled = false;
+            }
+          } else {
+            await rec.mic.stop();
+            const samples = concat(rec.chunks);
+            rec = null;
+            btnRecord.textContent = 'Record';
+            onAudio(encodeWav(samples, 16000));
+            elemStatus.textContent = `recorded ${(samples.length / 16000).toFixed(1)}s`;
+          }
+        };
+        inputPick.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          onAudio(await file.arrayBuffer());
+          elemStatus.textContent = file.name;
+        };
+        return {
+          // drops a recording in progress
+          cancel: async () => {
+            if (!rec) return;
+            const r = rec;
+            rec = null;
+            await r.mic.stop();
+            btnRecord.textContent = 'Record';
+            elemStatus.textContent = r.prevStatus; // the previous audio is still the one used
+          },
+        };
+      }
+
+      // plays chunks one after the other; voice chat and TTS have one each, so one does not cut the other
+      function createPlayer() {
+        let ctx = null;
+        let at = 0;
+        const sources = new Set();
+        const player = {
+          prepare(sampleRate) {
+            if (ctx && ctx.sampleRate !== sampleRate) {
+              player.stop();
+              ctx.close();
+              ctx = null;
+            }
+            if (!ctx) ctx = new AudioContext({ sampleRate });
+            ctx.resume();
+          },
+          play(samples, sampleRate) {
+            player.prepare(sampleRate);
+            const buffer = ctx.createBuffer(1, samples.length, sampleRate);
+            buffer.copyToChannel(samples, 0);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            at = Math.max(at, ctx.currentTime + 0.05);
+            source.start(at);
+            at += buffer.duration;
+            sources.add(source);
+            source.onended = () => sources.delete(source);
+          },
+          stop() {
+            sources.forEach((s) => s.stop());
+            sources.clear();
+            at = 0;
+          },
+          // seconds of audio still to play
+          remaining() {
+            return ctx ? Math.max(0, at - ctx.currentTime) : 0;
+          },
+        };
+        return player;
+      }
+      const chatPlayer = createPlayer();
+      const ttsPlayer = createPlayer();
+
+      function concat(arrays) {
+        const out = new Float32Array(arrays.reduce((n, a) => n + a.length, 0));
+        let offset = 0;
+        for (const a of arrays) {
+          out.set(a, offset);
+          offset += a.length;
+        }
+        return out;
+      }
+
+      // 16-bit PCM mono WAV file
+      function encodeWav(samples, sampleRate) {
+        const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
+        const writeStr = (offset, str) =>
+          [...str].forEach((c, i) =>
+            view.setUint8(offset + i, c.charCodeAt(0))
+          );
+        writeStr(0, 'RIFF');
+        view.setUint32(4, 36 + samples.length * 2, true);
+        writeStr(8, 'WAVEfmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeStr(36, 'data');
+        view.setUint32(40, samples.length * 2, true);
+        samples.forEach((v, i) =>
+          view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, v)) * 32767, true)
+        );
+        return view.buffer;
+      }
+
+      /////////////////////////////////////////////////////////////////////
+
+      function setStatus(text) {
+        elemStatusText.textContent = text;
+      }
+
+      function showProgressBar(show) {
+        elemProgressBarWrap.style.display = show ? 'block' : 'none';
+      }
+
+      function setProgressBar(pct) {
+        elemProgressBar.style.width = `${Math.min(100, pct)}%`;
+      }
+
+      function show(elem, visible, display = 'block') {
+        elem.style.display = visible ? display : 'none';
+      }
+
+      /////////////////////////////////////////////////////////////////////
+
+      const $ = (id) => document.getElementById(id);
+      const elemSelectModel = $('select_model');
+      const elemModelNote = $('model_note');
+      const elemBtnLoadRemote = $('btn_load_remote');
+      const elemBtnPickFiles = $('btn_pick_files');
+      const elemProgressBarWrap = $('progress_bar_wrap');
+      const elemProgressBar = $('progress_bar');
+      const elemStatusText = $('status_text');
+      const elemPanelChat = $('panel_chat');
+      const elemBtnChatTalk = $('btn_chat_talk');
+      const elemBtnChatStopReply = $('btn_chat_stop_reply');
+      const elemOutputChat = $('output_chat');
+      const elemChatState = $('chat_state');
+      const elemPanelLive = $('panel_live');
+      const elemLiveNote = $('live_note');
+      const elemBtnLive = $('btn_live');
+      const elemOutputLive = $('output_live');
+      const elemPanelTts = $('panel_tts');
+      const elemInputTts = $('input_tts');
+      const elemTtsVoiceWrap = $('tts_voice_wrap');
+      const elemSelectVoice = $('select_voice');
+      const elemTtsRefWrap = $('tts_ref_wrap');
+      const elemBtnRefRecord = $('btn_ref_record');
+      const elemBtnRefPick = $('btn_ref_pick');
+      const elemRefStatus = $('ref_status');
+      const elemInputTtsLang = $('input_tts_lang');
+      const elemBtnTts = $('btn_tts');
+      const elemAudioTts = $('audio_tts');
+      const elemPanelFile = $('panel_file');
+      const elemBtnFileRecord = $('btn_file_record');
+      const elemBtnFilePick = $('btn_file_pick');
+      const elemFileStatus = $('file_status');
+      const elemInputFileLang = $('input_file_lang');
+      const elemBtnFileTranscribe = $('btn_file_transcribe');
+      const elemOutputFile = $('output_file');
+
+      main();
+    </script>
+  </body>
+</html>

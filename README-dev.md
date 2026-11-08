@@ -51,6 +51,17 @@ The thread pool size is passed to emscripten via `-sPTHREAD_POOL_SIZE=Module["pt
 
 This logic lives in `wllama.ts` (`isSupportMultiThread()` from `utils.ts` performs the feature detection).
 
+**The maximum number of threads is fixed by the number of threads of the ggml threadpool (`n_threads`). Do NOT increase `pthreadPoolSize` above it, in any case.** If some code needs more threads than that, a new worker cannot start while the wasm thread waits, so it hangs. Fix that code instead: make it use the ggml threadpool (see `shared_threadpool` in `wllama-context.h`) or no extra threads. Growing the pool (for example `+ 4` or `* 2`) is not an accepted fix.
+
+### Realtime audio
+
+The realtime session of llama-server needs a thread and blocking reads, but wllama has one thread and polls. So `wllama-context.h` includes `server-realtime.cpp` directly (it is not in the CMake source list) and calls the `handle()` and `on_result()` steps of `realtime_conversation` itself, without `run()`:
+- `realtime_send` passes a client event to `handle()`. `server_response_reader::next()` runs the queue while it waits for the result of a control
+- `get_result` runs one step of the loop, passes the result to `on_result()` and returns the events
+- `cancel` ends the session
+
+If upstream changes `realtime_conversation`, the fix belongs in `realtime_session_conversation`. Live ASR has no such class upstream (it is inside the `ws_realtime` route), so `realtime_session_live` is a copy of that route.
+
 ## Startup process
 
 Upon startup, these steps are performed:

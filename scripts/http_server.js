@@ -36,6 +36,7 @@ app.get("/", (req, res) => {
     <a href="/examples/multimodal">Multimodal</a><br/>
     <a href="/examples/tools">Tools</a><br/>
     <a href="/examples/decision">Decision models</a><br/>
+    <a href="/examples/omni">Omni: voice chat, TTS, speech to text</a><br/>
     <a href="/examples/test-backend-ops">Test Backend Ops (FOR DEBUGGING ONLY)</a><br/>
   `);
 });

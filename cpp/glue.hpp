@@ -585,6 +585,13 @@ struct glue_msg_load_res
   GLUE_FIELD(str, media_marker)
   GLUE_FIELD(bool, has_image_input)
   GLUE_FIELD(bool, has_audio_input)
+  GLUE_FIELD(bool, has_audio_output)
+  GLUE_FIELD(bool, has_chat)
+  GLUE_FIELD(bool, has_audio_stream)
+  GLUE_FIELD(bool, has_live_asr)
+  GLUE_FIELD(int, audio_input_rate)
+  GLUE_FIELD(int, audio_output_rate)
+  GLUE_FIELD(arr_str, audio_voices)
 };
 
 /////////
@@ -593,6 +600,7 @@ struct glue_msg_completion_req
 {
   GLUE_HANDLER("cmpl_req")
   GLUE_FIELD(bool, is_chat)
+  GLUE_FIELD(bool, is_asr)
   GLUE_FIELD(str, data_json)
   GLUE_FIELD(arr_raw, files)
 };
@@ -653,6 +661,52 @@ struct glue_msg_systemone_res
 
 /////////
 
+struct glue_msg_tts_req
+{
+  GLUE_HANDLER("tts__req")
+  GLUE_FIELD(str, data_json)
+  GLUE_FIELD(arr_raw, files)
+};
+
+struct glue_msg_tts_res
+{
+  GLUE_HANDLER("tts__res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
+  GLUE_FIELD(int, req_id)
+};
+
+/////////
+
+struct glue_msg_realtime_start_req
+{
+  GLUE_HANDLER("rtst_req")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_realtime_start_res
+{
+  GLUE_HANDLER("rtst_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
+  GLUE_FIELD(int, req_id)
+};
+
+struct glue_msg_realtime_send_req
+{
+  GLUE_HANDLER("rtsd_req")
+  GLUE_FIELD(int, req_id)
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_realtime_send_res
+{
+  GLUE_HANDLER("rtsd_res")
+  GLUE_FIELD(bool, success)
+};
+
+/////////
+
 struct glue_msg_get_result_req
 {
   GLUE_HANDLER("gres_req")
@@ -666,6 +720,7 @@ struct glue_msg_get_result_res
   GLUE_FIELD(bool, has_more)
   GLUE_FIELD(bool, is_error)
   GLUE_FIELD(str, data_json)
+  GLUE_FIELD(raw, data_raw)
 };
 
 /////////

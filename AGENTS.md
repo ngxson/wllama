@@ -1,4 +1,4 @@
-Refer to `README-dev.md` for development documentation.
+**Before touching any code, read `README-dev.md`.** This is a hard requirement. For contributors: not doing this may get your PR rejected.
 
 ### Code and Commit Standards
 

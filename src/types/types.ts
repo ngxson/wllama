@@ -97,6 +97,13 @@ export interface LoadedContextInfo {
   add_eos_token: boolean;
   has_image_input: boolean;
   has_audio_input: boolean;
+  has_audio_output: boolean;
+  has_chat: boolean; // false for a TTS-only or a realtime transcription model
+  has_audio_stream: boolean; // realtime sessions are available
+  has_live_asr: boolean; // text comes out while the audio goes in, with intent: 'transcription'
+  audio_input_rate: number; // in Hz, 0 if there is no audio input
+  audio_output_rate: number; // in Hz, 0 if there is no audio output
+  audio_voices: string[]; // predefined voices of createSpeech()
 }
 
 // Note: snake_case is used to match llama.cpp's naming convention
