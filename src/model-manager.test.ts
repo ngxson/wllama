@@ -201,6 +201,26 @@ test.sequential(
   }
 );
 
+test.sequential(
+  'download works when the server sends no Content-Length',
+  async () => {
+    // originalSize is 0, like a file downloaded without a Content-Length header
+    const fakeCache = {
+      download: async () => {},
+      list: async () => [
+        {
+          name: TINY_MODEL,
+          size: 1185376,
+          metadata: { originalURL: TINY_MODEL, etag: 'x', originalSize: 0 },
+        },
+      ],
+    } as unknown as CacheManager;
+    const manager = new ModelManager({ cacheManager: fakeCache });
+    const model = await manager.downloadModel(TINY_MODEL);
+    expect(model.files.length).toBe(1);
+  }
+);
+
 test.sequential('download invalid model URL', async () => {
   const manager = new ModelManager();
   const invalidUrl = 'https://invalid.example.com/model.gguf';

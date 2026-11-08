@@ -198,10 +198,10 @@ export class Model {
     }
     await Promise.all(promises);
     this.files = this.getAllFiles(await this.modelManager.cacheManager.list());
-    this.size = this.files.reduce((acc, f) => acc + f.metadata.originalSize, 0);
-    if (this.validate() !== ModelValidationStatus.VALID) {
+    if (this.files.length !== urls.length) {
       throw new Error(`Model file not found after download: ${this.url}`);
     }
+    this.size = this.files.reduce((acc, f) => acc + f.metadata.originalSize, 0);
   }
   /**
    * Remove the model from the cache
