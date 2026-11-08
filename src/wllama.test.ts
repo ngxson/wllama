@@ -1305,13 +1305,37 @@ test.sequential(
 
     // a stream read after its model is gone must not use the next model
     const stale = await wllama.createSpeech({ input: 'Hi', stream: true });
+    const staleAfterReload = await wllama.createSpeech({
+      input: 'Hi',
+      stream: true,
+    });
+    const readAll = (stream: AsyncIterable<unknown>) =>
+      (async () => {
+        for await (const _ of stream) {
+          // nothing expected
+        }
+      })().catch((e: unknown) => e);
     await wllama.exit();
+    expect(((await readAll(stale)) as Error).message).toMatch(
+      'not loaded anymore'
+    );
+    await wllama.loadModelFromUrl(AUDIO_MODEL, { n_ctx: 2048 });
+    expect(((await readAll(staleAfterReload)) as Error).message).toMatch(
+      'not loaded anymore'
+    );
+
+    // a speech request in progress fails when its model is unloaded
+    const running = await wllama.createSpeech({
+      input: 'Hello world',
+      response_format: 'pcm',
+      stream: true,
+    });
     const err = await (async () => {
-      for await (const _ of stale) {
-        // nothing expected
+      for await (const _ of running) {
+        await wllama.exit();
       }
     })().catch((e: unknown) => e);
-    expect((err as Error).message).toMatch('not loaded anymore');
+    expect((err as Error).message).toMatch('unloaded');
   },
   120000
 );

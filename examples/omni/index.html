@@ -197,6 +197,9 @@
       // bumped when another model is loaded: an audio start that finishes after it must undo itself
       let epoch = 0;
 
+      // for session calls that need no answer: the session can end at any time, e.g. when another model is loaded
+      const noWait = (promise) => promise?.catch(() => {});
+
       function main() {
         MODELS.forEach((m, i) => elemSelectModel.add(new Option(m.label, i)));
         const showNote = () =>
@@ -248,11 +251,12 @@
         showProgressBar(true);
         try {
           epoch++;
-          await stopAll();
-          setStatus('Loading model...');
+          // hidden first, so nothing can start while the old model is cleaned up
           [elemPanelChat, elemPanelLive, elemPanelTts, elemPanelFile].forEach(
             (p) => show(p, false)
           );
+          await stopAll();
+          setStatus('Loading model...');
           if (wllama) await wllama.exit();
           wllama = new Wllama(CONFIG_PATHS);
           // when running demo locally, we want to point the compat to local for debugging; when deployed, we point it to CDN
@@ -284,6 +288,7 @@
         await refPicker.cancel();
         await filePicker.cancel();
         ttsPlayer.stop();
+        elemAudioTts.pause();
       }
 
       // show what the model can do, from its capabilities
@@ -367,7 +372,7 @@
           elemBtnChatTalk.textContent = 'End voice chat';
           setChatState(c, 'listening');
         } catch (err) {
-          if (e === epoch) session?.close();
+          if (e === epoch) noWait(session?.close());
           elemOutputChat.textContent += `\nError: ${err.message}`;
           console.error(err);
         } finally {
@@ -382,7 +387,7 @@
         clearTimeout(c.replyTimer);
         await c.mic.stop();
         chatPlayer.stop();
-        c.session.close();
+        noWait(c.session.close());
         if (note) elemOutputChat.textContent += `\n${note}`;
         elemBtnChatTalk.textContent = 'Start voice chat';
         elemBtnChatStopReply.disabled = true;
@@ -401,19 +406,19 @@
             setChatState(c, 'talking');
             c.silenceMs = 0;
             c.turnMs = 0;
-            c.preRoll.forEach((s) => c.session.appendAudio(s));
+            c.preRoll.forEach((s) => noWait(c.session.appendAudio(s)));
             c.preRoll = [];
           }
         } else if (c.state === 'talking') {
           // the audio goes into the session while you talk, so the reply can start right after
-          c.session.appendAudio(samples);
+          noWait(c.session.appendAudio(samples));
           c.turnMs += ms;
           c.silenceMs = rms < VAD.endRms ? c.silenceMs + ms : 0;
           if (c.silenceMs >= VAD.endSilenceMs || c.turnMs >= VAD.maxTurnMs) {
             setChatState(c, 'responding');
             elemOutputChat.textContent += `\nYou: (spoke ${(c.turnMs / 1000).toFixed(1)}s)`;
-            c.session.send({ type: 'input_audio_buffer.commit' });
-            c.session.send({ type: 'response.create' });
+            noWait(c.session.send({ type: 'input_audio_buffer.commit' }));
+            noWait(c.session.send({ type: 'response.create' }));
           }
         }
         // while responding, the microphone is ignored: it would hear the reply on the speakers
@@ -430,31 +435,36 @@
 
       // inference runs while the events are read, so read them for the whole session
       async function readChatEvents(c) {
-        for await (const event of c.session.events()) {
-          if (event.type === 'response.created') {
-            c.muted = false;
-            c.replyDone = false;
-            elemOutputChat.textContent += '\nModel: ';
-            elemBtnChatStopReply.disabled = false;
-          } else if (event.type === 'response.output_text.delta') {
-            elemOutputChat.textContent += event.delta;
-          } else if (event.type === 'response.output_audio.delta') {
-            if (!c.muted) {
-              chatPlayer.play(
-                decodeRealtimeAudio(event.delta),
-                info.audio_output_rate
+        try {
+          for await (const event of c.session.events()) {
+            if (event.type === 'response.created') {
+              c.muted = false;
+              c.replyDone = false;
+              elemOutputChat.textContent += '\nModel: ';
+              elemBtnChatStopReply.disabled = false;
+            } else if (event.type === 'response.output_text.delta') {
+              elemOutputChat.textContent += event.delta;
+            } else if (event.type === 'response.output_audio.delta') {
+              if (!c.muted) {
+                chatPlayer.play(
+                  decodeRealtimeAudio(event.delta),
+                  info.audio_output_rate
+                );
+              }
+            } else if (event.type === 'response.done') {
+              // the reply can still be playing: listen again once it is over
+              c.replyDone = true;
+              c.replyTimer = setTimeout(
+                () => listenAgain(c),
+                chatPlayer.remaining() * 1000 + 200
               );
+            } else if (event.type === 'error') {
+              elemOutputChat.textContent += `\nError: ${event.error.message}`;
             }
-          } else if (event.type === 'response.done') {
-            // the reply can still be playing: listen again once it is over
-            c.replyDone = true;
-            c.replyTimer = setTimeout(
-              () => listenAgain(c),
-              chatPlayer.remaining() * 1000 + 200
-            );
-          } else if (event.type === 'error') {
-            elemOutputChat.textContent += `\nError: ${event.error.message}`;
           }
+        } catch (err) {
+          if (chat === c)
+            elemOutputChat.textContent += `\nError: ${err.message}`;
         }
         // the session ends by itself on a server error
         if (chat === c) await endChat('(the session ended)');
@@ -484,6 +494,7 @@
 
       const COMMIT_EVERY_MS = 4000; // for models that transcribe each committed buffer on its own
       let live = null; // { session, mic, timer, pending, stopping }
+      let liveShown = null; // the session whose text is shown, an older one can still be finishing
 
       async function toggleLive() {
         elemBtnLive.disabled = true;
@@ -520,20 +531,21 @@
             stopping: false,
           };
           state.mic = await startMic(info.audio_input_rate, (samples) =>
-            session.appendAudio(samples)
+            noWait(session.appendAudio(samples))
           );
           if (e !== epoch) {
             await state.mic.stop();
             return;
           }
           live = state;
+          liveShown = state;
           readLiveEvents(state);
           if (!info.has_live_asr) {
             state.timer = setInterval(() => commitLive(state), COMMIT_EVERY_MS);
           }
           elemBtnLive.textContent = 'Stop';
         } catch (err) {
-          if (e === epoch) session?.close();
+          if (e === epoch) noWait(session?.close());
           elemOutputLive.textContent = `Error: ${err.message}`;
           console.error(err);
         }
@@ -545,10 +557,12 @@
         state.stopping = true;
         if (info.has_live_asr) {
           // a final commit ends a live ASR session, the last text comes after it
-          state.session.send({
-            type: 'input_audio_buffer.commit',
-            final: true,
-          });
+          noWait(
+            state.session.send({
+              type: 'input_audio_buffer.commit',
+              final: true,
+            })
+          );
         } else {
           commitLive(state);
         }
@@ -566,38 +580,47 @@
 
       function commitLive(state) {
         state.pending++;
-        state.session.send({ type: 'input_audio_buffer.commit' });
+        noWait(state.session.send({ type: 'input_audio_buffer.commit' }));
       }
 
       // free the slot once the text of the last commit is in
       function closeLiveIfDone(state) {
-        if (state.stopping && state.pending === 0) state.session.close();
+        if (state.stopping && state.pending === 0)
+          noWait(state.session.close());
       }
 
       async function readLiveEvents(state) {
-        for await (const event of state.session.events()) {
-          if (
-            event.type === 'conversation.item.input_audio_transcription.delta'
-          ) {
-            elemOutputLive.textContent += event.delta;
-          } else if (
-            event.type ===
-              'conversation.item.input_audio_transcription.completed' &&
-            !info.has_live_asr
-          ) {
-            elemOutputLive.textContent += ' ';
-            state.pending--;
-            closeLiveIfDone(state);
-          } else if (
-            event.type === 'error' &&
-            event.error.type === 'input_audio_buffer_commit_empty'
-          ) {
-            // nothing was said since the last commit
-            state.pending--;
-            closeLiveIfDone(state);
-          } else if (event.type === 'error') {
-            elemOutputLive.textContent += `\nError: ${event.error.message}`;
+        const write = (text) => {
+          if (liveShown === state) elemOutputLive.textContent += text;
+        };
+        try {
+          for await (const event of state.session.events()) {
+            if (
+              event.type === 'conversation.item.input_audio_transcription.delta'
+            ) {
+              write(event.delta);
+            } else if (
+              event.type ===
+                'conversation.item.input_audio_transcription.completed' &&
+              !info.has_live_asr
+            ) {
+              write(' ');
+              state.pending--;
+              closeLiveIfDone(state);
+            } else if (
+              event.type === 'error' &&
+              event.error.type === 'input_audio_buffer_commit_empty'
+            ) {
+              // nothing was said since the last commit
+              state.pending--;
+              closeLiveIfDone(state);
+            } else if (event.type === 'error') {
+              write(`\nError: ${event.error.message}`);
+            }
           }
+        } catch (err) {
+          write(`\nError: ${err.message}`);
+          noWait(state.session.close());
         }
         if (live === state) await endLive();
       }
@@ -607,10 +630,10 @@
 
       async function runTts() {
         elemBtnTts.disabled = true;
-        ttsPlayer.stop();
-        // made in the click, so the browser lets it play later
-        ttsPlayer.prepare(info.audio_output_rate);
         try {
+          ttsPlayer.stop();
+          // made in the click, so the browser lets it play later
+          ttsPlayer.prepare(info.audio_output_rate);
           const params = {
             input: elemInputTts.value,
             lang: elemInputTtsLang.value,
@@ -619,7 +642,8 @@
           };
           if (info.audio_voices.length > 0)
             params.voice = elemSelectVoice.value;
-          if (refAudio) params.speaker_ref = refAudio;
+          if (refAudio && info.audio_voices.length === 0)
+            params.speaker_ref = refAudio;
           const all = [];
           for await (const chunk of await wllama.createSpeech(params)) {
             const samples = new Float32Array(chunk.audio);
@@ -741,7 +765,7 @@
                 await mic.stop();
                 return;
               }
-              rec = { chunks, mic };
+              rec = { chunks, mic, prevStatus: elemStatus.textContent };
               btnRecord.textContent = 'Stop recording';
               elemStatus.textContent = 'recording...';
             } catch (err) {
@@ -772,7 +796,7 @@
             rec = null;
             await r.mic.stop();
             btnRecord.textContent = 'Record';
-            elemStatus.textContent = 'none';
+            elemStatus.textContent = r.prevStatus; // the previous audio is still the one used
           },
         };
       }

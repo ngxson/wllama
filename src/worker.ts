@@ -23,7 +23,7 @@ import {
   LLAMA_CPP_WORKER_CODE,
   WLLAMA_EMSCRIPTEN_CODE,
 } from './workers-code/generated';
-import { WllamaRuntimeError } from './wllama';
+import { WllamaError, WllamaRuntimeError } from './wllama';
 
 interface Logger {
   debug: typeof console.debug;
@@ -94,6 +94,7 @@ export class ProxyToWorker {
   taskId: number = 1;
   resultQueue: Task[] = [];
   busy = false; // is the work loop is running?
+  private exited = false;
   worker?: Worker | undefined;
   multiThread: boolean;
   nbThread: number;
@@ -235,6 +236,11 @@ export class ProxyToWorker {
       // this.parseResult(result); // only check for exceptions
       this.worker.terminate();
     }
+    // nothing answers anymore, so fail the actions that wait and the next ones
+    this.exited = true;
+    this.rejectAll(
+      new WllamaError('The model was unloaded', 'model_not_loaded')
+    );
   }
 
   async wllamaDebug(): Promise<any> {
@@ -331,6 +337,10 @@ export class ProxyToWorker {
    */
   private pushTask(param: TaskParam, buffers?: ArrayBuffer[]) {
     return new Promise<any>((resolve, reject) => {
+      if (this.exited) {
+        reject(new WllamaError('The model was unloaded', 'model_not_loaded'));
+        return;
+      }
       this.taskQueue.push({ resolve, reject, param, buffers });
       this.runTaskLoop();
     });
@@ -428,10 +438,12 @@ export class ProxyToWorker {
   }
 
   private abort(text: string, stack: string) {
-    const error = new WllamaRuntimeError(
-      text.length == 0 ? '(unknown error)' : text,
-      stack
+    this.rejectAll(
+      new WllamaRuntimeError(text.length == 0 ? '(unknown error)' : text, stack)
     );
+  }
+
+  private rejectAll(error: Error) {
     while (this.resultQueue.length > 0) {
       const waitingTask = this.resultQueue.pop();
       if (!waitingTask) break;
