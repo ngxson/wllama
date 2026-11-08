@@ -1307,12 +1307,21 @@ struct wllama_context
       return res;
     }
 
-    // a session holds its slot until it is closed, the start would wait forever for a free one
-    if ((int)realtime_sessions.size() >= params.n_parallel)
+    // do not wait for a free slot: the worker cannot run anything else meanwhile, and a session never frees its slot by itself
     {
-      res.success.value = false;
-      res.message.value = "No free slot, close a realtime session first";
-      return res;
+      server_response_reader rd_metrics = ctx_server.get_response_reader();
+      server_task task(SERVER_TASK_TYPE_METRICS);
+      task.id = rd_metrics.get_new_id();
+      rd_metrics.post_task(std::move(task));
+      run_queue_scope scope;
+      auto result = rd_metrics.next(should_stop);
+      auto *metrics = result ? dynamic_cast<server_task_result_metrics *>(result.get()) : nullptr;
+      if (!metrics || metrics->n_processing_slots + metrics->n_tasks_deferred >= params.n_parallel)
+      {
+        res.success.value = false;
+        res.message.value = "No free slot, wait for a request to finish or close a realtime session first";
+        return res;
+      }
     }
 
     json body = json::parse(req.data_json.value);

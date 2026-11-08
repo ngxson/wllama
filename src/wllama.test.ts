@@ -900,14 +900,6 @@ test.sequential(
       })().catch((e: unknown) => e);
       expect((err as Error).name).toBe('AbortError');
     }
-    // a stream that is never read is cancelled by the abort too
-    const abort = new AbortController();
-    await wllama.createSpeech({
-      input: 'Hello world',
-      stream: true,
-      abortSignal: abort.signal,
-    });
-    abort.abort();
     const res = await wllama.createSpeech({ input: 'Hi', n_predict: 4 });
     expect(res.audio.byteLength).toBeGreaterThan(44);
     await wllama.exit();
@@ -1285,6 +1277,7 @@ test.sequential(
 test.sequential(
   'rejects a realtime session when no slot is free',
   async () => {
+    // with one slot, a realtime start only works if nothing else holds it
     const wllama = createWllama();
     await wllama.loadModelFromUrl(AUDIO_MODEL, { n_ctx: 2048, n_parallel: 1 });
     const first = await wllama.createRealtimeSession();
@@ -1292,6 +1285,25 @@ test.sequential(
       'No free slot'
     );
     await first.close();
+
+    // a running completion holds the slot
+    const chat = wllama.createChatCompletion({
+      messages: [{ role: 'user', content: 'Hello' }],
+      max_tokens: 32,
+    });
+    await expect(wllama.createRealtimeSession()).rejects.toThrow(
+      'No free slot'
+    );
+    expect((await chat).usage!.completion_tokens).toBeGreaterThan(0);
+
+    // an aborted speech stream that is never read must free the slot
+    const abort = new AbortController();
+    await wllama.createSpeech({
+      input: 'Hello world',
+      stream: true,
+      abortSignal: abort.signal,
+    });
+    abort.abort();
     const second = await wllama.createRealtimeSession();
     await second.close();
     await wllama.exit();

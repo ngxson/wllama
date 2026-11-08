@@ -230,6 +230,7 @@ export class WllamaRealtimeSession {
   private closed = false;
   private pending: RealtimeEvent[] = []; // read from the worker, not yet given to a reader
   private wakeUp: () => void = () => {};
+  private sent = false; // a client event was sent since the last poll
 
   constructor(
     private proxy: ProxyToWorker,
@@ -251,6 +252,7 @@ export class WllamaRealtimeSession {
     if (!result.success) {
       throw new WllamaError('Realtime session is closed', 'inference_error');
     }
+    this.sent = true;
     this.wakeUp();
   }
 
@@ -282,6 +284,11 @@ export class WllamaRealtimeSession {
       );
       if (!chunk.has_more) {
         this.closed = true;
+      }
+      // the event may need a few polls of work, poll without waiting again
+      if (this.sent) {
+        this.sent = false;
+        nEmpty = 0;
       }
       if (chunk.data_json) {
         nEmpty = 0;
@@ -951,13 +958,23 @@ export class Wllama {
       );
     }
 
+    if (abortSignal?.aborted) {
+      await this.cancelRequest(result.req_id);
+      throw new WllamaAbortError();
+    }
+
     // the generator only runs once it is read, so cancel from here too
-    abortSignal?.addEventListener(
-      'abort',
-      () => void this.cancelRequest(result.req_id),
-      { once: true }
+    // request ids start again in a new worker, so an abort after a reload must do nothing
+    const proxy = this.proxy;
+    const onAbort = () => {
+      if (this.proxy === proxy) {
+        void this.cancelRequest(result.req_id);
+      }
+    };
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+    const chunks = this.getSpeechChunks(result.req_id, abortSignal, () =>
+      abortSignal?.removeEventListener('abort', onAbort)
     );
-    const chunks = this.getSpeechChunks(result.req_id, abortSignal);
     if (options.stream) {
       return chunks;
     }
@@ -1395,7 +1412,8 @@ export class Wllama {
 
   private async *getSpeechChunks(
     reqId: number,
-    abortSignal?: AbortSignal
+    abortSignal: AbortSignal | undefined,
+    onDone: () => void
   ): AsyncGenerator<SpeechChunk> {
     let completed = false;
     try {
@@ -1431,6 +1449,7 @@ export class Wllama {
       }
     } finally {
       // covers a consumer that stops reading too
+      onDone();
       if (!completed) {
         await this.cancelRequest(reqId);
       }

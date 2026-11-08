@@ -429,7 +429,7 @@ export interface SpeechParams {
   input: string; // the text to speak
   voice?: string; // see LoadedContextInfo.audio_voices
   lang?: string;
-  speaker_ref?: ArrayBuffer; // audio file to clone the voice from, cannot be used with a voice from audio_voices
+  speaker_ref?: ArrayBuffer; // WAV, MP3 or FLAC file to clone the voice from (convert other formats first, e.g. WebM/Opus), cannot be used with a voice from audio_voices
   response_format?: 'wav' | 'pcm'; // pcm: raw float32 LE mono samples (default: wav)
   n_predict?: number; // limit of audio frames (default: no limit)
   top_k?: number;
@@ -450,7 +450,7 @@ export interface SpeechChunk extends SpeechResponse {
 // Transcription (ASR) of an audio file, OAI-compatible
 
 export interface TranscriptionParams {
-  file: ArrayBuffer; // audio file, for example wav or mp3
+  file: ArrayBuffer; // WAV, MP3 or FLAC file (convert other formats first, e.g. WebM/Opus)
   language?: string;
   prompt?: string;
   temperature?: number;
