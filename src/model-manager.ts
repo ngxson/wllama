@@ -221,7 +221,7 @@ export class Model {
     for (const url of allUrls) {
       const file = savedFiles.find((f) => f.metadata.originalURL === url);
       if (!file) {
-        throw new Error(`Model file not found: ${url}`);
+        continue;
       }
       allFiles.push(file);
     }

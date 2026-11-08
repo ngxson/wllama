@@ -146,6 +146,36 @@ test.sequential('recover from partial file in cache', async () => {
   expect(model.size).toBe(1185376);
 });
 
+test.sequential('recover from missing shard in cache', async () => {
+  const manager = opfsManager();
+  await manager.clear();
+  await manager.downloadModel(TINY_MODEL);
+  await manager.downloadModel(SPLIT_MODEL);
+
+  // simulate an interrupted download: remove the second shard and its metadata
+  const shardUrl = ModelManager.parseModelUrl(SPLIT_MODEL)[1];
+  const fileKey = await manager.cacheManager.getNameFromURL(shardUrl);
+  await opfs.delete(fileKey);
+  await opfs.delete(`__metadata__${fileKey}`);
+
+  const models = await manager.getModels();
+  expect(models.length).toBe(1);
+  expect(models[0].url).toBe(TINY_MODEL);
+
+  const invalidModels = await manager.getModels({ includeInvalid: true });
+  const splitModel = invalidModels.find((m) => m.url === SPLIT_MODEL);
+  expect(splitModel).toBeDefined();
+  if (!splitModel) throw new Error();
+  expect(splitModel.validate()).toBe(ModelValidationStatus.INVALID);
+
+  const tinyModel = await manager.getModelOrDownload({ url: TINY_MODEL });
+  expect(tinyModel.url).toBe(TINY_MODEL);
+
+  const model = await manager.downloadModel(SPLIT_MODEL);
+  expect(model.files.length).toBe(3);
+  expect((await manager.getModels()).length).toBe(2);
+});
+
 test.sequential('download invalid model URL', async () => {
   const manager = new ModelManager();
   const invalidUrl = 'https://invalid.example.com/model.gguf';
