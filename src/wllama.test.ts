@@ -740,6 +740,7 @@ test.sequential(
     expect(info.has_image_input).toBe(true);
     expect(info.has_audio_input).toBe(true);
     expect(info.has_audio_output).toBe(true);
+    expect(info.has_chat).toBe(true);
     expect(info.has_audio_stream).toBe(true);
     expect(info.has_live_asr).toBe(true);
     expect(info.audio_input_rate).toBe(16000);
@@ -757,6 +758,7 @@ test.sequential(
     await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 256 });
     const info = wllama.getLoadedContextInfo();
     expect(info.has_audio_output).toBe(false);
+    expect(info.has_chat).toBe(true);
     expect(info.has_audio_stream).toBe(false);
     expect(info.audio_voices).toEqual([]);
     await expect(wllama.createSpeech({ input: 'hello' })).rejects.toThrow(
@@ -1296,17 +1298,44 @@ test.sequential(
     );
     expect((await chat).usage!.completion_tokens).toBeGreaterThan(0);
 
-    // an aborted speech stream that is never read must free the slot
-    const abort = new AbortController();
-    await wllama.createSpeech({
-      input: 'Hello world',
-      stream: true,
-      abortSignal: abort.signal,
-    });
-    abort.abort();
+    // a speech stream that is never read does not take the slot
+    await wllama.createSpeech({ input: 'Hello world', stream: true });
     const second = await wllama.createRealtimeSession();
     await second.close();
+
+    // a stream read after its model is gone must not use the next model
+    const stale = await wllama.createSpeech({ input: 'Hi', stream: true });
+    const staleAfterReload = await wllama.createSpeech({
+      input: 'Hi',
+      stream: true,
+    });
+    const readAll = (stream: AsyncIterable<unknown>) =>
+      (async () => {
+        for await (const _ of stream) {
+          // nothing expected
+        }
+      })().catch((e: unknown) => e);
     await wllama.exit();
+    expect(((await readAll(stale)) as Error).message).toMatch(
+      'not loaded anymore'
+    );
+    await wllama.loadModelFromUrl(AUDIO_MODEL, { n_ctx: 2048 });
+    expect(((await readAll(staleAfterReload)) as Error).message).toMatch(
+      'not loaded anymore'
+    );
+
+    // a speech request in progress fails when its model is unloaded
+    const running = await wllama.createSpeech({
+      input: 'Hello world',
+      response_format: 'pcm',
+      stream: true,
+    });
+    const err = await (async () => {
+      for await (const _ of running) {
+        await wllama.exit();
+      }
+    })().catch((e: unknown) => e);
+    expect((err as Error).message).toMatch('unloaded');
   },
   120000
 );

@@ -963,6 +963,7 @@ struct wllama_context
     res.has_image_input.value = server_meta.chat_params.allow_image;
     res.has_audio_input.value = server_meta.chat_params.allow_audio;
     res.has_audio_output.value = server_meta.has_cap_tts;
+    res.has_chat.value = server_meta.has_cap_chat;
     res.has_audio_stream.value = server_meta.has_audio_stream;
     res.has_live_asr.value = server_meta.has_audio_stream && (!mtmd_cap.chat || !asr_prompt.empty());
     res.audio_input_rate.value = server_meta.has_inp_audio ? mtmd_get_audio_sample_rate(shared_mctx) : 0;

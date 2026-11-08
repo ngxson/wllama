@@ -46,6 +46,7 @@ Demo:
 - Multimodal (vision) completion: https://github.ngxson.com/wllama/examples/multimodal/ ([source code](./examples/multimodal/index.html))
 - Tool calling: https://github.ngxson.com/wllama/examples/tools/ ([source code](./examples/tools/index.html))
 - Decision models: https://github.ngxson.com/wllama/examples/decision/ ([source code](./examples/decision/index.html))
+- Omni (voice chat, text to speech, realtime speech to text): https://github.ngxson.com/wllama/examples/omni/ ([source code](./examples/omni/index.html))
 
 ## How to use
 
