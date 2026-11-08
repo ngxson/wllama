@@ -1302,7 +1302,16 @@ test.sequential(
     await wllama.createSpeech({ input: 'Hello world', stream: true });
     const second = await wllama.createRealtimeSession();
     await second.close();
+
+    // a stream read after its model is gone must not use the next model
+    const stale = await wllama.createSpeech({ input: 'Hi', stream: true });
     await wllama.exit();
+    const err = await (async () => {
+      for await (const _ of stale) {
+        // nothing expected
+      }
+    })().catch((e: unknown) => e);
+    expect((err as Error).message).toMatch('not loaded anymore');
   },
   120000
 );

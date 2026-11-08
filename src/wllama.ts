@@ -942,7 +942,8 @@ export class Wllama {
   ): Promise<SpeechResponse | AsyncIterable<SpeechChunk>> {
     this.checkModelLoaded();
     // a stream starts its request on the first read, so an unread one costs nothing
-    const chunks = this.getSpeechChunks(options);
+    // it belongs to the model loaded now, so take its worker here
+    const chunks = this.getSpeechChunks(options, this.proxy);
     if (options.stream) {
       return chunks;
     }
@@ -1379,14 +1380,20 @@ export class Wllama {
   }
 
   private async *getSpeechChunks(
-    options: SpeechParams & { stream?: boolean }
+    options: SpeechParams & { stream?: boolean },
+    proxy: ProxyToWorker
   ): AsyncGenerator<SpeechChunk> {
     const { speaker_ref, abortSignal, ...params } = options;
     if (abortSignal?.aborted) {
       throw new WllamaAbortError();
     }
     // request ids start again in a new worker, so only talk to the worker that has the request
-    const proxy = this.proxy;
+    if (this.proxy !== proxy) {
+      throw new WllamaError(
+        'The model of this speech stream is not loaded anymore',
+        'inference_error'
+      );
+    }
     const customOpt = this.seed !== undefined ? { seed: this.seed } : {};
     const result = await proxy.wllamaAction<GlueMsgTtsRes>('tts', {
       _name: 'tts__req',
