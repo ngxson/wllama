@@ -2,6 +2,7 @@ import { test, expect } from 'vitest';
 import { ModelManager, Model, ModelValidationStatus } from './model-manager';
 import { OPFSBackend } from './storage/opfs';
 import CacheManager from './cache-manager';
+import { hookNetwork, type NetworkHook } from './testing/network-hook';
 
 const TINY_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf';
@@ -89,26 +90,37 @@ test.sequential('get downloaded split model', async () => {
   expect(model.files[2].metadata.originalURL).toMatch(/-00003-of-00003\.gguf$/);
 });
 
-// skip on CI, only run locally with a slow connection
-test.skip('interrupt download split model (partial files downloaded)', async () => {
-  const manager = new ModelManager();
-  await manager.clear();
-  const controller = new AbortController();
-  const downloadPromise = manager.downloadModel(SPLIT_MODEL, {
-    signal: controller.signal,
-    progressCallback: ({ loaded, total }) => {
-      const progress = loaded / total;
-      if (progress > 0.8) {
-        controller.abort();
-      }
-    },
-  });
-  await expect(downloadPromise).rejects.toThrow('aborted');
-  expect((await manager.getModels()).length).toBe(0);
-  expect((await manager.getModels({ includeInvalid: true })).length).toBe(1);
-});
+const SPLIT_SHARDS = ModelManager.parseModelUrl(SPLIT_MODEL);
+const getRequests = (net: NetworkHook) =>
+  net.requests.filter((r) => r.method === 'GET' && r.url.includes('/resolve/'));
 
-// the tests below poke the storage directly, so pin the backend instead of the default one
+test.sequential(
+  'interrupt download split model (partial files downloaded)',
+  async () => {
+    // one download at a time, so the cache state at abort time is known
+    const manager = new ModelManager({ parallelDownloads: 1 });
+    await manager.clear();
+    const net = hookNetwork();
+    const stalled = net
+      .on({ method: 'GET', url: SPLIT_SHARDS[2] })
+      .stallAfter(1024);
+
+    const controller = new AbortController();
+    const downloadPromise = manager.downloadModel(SPLIT_MODEL, {
+      signal: controller.signal,
+    });
+    await stalled;
+    controller.abort();
+    await expect(downloadPromise).rejects.toThrow('aborted');
+
+    expect((await manager.getModels()).length).toBe(0);
+    const invalidModels = await manager.getModels({ includeInvalid: true });
+    expect(invalidModels.length).toBe(1);
+    expect(invalidModels[0].files.length).toBe(2);
+  }
+);
+
+// the test below pokes the storage directly, so pin the backend instead of the default one
 const opfs = new OPFSBackend();
 const opfsManager = () =>
   new ModelManager({ cacheManager: new CacheManager([opfs]) });
@@ -130,15 +142,18 @@ test.sequential('recover from missing metadata', async () => {
 });
 
 test.sequential('recover from partial file in cache', async () => {
-  const manager = opfsManager();
+  const manager = new ModelManager();
   await manager.clear();
-  await manager.downloadModel(TINY_MODEL);
+  const net = hookNetwork();
 
+  // connection drops after 1024 bytes
+  net.on({ method: 'GET', url: TINY_MODEL }, { times: 1 }).cutAfter(1024);
+  await expect(manager.downloadModel(TINY_MODEL)).rejects.toThrow(
+    'network error'
+  );
   const fileKey = await manager.cacheManager.getNameFromURL(TINY_MODEL);
-  const head = await (await opfs.read(fileKey))!.slice(0, 1024).arrayBuffer();
-  await opfs.write(fileKey, new Blob([head]).stream());
-  await opfs.delete(`__metadata__${fileKey}`);
-  expect(await opfs.getSize(fileKey)).toBe(1024);
+  expect(await manager.cacheManager.getSize(fileKey)).toBe(1024);
+  expect((await manager.getModels()).length).toBe(0);
 
   const model = await manager.downloadModel(TINY_MODEL);
   expect(model.files.length).toBe(1);
@@ -147,17 +162,20 @@ test.sequential('recover from partial file in cache', async () => {
 });
 
 test.sequential('recover from missing shard in cache', async () => {
-  const manager = opfsManager();
+  // one download at a time, so the cache state after the failure is known
+  const manager = new ModelManager({ parallelDownloads: 1 });
   await manager.clear();
   await manager.downloadModel(TINY_MODEL);
-  await manager.downloadModel(SPLIT_MODEL);
+  const net = hookNetwork();
 
-  // simulate an interrupted download: remove the second shard and its metadata
-  const shardUrl = ModelManager.parseModelUrl(SPLIT_MODEL)[1];
-  const fileKey = await manager.cacheManager.getNameFromURL(shardUrl);
-  await opfs.delete(fileKey);
-  await opfs.delete(`__metadata__${fileKey}`);
+  // connection drops during the second shard: shard 1 is complete,
+  // shard 2 is partial and shard 3 is never downloaded
+  net.on({ method: 'GET', url: SPLIT_SHARDS[1] }, { times: 1 }).cutAfter(1024);
+  await expect(manager.downloadModel(SPLIT_MODEL)).rejects.toThrow(
+    'network error'
+  );
 
+  // the incomplete model does not hide the other models
   const models = await manager.getModels();
   expect(models.length).toBe(1);
   expect(models[0].url).toBe(TINY_MODEL);
@@ -166,7 +184,7 @@ test.sequential('recover from missing shard in cache', async () => {
   const splitModel = invalidModels.find((m) => m.url === SPLIT_MODEL);
   expect(splitModel).toBeDefined();
   if (!splitModel) throw new Error();
-  expect(splitModel.files.length).toBe(2);
+  expect(splitModel.files.length).toBe(1);
   expect(splitModel.validate()).toBe(ModelValidationStatus.INVALID);
 
   let lastProgress = { loaded: 0, total: 0 };
@@ -181,8 +199,11 @@ test.sequential('recover from missing shard in cache', async () => {
   expect(tinyModel.url).toBe(TINY_MODEL);
   expect(lastProgress).toEqual({ loaded: 1185376, total: 1185376 });
 
+  // only the missing shards are downloaded again
+  net.reset();
   const model = await manager.getModelOrDownload({ url: SPLIT_MODEL });
   expect(model.files.length).toBe(3);
+  expect(getRequests(net).map((r) => r.url)).toEqual(SPLIT_SHARDS.slice(1));
   expect((await manager.getModels()).length).toBe(2);
 });
 
@@ -204,20 +225,14 @@ test.sequential(
 test.sequential(
   'download works when the server sends no Content-Length',
   async () => {
-    // originalSize is 0, like a file downloaded without a Content-Length header
-    const fakeCache = {
-      download: async () => {},
-      list: async () => [
-        {
-          name: TINY_MODEL,
-          size: 1185376,
-          metadata: { originalURL: TINY_MODEL, etag: 'x', originalSize: 0 },
-        },
-      ],
-    } as unknown as CacheManager;
-    const manager = new ModelManager({ cacheManager: fakeCache });
+    const manager = new ModelManager();
+    await manager.clear();
+    const net = hookNetwork();
+    net.on({ url: TINY_MODEL }).dropHeaders('content-length');
+
     const model = await manager.downloadModel(TINY_MODEL);
     expect(model.files.length).toBe(1);
+    expect(model.files[0].size).toBe(1185376);
   }
 );
 
@@ -230,12 +245,15 @@ test.sequential('download invalid model URL', async () => {
 test.sequential('download with abort signal', async () => {
   const manager = new ModelManager();
   await manager.clear();
+  const net = hookNetwork();
+  const stalled = net.on({ method: 'GET', url: TINY_MODEL }).stallAfter(1024);
+
   const controller = new AbortController();
   const downloadPromise = manager.downloadModel(TINY_MODEL, {
     signal: controller.signal,
   });
-  setTimeout(() => controller.abort(), 10);
-  await downloadPromise.catch(console.error);
+  await stalled;
+  controller.abort();
   await expect(downloadPromise).rejects.toThrow('aborted');
   expect((await manager.getModels()).length).toBe(0);
 });
