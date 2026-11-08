@@ -19,11 +19,14 @@ import type {
   GlueMsgCancelRes,
   GlueMsgCompletionRes,
   GlueMsgEmbeddingRes,
+  GlueMsgRealtimeSendRes,
+  GlueMsgRealtimeStartRes,
   GlueMsgRerankRes,
   GlueMsgSystemoneRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
   GlueMsgTestBackendOpsRes,
+  GlueMsgTtsRes,
 } from './glue/messages';
 import { LIBLLAMA_VERSION } from './workers-code/generated';
 import type {
@@ -39,13 +42,21 @@ import type {
   CreateEmbeddingResponse,
   EmbeddingContent,
   EmbeddingCreateParams,
+  RealtimeEvent,
+  RealtimeSessionParams,
   RawCompletionChunk,
   RawCompletionParams,
   RawCompletionResponse,
   RerankParams,
   RerankResponse,
+  SpeechChunk,
+  SpeechParams,
+  SpeechResponse,
   SystemOneParams,
   SystemOneResponse,
+  TranscriptionChunk,
+  TranscriptionParams,
+  TranscriptionResponse,
   ChatCompletionMessageContent,
   ChatCompletionMessageText,
   EmbeddingInput,
@@ -176,6 +187,140 @@ export class WllamaRuntimeError extends Error {
 export interface WllamaCompat {
   worker: string | { code: string };
   wasm: string;
+}
+
+/**
+ * Encode PCM samples to the base64 PCM16 format of `input_audio_buffer.append`.
+ */
+export const encodeRealtimeAudio = (samples: Float32Array): string => {
+  const pcm = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    pcm[i] = Math.max(-1, Math.min(1, samples[i])) * 32767;
+  }
+  const bytes = new Uint8Array(pcm.buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+};
+
+/**
+ * Decode the base64 PCM16 audio of a `response.output_audio.delta` event.
+ */
+export const decodeRealtimeAudio = (delta: string): Float32Array => {
+  const binary = atob(delta);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const pcm = new Int16Array(bytes.buffer, 0, bytes.length >> 1);
+  return Float32Array.from(pcm, (v) => v / 32768);
+};
+
+// polls with no event before the poll loop starts to wait
+const REALTIME_BUSY_POLLS = 8;
+const REALTIME_IDLE_MS = 20;
+
+/**
+ * A realtime audio session. Events follow the OAI realtime schema, same as the `/v1/realtime` route of llama-server.
+ * Inference runs while `events()` is being read, so keep reading it to get a response.
+ */
+export class WllamaRealtimeSession {
+  private closed = false;
+  private pending: RealtimeEvent[] = []; // read from the worker, not yet given to a reader
+  private wakeUp: () => void = () => {};
+  private sent = false; // a client event was sent since the last poll
+
+  constructor(
+    private proxy: ProxyToWorker,
+    private reqId: number
+  ) {}
+
+  /**
+   * Send a client event, for example `session.update` or `response.create`.
+   */
+  async send(event: RealtimeEvent): Promise<void> {
+    const result = await this.proxy.wllamaAction<GlueMsgRealtimeSendRes>(
+      'realtime_send',
+      {
+        _name: 'rtsd_req',
+        req_id: this.reqId,
+        data_json: JSON.stringify(event),
+      }
+    );
+    if (!result.success) {
+      throw new WllamaError('Realtime session is closed', 'inference_error');
+    }
+    this.sent = true;
+    this.wakeUp();
+  }
+
+  /**
+   * Same as sending `input_audio_buffer.append`.
+   * @param samples mono PCM at `LoadedContextInfo.audio_input_rate`
+   */
+  async appendAudio(samples: Float32Array): Promise<void> {
+    await this.send({
+      type: 'input_audio_buffer.append',
+      audio: encodeRealtimeAudio(samples),
+    });
+  }
+
+  /**
+   * Read the server events. It ends when the session ends. Only one reader at a time.
+   */
+  async *events(): AsyncGenerator<RealtimeEvent> {
+    let nEmpty = 0;
+    while (this.pending.length > 0 || !this.closed) {
+      // a reader that stops early leaves the rest for the next one
+      if (this.pending.length > 0) {
+        yield this.pending.shift()!;
+        continue;
+      }
+      const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+        'get_result',
+        { _name: 'gres_req', req_id: this.reqId }
+      );
+      if (!chunk.has_more) {
+        this.closed = true;
+      }
+      // the event may need a few polls of work, poll without waiting again
+      if (this.sent) {
+        this.sent = false;
+        nEmpty = 0;
+      }
+      if (chunk.data_json) {
+        nEmpty = 0;
+        this.pending.push(...(JSON.parse(chunk.data_json) as RealtimeEvent[]));
+      } else if (++nEmpty > REALTIME_BUSY_POLLS) {
+        // nothing to do until the next client event
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, REALTIME_IDLE_MS);
+          this.wakeUp = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+      }
+    }
+  }
+
+  /**
+   * End the session and free its slot.
+   */
+  async close(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    this.pending = [];
+    this.wakeUp();
+    await this.proxy.wllamaAction<GlueMsgCancelRes>('cancel', {
+      _name: 'cncl_req',
+      req_id: this.reqId,
+    });
+  }
 }
 
 export class Wllama {
@@ -782,6 +927,126 @@ export class Wllama {
   }
 
   /**
+   * Generate speech from text. The model must have audio output, see `LoadedContextInfo.has_audio_output`.
+   * @param options speech options
+   * @returns the whole audio (stream=false) or an async iterator of audio chunks (stream=true)
+   */
+  async createSpeech(
+    options: SpeechParams & { stream?: false }
+  ): Promise<SpeechResponse>;
+  async createSpeech(
+    options: SpeechParams & { stream: true }
+  ): Promise<AsyncIterable<SpeechChunk>>;
+  async createSpeech(
+    options: SpeechParams & { stream?: boolean }
+  ): Promise<SpeechResponse | AsyncIterable<SpeechChunk>> {
+    this.checkModelLoaded();
+    const { speaker_ref, abortSignal, ...params } = options;
+    if (abortSignal?.aborted) {
+      throw new WllamaAbortError();
+    }
+    const customOpt = this.seed !== undefined ? { seed: this.seed } : {};
+    const result = await this.proxy.wllamaAction<GlueMsgTtsRes>('tts', {
+      _name: 'tts__req',
+      data_json: JSON.stringify({ ...customOpt, ...params }),
+      files: speaker_ref ? [new Uint8Array(speaker_ref)] : [],
+    });
+    if (!result.success) {
+      throw new WllamaError(
+        result.message || 'Model failed to start speech generation',
+        'inference_error'
+      );
+    }
+
+    if (abortSignal?.aborted) {
+      await this.cancelRequest(result.req_id);
+      throw new WllamaAbortError();
+    }
+
+    // the generator only runs once it is read, so cancel from here too
+    // request ids start again in a new worker, so an abort after a reload must do nothing
+    const proxy = this.proxy;
+    const onAbort = () => {
+      if (this.proxy === proxy) {
+        void this.cancelRequest(result.req_id);
+      }
+    };
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+    const chunks = this.getSpeechChunks(result.req_id, abortSignal, () =>
+      abortSignal?.removeEventListener('abort', onAbort)
+    );
+    if (options.stream) {
+      return chunks;
+    }
+    for await (const chunk of chunks) {
+      if (chunk.final) {
+        return { audio: chunk.audio, sample_rate: chunk.sample_rate };
+      }
+    }
+    throw new WllamaError('No speech result received', 'inference_error');
+  }
+
+  /**
+   * Transcribe an audio file. The model must have audio input, see `supportInputModality()`.
+   * @param options OAI-compatible transcription options
+   * @returns OAI-compatible transcription response (stream=false), void when done (stream=true + onData), or async iterator (stream=true, no onData)
+   */
+  async createTranscription(
+    options: TranscriptionParams & { stream?: false }
+  ): Promise<TranscriptionResponse>;
+  async createTranscription(
+    options: TranscriptionParams & StreamParams<TranscriptionChunk>
+  ): Promise<void>;
+  async createTranscription(
+    options: TranscriptionParams & { stream: true }
+  ): Promise<AsyncIterable<TranscriptionChunk>>;
+  async createTranscription(
+    options: TranscriptionParams
+  ): Promise<TranscriptionResponse | void | AsyncIterable<TranscriptionChunk>> {
+    this.checkModelLoaded();
+    if (!this.supportInputModality('audio')) {
+      throw new WllamaError(
+        'Audio input is not supported by the loaded model',
+        'inference_error'
+      );
+    }
+    if (options.stream && (options as any).onData) {
+      await this.createCompletionImpl(options);
+    } else if (options.stream) {
+      return await this.createCompletionGenerator(options);
+    } else {
+      return await this.createCompletionImpl({ ...options, stream: false });
+    }
+  }
+
+  /**
+   * Start a realtime audio session. The model must support it, see `LoadedContextInfo.has_audio_stream`.
+   * It holds one slot until `close()` is called.
+   * @param options session options
+   * @returns the session
+   */
+  async createRealtimeSession(
+    options: RealtimeSessionParams = {}
+  ): Promise<WllamaRealtimeSession> {
+    this.checkModelLoaded();
+    const customOpt = this.seed !== undefined ? { seed: this.seed } : {};
+    const result = await this.proxy.wllamaAction<GlueMsgRealtimeStartRes>(
+      'realtime_start',
+      {
+        _name: 'rtst_req',
+        data_json: JSON.stringify({ ...customOpt, ...options }),
+      }
+    );
+    if (!result.success) {
+      throw new WllamaError(
+        result.message || 'Model failed to start realtime session',
+        'inference_error'
+      );
+    }
+    return new WllamaRealtimeSession(this.proxy, result.req_id);
+  }
+
+  /**
    * Make chat completion for a given chat messages.
    * @param options OAI-compatible chat completion options
    * @returns OAI-compatible chat completion response (only the final result when stream=false) or an async iterator of completion chunks (when stream=true)
@@ -857,11 +1122,24 @@ export class Wllama {
 
     const isStream = !!(options as any).stream;
     const isChat = !!(options as any).messages;
+    const isAsr = !!(options as any).file;
     const customOpt: any = {};
     if (this.seed !== undefined) {
       customOpt.seed = this.seed;
     }
     let files: ArrayBuffer[] = [];
+    if (isAsr) {
+      const { file, ...rest } = options as any as TranscriptionParams;
+      files = [file];
+      // upstream reads these as form fields, so they must be strings
+      const formFields: Record<string, string> = {};
+      for (const key of ['stream', 'max_tokens', 'temperature'] as const) {
+        if (rest[key] !== undefined) {
+          formFields[key] = String(rest[key]);
+        }
+      }
+      options = { ...rest, ...formFields } as any;
+    }
     if (isChat) {
       const tmp = this.prepareMultimodalInput(
         options as any as ChatCompletionParams
@@ -874,6 +1152,7 @@ export class Wllama {
       {
         _name: 'cmpl_req',
         is_chat: isChat,
+        is_asr: isAsr,
         data_json: JSON.stringify({ ...options, ...customOpt }),
         files: files.map((f) => new Uint8Array(f)),
       }
@@ -1128,6 +1407,52 @@ export class Wllama {
       });
     } catch (e) {
       this.logger().warn('Failed to cancel request', reqId, e);
+    }
+  }
+
+  private async *getSpeechChunks(
+    reqId: number,
+    abortSignal: AbortSignal | undefined,
+    onDone: () => void
+  ): AsyncGenerator<SpeechChunk> {
+    let completed = false;
+    try {
+      while (true) {
+        if (abortSignal?.aborted) {
+          throw new WllamaAbortError();
+        }
+        const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+          'get_result',
+          { _name: 'gres_req', req_id: reqId }
+        );
+        if (abortSignal?.aborted) {
+          throw new WllamaAbortError();
+        }
+        completed = !chunk.has_more;
+        if (chunk.data_json) {
+          const data = this.jsonDecode(chunk.data_json);
+          if (chunk.is_error) {
+            throw new WllamaError(
+              data.message || 'Unknown speech error',
+              'inference_error'
+            );
+          }
+          yield {
+            audio: chunk.data_raw.slice().buffer as ArrayBuffer,
+            sample_rate: data.sample_rate,
+            final: data.final,
+          };
+        }
+        if (completed) {
+          return;
+        }
+      }
+    } finally {
+      // covers a consumer that stops reading too
+      onDone();
+      if (!completed) {
+        await this.cancelRequest(reqId);
+      }
     }
   }
 

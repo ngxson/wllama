@@ -449,6 +449,36 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "type": "bool",
         "name": "has_audio_input",
         "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "has_audio_output",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "has_audio_stream",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "has_live_asr",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "audio_input_rate",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "audio_output_rate",
+        "isNullable": false
+      },
+      {
+        "type": "arr_str",
+        "name": "audio_voices",
+        "isNullable": false
       }
     ]
   },
@@ -460,6 +490,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "bool",
         "name": "is_chat",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
+        "name": "is_asr",
         "isNullable": false
       },
       {
@@ -588,6 +623,108 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       }
     ]
   },
+  "tts__req": {
+    "name": "tts__req",
+    "structName": "glue_msg_tts_req",
+    "className": "GlueMsgTtsReq",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      },
+      {
+        "type": "arr_raw",
+        "name": "files",
+        "isNullable": false
+      }
+    ]
+  },
+  "tts__res": {
+    "name": "tts__res",
+    "structName": "glue_msg_tts_res",
+    "className": "GlueMsgTtsRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "message",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "req_id",
+        "isNullable": false
+      }
+    ]
+  },
+  "rtst_req": {
+    "name": "rtst_req",
+    "structName": "glue_msg_realtime_start_req",
+    "className": "GlueMsgRealtimeStartReq",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
+  "rtst_res": {
+    "name": "rtst_res",
+    "structName": "glue_msg_realtime_start_res",
+    "className": "GlueMsgRealtimeStartRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "message",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "req_id",
+        "isNullable": false
+      }
+    ]
+  },
+  "rtsd_req": {
+    "name": "rtsd_req",
+    "structName": "glue_msg_realtime_send_req",
+    "className": "GlueMsgRealtimeSendReq",
+    "fields": [
+      {
+        "type": "int",
+        "name": "req_id",
+        "isNullable": false
+      },
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
+  "rtsd_res": {
+    "name": "rtsd_res",
+    "structName": "glue_msg_realtime_send_res",
+    "className": "GlueMsgRealtimeSendRes",
+    "fields": [
+      {
+        "type": "bool",
+        "name": "success",
+        "isNullable": false
+      }
+    ]
+  },
   "gres_req": {
     "name": "gres_req",
     "structName": "glue_msg_get_result_req",
@@ -623,6 +760,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "str",
         "name": "data_json",
+        "isNullable": false
+      },
+      {
+        "type": "raw",
+        "name": "data_raw",
         "isNullable": false
       }
     ]
@@ -780,12 +922,19 @@ export interface GlueMsgLoadRes {
   media_marker: string;
   has_image_input: boolean;
   has_audio_input: boolean;
+  has_audio_output: boolean;
+  has_audio_stream: boolean;
+  has_live_asr: boolean;
+  audio_input_rate: number;
+  audio_output_rate: number;
+  audio_voices: string[];
 }
 
 // struct glue_msg_completion_req
 export interface GlueMsgCompletionReq {
   _name: "cmpl_req";
   is_chat: boolean;
+  is_asr: boolean;
   data_json: string;
   files: Uint8Array[];
 }
@@ -838,6 +987,48 @@ export interface GlueMsgSystemoneRes {
   req_id: number;
 }
 
+// struct glue_msg_tts_req
+export interface GlueMsgTtsReq {
+  _name: "tts__req";
+  data_json: string;
+  files: Uint8Array[];
+}
+
+// struct glue_msg_tts_res
+export interface GlueMsgTtsRes {
+  _name: "tts__res";
+  success: boolean;
+  message: string;
+  req_id: number;
+}
+
+// struct glue_msg_realtime_start_req
+export interface GlueMsgRealtimeStartReq {
+  _name: "rtst_req";
+  data_json: string;
+}
+
+// struct glue_msg_realtime_start_res
+export interface GlueMsgRealtimeStartRes {
+  _name: "rtst_res";
+  success: boolean;
+  message: string;
+  req_id: number;
+}
+
+// struct glue_msg_realtime_send_req
+export interface GlueMsgRealtimeSendReq {
+  _name: "rtsd_req";
+  req_id: number;
+  data_json: string;
+}
+
+// struct glue_msg_realtime_send_res
+export interface GlueMsgRealtimeSendRes {
+  _name: "rtsd_res";
+  success: boolean;
+}
+
 // struct glue_msg_get_result_req
 export interface GlueMsgGetResultReq {
   _name: "gres_req";
@@ -851,6 +1042,7 @@ export interface GlueMsgGetResultRes {
   has_more: boolean;
   is_error: boolean;
   data_json: string;
+  data_raw: Uint8Array;
 }
 
 // struct glue_msg_cancel_req
@@ -879,4 +1071,4 @@ export interface GlueMsgTestBackendOpsRes {
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgSystemoneReq | GlueMsgSystemoneRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgCancelReq | GlueMsgCancelRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgSystemoneReq | GlueMsgSystemoneRes | GlueMsgTtsReq | GlueMsgTtsRes | GlueMsgRealtimeStartReq | GlueMsgRealtimeStartRes | GlueMsgRealtimeSendReq | GlueMsgRealtimeSendRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgCancelReq | GlueMsgCancelRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;

@@ -80,9 +80,13 @@ jobs:
 
       - name: Test (Chrome)
         run: npm run test
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN_READONLY }}
 
       - name: Test (Firefox)
         run: npm run test:firefox
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN_READONLY }}
 
   # TODO: add test for WebGPU on github hosted runner ; current missing ShaderF16 support
 

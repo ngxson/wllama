@@ -35,6 +35,12 @@ extern "C" void __real_ggml_threadpool_free(struct ggml_threadpool *tp) {
   ggml_threadpool_free(tp);
 }
 
+// the wasm link wraps this too (see the root CMakeLists.txt), here the wrap is not hooked and the real function is called directly
+#include "mtmd.h"
+extern "C" mtmd_context *__real_mtmd_init_from_file(const char *mmproj_fname, const struct llama_model *text_model, const struct mtmd_context_params ctx_params) {
+  return mtmd_init_from_file(mmproj_fname, text_model, ctx_params);
+}
+
 #include "wllama-context.h"
 
 // common/log.cpp is excluded from the build (wllama-context.h has its own common_log), stub the rest
