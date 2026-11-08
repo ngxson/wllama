@@ -740,6 +740,7 @@ test.sequential(
     expect(info.has_image_input).toBe(true);
     expect(info.has_audio_input).toBe(true);
     expect(info.has_audio_output).toBe(true);
+    expect(info.has_chat).toBe(true);
     expect(info.has_audio_stream).toBe(true);
     expect(info.has_live_asr).toBe(true);
     expect(info.audio_input_rate).toBe(16000);
@@ -757,6 +758,7 @@ test.sequential(
     await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 256 });
     const info = wllama.getLoadedContextInfo();
     expect(info.has_audio_output).toBe(false);
+    expect(info.has_chat).toBe(true);
     expect(info.has_audio_stream).toBe(false);
     expect(info.audio_voices).toEqual([]);
     await expect(wllama.createSpeech({ input: 'hello' })).rejects.toThrow(
@@ -1296,14 +1298,8 @@ test.sequential(
     );
     expect((await chat).usage!.completion_tokens).toBeGreaterThan(0);
 
-    // an aborted speech stream that is never read must free the slot
-    const abort = new AbortController();
-    await wllama.createSpeech({
-      input: 'Hello world',
-      stream: true,
-      abortSignal: abort.signal,
-    });
-    abort.abort();
+    // a speech stream that is never read does not take the slot
+    await wllama.createSpeech({ input: 'Hello world', stream: true });
     const second = await wllama.createRealtimeSession();
     await second.close();
     await wllama.exit();

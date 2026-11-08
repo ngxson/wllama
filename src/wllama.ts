@@ -929,7 +929,7 @@ export class Wllama {
   /**
    * Generate speech from text. The model must have audio output, see `LoadedContextInfo.has_audio_output`.
    * @param options speech options
-   * @returns the whole audio (stream=false) or an async iterator of audio chunks (stream=true)
+   * @returns the whole audio (stream=false) or an async iterator of audio chunks (stream=true). A stream starts its request on the first read, so errors come from the iterator
    */
   async createSpeech(
     options: SpeechParams & { stream?: false }
@@ -941,40 +941,8 @@ export class Wllama {
     options: SpeechParams & { stream?: boolean }
   ): Promise<SpeechResponse | AsyncIterable<SpeechChunk>> {
     this.checkModelLoaded();
-    const { speaker_ref, abortSignal, ...params } = options;
-    if (abortSignal?.aborted) {
-      throw new WllamaAbortError();
-    }
-    const customOpt = this.seed !== undefined ? { seed: this.seed } : {};
-    const result = await this.proxy.wllamaAction<GlueMsgTtsRes>('tts', {
-      _name: 'tts__req',
-      data_json: JSON.stringify({ ...customOpt, ...params }),
-      files: speaker_ref ? [new Uint8Array(speaker_ref)] : [],
-    });
-    if (!result.success) {
-      throw new WllamaError(
-        result.message || 'Model failed to start speech generation',
-        'inference_error'
-      );
-    }
-
-    if (abortSignal?.aborted) {
-      await this.cancelRequest(result.req_id);
-      throw new WllamaAbortError();
-    }
-
-    // the generator only runs once it is read, so cancel from here too
-    // request ids start again in a new worker, so an abort after a reload must do nothing
-    const proxy = this.proxy;
-    const onAbort = () => {
-      if (this.proxy === proxy) {
-        void this.cancelRequest(result.req_id);
-      }
-    };
-    abortSignal?.addEventListener('abort', onAbort, { once: true });
-    const chunks = this.getSpeechChunks(result.req_id, abortSignal, () =>
-      abortSignal?.removeEventListener('abort', onAbort)
-    );
+    // a stream starts its request on the first read, so an unread one costs nothing
+    const chunks = this.getSpeechChunks(options);
     if (options.stream) {
       return chunks;
     }
@@ -1411,17 +1379,43 @@ export class Wllama {
   }
 
   private async *getSpeechChunks(
-    reqId: number,
-    abortSignal: AbortSignal | undefined,
-    onDone: () => void
+    options: SpeechParams & { stream?: boolean }
   ): AsyncGenerator<SpeechChunk> {
+    const { speaker_ref, abortSignal, ...params } = options;
+    if (abortSignal?.aborted) {
+      throw new WllamaAbortError();
+    }
+    // request ids start again in a new worker, so only talk to the worker that has the request
+    const proxy = this.proxy;
+    const customOpt = this.seed !== undefined ? { seed: this.seed } : {};
+    const result = await proxy.wllamaAction<GlueMsgTtsRes>('tts', {
+      _name: 'tts__req',
+      data_json: JSON.stringify({ ...customOpt, ...params }),
+      files: speaker_ref ? [new Uint8Array(speaker_ref)] : [],
+    });
+    if (!result.success) {
+      throw new WllamaError(
+        result.message || 'Model failed to start speech generation',
+        'inference_error'
+      );
+    }
+    const reqId = result.req_id;
+    const cancel = async () => {
+      if (this.proxy === proxy) {
+        await this.cancelRequest(reqId);
+      }
+    };
+    // also cancel while the reader waits between chunks
+    const onAbort = () => void cancel();
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+
     let completed = false;
     try {
       while (true) {
         if (abortSignal?.aborted) {
           throw new WllamaAbortError();
         }
-        const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+        const chunk = await proxy.wllamaAction<GlueMsgGetResultRes>(
           'get_result',
           { _name: 'gres_req', req_id: reqId }
         );
@@ -1449,9 +1443,9 @@ export class Wllama {
       }
     } finally {
       // covers a consumer that stops reading too
-      onDone();
+      abortSignal?.removeEventListener('abort', onAbort);
       if (!completed) {
-        await this.cancelRequest(reqId);
+        await cancel();
       }
     }
   }
