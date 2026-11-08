@@ -137,14 +137,11 @@ export class Model {
    * - The model files are missing (or the download is interrupted)
    */
   validate(): ModelValidationStatus {
-    let nbShards = ModelManager.parseModelUrl(this.url).length;
-    if (this.mmprojUrl) {
-      nbShards += 1;
-    }
+    const nbFiles = this.getAllUrls().length;
     if (this.size === -1) {
       return ModelValidationStatus.DELETED;
     }
-    if (this.size < 16 || this.files.length !== nbShards) {
+    if (this.size < 16 || this.files.length !== nbFiles) {
       return ModelValidationStatus.INVALID;
     }
     for (const file of this.files) {
@@ -158,10 +155,7 @@ export class Model {
    * In case the model is invalid, call this function to re-download the model
    */
   async refresh(options: DownloadOptions = {}): Promise<void> {
-    const urls = ModelManager.parseModelUrl(this.url);
-    if (this.mmprojUrl) {
-      urls.push(this.mmprojUrl);
-    }
+    const urls = this.getAllUrls();
     const works = urls.map((url, index) => ({
       url,
       index,
@@ -214,14 +208,20 @@ export class Model {
     this.size = -1;
   }
 
-  private getAllFiles(savedFiles: CacheEntry[]): CacheEntry[] {
-    const allUrls = new Set(ModelManager.parseModelUrl(this.url));
+  /**
+   * URLs of all files of this model (shards + mmproj), without duplicates
+   */
+  private getAllUrls(): string[] {
+    const urls = [...ModelManager.parseModelUrl(this.url)];
     if (this.mmprojUrl) {
-      allUrls.add(this.mmprojUrl);
+      urls.push(this.mmprojUrl);
     }
-    // console.log({allUrls, savedFiles});
+    return [...new Set(urls)];
+  }
+
+  private getAllFiles(savedFiles: CacheEntry[]): CacheEntry[] {
     const allFiles: CacheEntry[] = [];
-    for (const url of allUrls) {
+    for (const url of this.getAllUrls()) {
       const file = savedFiles.find((f) => f.metadata.originalURL === url);
       if (!file) {
         continue;

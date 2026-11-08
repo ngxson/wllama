@@ -156,7 +156,10 @@ function toPredicate(match: RequestMatcher): (req: Request) => boolean {
       return false;
     }
     if (typeof match.url === 'string') return req.url === match.url;
-    if (match.url instanceof RegExp) return match.url.test(req.url);
+    if (match.url instanceof RegExp) {
+      match.url.lastIndex = 0; // in case of a global or sticky RegExp
+      return match.url.test(req.url);
+    }
     return true;
   };
 }

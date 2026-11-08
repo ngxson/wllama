@@ -197,7 +197,10 @@ test.sequential('recover from missing shard in cache', async () => {
     }
   );
   expect(tinyModel.url).toBe(TINY_MODEL);
-  expect(lastProgress).toEqual({ loaded: 1185376, total: 1185376 });
+  expect(lastProgress).toEqual({
+    loaded: tinyModel.size,
+    total: tinyModel.size,
+  });
 
   // only the missing shards are downloaded again
   net.reset();
@@ -233,6 +236,29 @@ test.sequential(
     const model = await manager.downloadModel(TINY_MODEL);
     expect(model.files.length).toBe(1);
     expect(model.files[0].size).toBe(1185376);
+    expect(model.validate()).toBe(ModelValidationStatus.VALID);
+
+    // the cached file is reused, not downloaded again
+    net.reset();
+    const cached = await manager.getModelOrDownload({ url: TINY_MODEL });
+    expect(cached.size).toBe(1185376);
+    expect(getRequests(net).length).toBe(0);
+  }
+);
+
+test.sequential(
+  'download works when mmprojUrl is also a model URL',
+  async () => {
+    const manager = new ModelManager();
+    await manager.clear();
+    const net = hookNetwork();
+    const model = await manager.downloadModel({
+      url: TINY_MODEL,
+      mmprojUrl: TINY_MODEL,
+    });
+    expect(model.files.length).toBe(1);
+    expect(model.validate()).toBe(ModelValidationStatus.VALID);
+    expect(getRequests(net).length).toBe(1);
   }
 );
 
