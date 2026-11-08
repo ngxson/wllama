@@ -166,15 +166,40 @@ test.sequential('recover from missing shard in cache', async () => {
   const splitModel = invalidModels.find((m) => m.url === SPLIT_MODEL);
   expect(splitModel).toBeDefined();
   if (!splitModel) throw new Error();
+  expect(splitModel.files.length).toBe(2);
   expect(splitModel.validate()).toBe(ModelValidationStatus.INVALID);
 
-  const tinyModel = await manager.getModelOrDownload({ url: TINY_MODEL });
+  let lastProgress = { loaded: 0, total: 0 };
+  const tinyModel = await manager.getModelOrDownload(
+    { url: TINY_MODEL },
+    {
+      progressCallback: (progress) => {
+        lastProgress = progress;
+      },
+    }
+  );
   expect(tinyModel.url).toBe(TINY_MODEL);
+  expect(lastProgress).toEqual({ loaded: 1185376, total: 1185376 });
 
-  const model = await manager.downloadModel(SPLIT_MODEL);
+  const model = await manager.getModelOrDownload({ url: SPLIT_MODEL });
   expect(model.files.length).toBe(3);
   expect((await manager.getModels()).length).toBe(2);
 });
+
+test.sequential(
+  'download fails when files are missing after download',
+  async () => {
+    // the cache accepts the download but stores nothing
+    const fakeCache = {
+      download: async () => {},
+      list: async () => [],
+    } as unknown as CacheManager;
+    const manager = new ModelManager({ cacheManager: fakeCache });
+    await expect(manager.downloadModel(TINY_MODEL)).rejects.toThrow(
+      'Model file not found'
+    );
+  }
+);
 
 test.sequential('download invalid model URL', async () => {
   const manager = new ModelManager();
