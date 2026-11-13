@@ -387,15 +387,18 @@ export class ProxyToWorker {
       if (verb.endsWith('error')) this.logger.error(...args);
       return;
     } else if (verb === 'signal.abort') {
-      const [signalType, message, rawStack, originalErr] = args as [
+      const [signalType, reason, rawStack, originalErr] = args as [
         string,
-        string,
+        unknown,
         string,
         any,
       ];
       if (originalErr) {
         this.logger.error(originalErr);
       }
+      // emscripten's abort() may pass a non-string reason (e.g. a CompileError)
+      const message =
+        reason instanceof Error ? reason.message : String(reason ?? '');
       let stack = '';
       let newMsg = message.replace(
         'Build with -sASSERTIONS for more info.',

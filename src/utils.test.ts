@@ -11,6 +11,7 @@ import {
   parseModelUrl,
   sortFileByShard,
   isValidGgufFile,
+  isSupportMem64,
 } from './utils';
 
 describe('joinBuffers', () => {
@@ -227,5 +228,19 @@ describe('GGUF file validation', () => {
 
     // Case sensitivity
     expect(isValidGgufFile('model.GGUF?param=value')).toBe(false);
+  });
+});
+
+describe('isSupportMem64', () => {
+  test('returns false when the engine cannot compile Memory64 modules', () => {
+    // Safari 27.2 accepts `address: 'i64'` in the WebAssembly.Memory
+    // constructor but its compiler rejects Memory64 modules
+    const originalValidate = WebAssembly.validate;
+    WebAssembly.validate = () => false;
+    try {
+      expect(isSupportMem64()).toBe(false);
+    } finally {
+      WebAssembly.validate = originalValidate;
+    }
   });
 });

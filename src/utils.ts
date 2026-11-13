@@ -272,6 +272,10 @@ export const isSupportWebGPU = () => {
 
 /**
  * @returns true if browser support WASM Memory64
+ *
+ * Some engines accept `address: 'i64'` in the WebAssembly.Memory constructor
+ * while their compiler still rejects Memory64 modules (e.g. Safari 27.2), so
+ * we also check that a minimal Memory64 module validates.
  */
 export const isSupportMem64 = (): boolean => {
   try {
@@ -279,7 +283,10 @@ export const isSupportMem64 = (): boolean => {
       address: 'i64',
       initial: 1n, // 1 page (64 KiB)
     } as any);
-    return true;
+    // module with a single memory section: (memory i64 1)
+    return WebAssembly.validate(
+      new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 4, 1])
+    );
   } catch {
     return false;
   }
