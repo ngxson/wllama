@@ -232,15 +232,43 @@ describe('GGUF file validation', () => {
 });
 
 describe('isSupportMem64', () => {
+  const MEM64_PROBE = [0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 4, 1];
+
+  // Stub both globals so the result does not depend on the test browser
+  const withStubs = (memoryThrows: boolean, validateResult: boolean) => {
+    const originalMemory = WebAssembly.Memory;
+    const originalValidate = WebAssembly.validate;
+    const validated: number[][] = [];
+    (WebAssembly as any).Memory = function () {
+      if (memoryThrows) throw new TypeError('i64 not supported');
+    };
+    (WebAssembly as any).validate = (bytes: Uint8Array) => {
+      validated.push(Array.from(bytes));
+      return validateResult;
+    };
+    try {
+      return { result: isSupportMem64(), validated };
+    } finally {
+      (WebAssembly as any).Memory = originalMemory;
+      (WebAssembly as any).validate = originalValidate;
+    }
+  };
+
+  test('returns true when Memory64 memory and modules are supported', () => {
+    const { result, validated } = withStubs(false, true);
+    expect(result).toBe(true);
+    expect(validated).toEqual([MEM64_PROBE]);
+  });
+
   test('returns false when the engine cannot compile Memory64 modules', () => {
     // Safari 27.2 accepts `address: 'i64'` in the WebAssembly.Memory
     // constructor but its compiler rejects Memory64 modules
-    const originalValidate = WebAssembly.validate;
-    WebAssembly.validate = () => false;
-    try {
-      expect(isSupportMem64()).toBe(false);
-    } finally {
-      WebAssembly.validate = originalValidate;
-    }
+    const { result, validated } = withStubs(false, false);
+    expect(result).toBe(false);
+    expect(validated).toEqual([MEM64_PROBE]);
+  });
+
+  test('returns false when Memory64 memory cannot be created', () => {
+    expect(withStubs(true, true).result).toBe(false);
   });
 });
