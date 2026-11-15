@@ -109,7 +109,9 @@ set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
     llama.cpp/tools/server/server-common.cpp
     llama.cpp/tools/server/server-decision.cpp
     llama.cpp/tools/server/server-schema.cpp
+    llama.cpp/tools/server/server-slot-sched.cpp
     llama.cpp/tools/server/server-stream.cpp
+    llama.cpp/vendor/cpp-httplib/httplib.cpp
 )
 
 set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}
