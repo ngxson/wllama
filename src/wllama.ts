@@ -1168,12 +1168,14 @@ export class Wllama {
    * @param modality
    * @returns
    */
-  supportInputModality(modality: 'image' | 'audio'): boolean {
+  supportInputModality(modality: 'image' | 'audio' | 'video'): boolean {
     this.checkModelLoaded();
     if (modality === 'image') {
       return !!this.loadedContextInfo.has_image_input;
     } else if (modality === 'audio') {
       return !!this.loadedContextInfo.has_audio_input;
+    } else if (modality === 'video') {
+      return !!this.loadedContextInfo.has_video_input;
     } else {
       throw new WllamaError(
         'Unsupported modality: ' + modality,

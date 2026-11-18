@@ -17,10 +17,17 @@ export interface ChatCompletionMessageAudio {
   data: ArrayBuffer;
 }
 
+export interface ChatCompletionMessageVideo {
+  type: 'video';
+  /** Frames from sampleVideo(). A video file (for example MP4) is not accepted */
+  data: ArrayBuffer;
+}
+
 export type ChatCompletionMessageContent =
   | ChatCompletionMessageText
   | ChatCompletionMessageImage
-  | ChatCompletionMessageAudio;
+  | ChatCompletionMessageAudio
+  | ChatCompletionMessageVideo;
 
 // Tool definitions
 

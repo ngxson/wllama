@@ -97,6 +97,7 @@ export interface LoadedContextInfo {
   add_eos_token: boolean;
   has_image_input: boolean;
   has_audio_input: boolean;
+  has_video_input: boolean;
   has_audio_output: boolean;
   has_chat: boolean; // false for a TTS-only or a realtime transcription model
   has_audio_stream: boolean; // realtime sessions are available

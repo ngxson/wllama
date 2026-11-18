@@ -155,6 +155,33 @@ const response = await wllama.createChatCompletion({
 });
 ```
 
+### Video input
+
+`sampleVideo()` samples frames with the video decoder of the browser, so all formats that the browser can play are supported. Send the result as a `video` part. Any model with image input can use it.
+
+```typescript
+import { sampleVideo } from '@wllama/wllama';
+
+const response = await wllama.createChatCompletion({
+  messages: [
+    {
+      role: 'user',
+      content: [
+        { type: 'video', data: await sampleVideo(file, { maxFrames: 8, maxEdge: 512 }) },
+        { type: 'text', text: 'Describe this video.' },
+      ],
+    },
+  ],
+  max_tokens: 512,
+});
+```
+
+Each frame uses context tokens, so set `maxFrames` according to `n_ctx`. A model with its own video layout (for example Qwen3-VL) gets the frames in that layout, with timestamps. The audio track is not used. The `data` must come from `sampleVideo()`, a video file (for example MP4) is not accepted.
+
+`videoToMessageContent()` gives the same frames as separate `image` parts, each one after a text part with its timestamp. Use it if you want to change the frames or the timestamps. A model that merges video frames (for example Qwen3-VL) uses more tokens with it.
+
+These functions need the DOM, so they cannot run in a web worker. To read a URL from another origin, the server must allow CORS. Firefox cannot seek in a video that it recorded itself with `MediaRecorder`: every frame comes back as the first frame.
+
 ## Migration from v2.0
 
 ### Removed low-level APIs
