@@ -633,9 +633,17 @@ struct wllama_context
           meta->logit_bias_eog,
           body);
       task.params.res_type = res_type;
-      task.cli_prompt = prompt;
-      task.cli_files = files;
-      task.cli = true;
+      if (files.empty())
+      {
+        // apply_chat_session() needs the tokens to find the message spans
+        task.tokens = std::move(tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default())[0]);
+      }
+      else
+      {
+        task.cli_prompt = prompt;
+        task.cli_files = files;
+        task.cli = true;
+      }
       task.apply_chat_session(chat_session);
 
       std::vector<server_task> tasks;
@@ -881,6 +889,23 @@ struct wllama_context
       params.speculative.draft.cpuparams.n_threads = req.spec_draft_threads.value;
     if (req.spec_draft_threads_batch.not_null())
       params.speculative.draft.cpuparams_batch.n_threads = req.spec_draft_threads_batch.value;
+    if (req.spec_type.not_null())
+    {
+      auto types = common_speculative_types_from_names(string_split<std::string>(req.spec_type.value, ','));
+      params.speculative.types.insert(params.speculative.types.end(), types.begin(), types.end());
+    }
+    if (req.spec_ngram_simple_size_n.not_null())
+      params.speculative.ngram_simple.size_n = req.spec_ngram_simple_size_n.value;
+    if (req.spec_ngram_simple_size_m.not_null())
+      params.speculative.ngram_simple.size_m = req.spec_ngram_simple_size_m.value;
+    if (req.spec_ngram_simple_min_hits.not_null())
+      params.speculative.ngram_simple.min_hits = req.spec_ngram_simple_min_hits.value;
+    if (req.spec_ngram_mod_n_min.not_null())
+      params.speculative.ngram_mod.n_min = req.spec_ngram_mod_n_min.value;
+    if (req.spec_ngram_mod_n_max.not_null())
+      params.speculative.ngram_mod.n_max = req.spec_ngram_mod_n_max.value;
+    if (req.spec_ngram_mod_n_match.not_null())
+      params.speculative.ngram_mod.n_match = req.spec_ngram_mod_n_match.value;
 
     // kv overrides
     if (req.kv_overrides_keys.not_null() && req.kv_overrides_vals.not_null())

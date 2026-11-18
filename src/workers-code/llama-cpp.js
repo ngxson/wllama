@@ -291,6 +291,7 @@ const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
     data = await pendingReadPromise;
   } finally {
     isAwaitReading = false;
+    pendingReadPromise = null; // do not keep the read buffer alive
     pendingReadResolve = null;
     pendingReadReject = null;
   }

@@ -304,6 +304,41 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": true
       },
       {
+        "type": "str",
+        "name": "spec_type",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_ngram_simple_size_n",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_ngram_simple_size_m",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_ngram_simple_min_hits",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_ngram_mod_n_min",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_ngram_mod_n_max",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "spec_ngram_mod_n_match",
+        "isNullable": true
+      },
+      {
         "type": "arr_str",
         "name": "kv_overrides_keys",
         "isNullable": true
@@ -894,6 +929,13 @@ export interface GlueMsgLoadReq {
   spec_draft_p_min?: number | undefined;
   spec_draft_threads?: number | undefined;
   spec_draft_threads_batch?: number | undefined;
+  spec_type?: string | undefined;
+  spec_ngram_simple_size_n?: number | undefined;
+  spec_ngram_simple_size_m?: number | undefined;
+  spec_ngram_simple_min_hits?: number | undefined;
+  spec_ngram_mod_n_min?: number | undefined;
+  spec_ngram_mod_n_max?: number | undefined;
+  spec_ngram_mod_n_match?: number | undefined;
   kv_overrides_keys?: string[] | undefined;
   kv_overrides_vals?: string[] | undefined;
   reasoning_budget_tokens?: number | undefined;
