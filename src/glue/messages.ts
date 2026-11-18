@@ -452,6 +452,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "bool",
+        "name": "has_video_input",
+        "isNullable": false
+      },
+      {
+        "type": "bool",
         "name": "has_audio_output",
         "isNullable": false
       },
@@ -927,6 +932,7 @@ export interface GlueMsgLoadRes {
   media_marker: string;
   has_image_input: boolean;
   has_audio_input: boolean;
+  has_video_input: boolean;
   has_audio_output: boolean;
   has_chat: boolean;
   has_audio_stream: boolean;

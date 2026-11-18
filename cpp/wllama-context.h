@@ -30,6 +30,7 @@
 #include "ggml-backend.h"
 
 #include "glue.hpp"
+#include "wllama-video.h"
 
 #ifdef WLLAMA_TEST_BACKEND
 int main_test_backend_ops(int argc, char **argv);
@@ -907,6 +908,10 @@ struct wllama_context
     if (req.prefill_assistant.not_null())
       params.prefill_assistant = req.prefill_assistant.value;
 
+    // video frames are already sampled by JS, do not resample them
+    params.video_fps = 0.0f;
+    ctx_server.set_video_decoder(&wllama_video_decoder);
+
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);
 
@@ -969,6 +974,7 @@ struct wllama_context
     res.media_marker.value = get_media_marker();
     res.has_image_input.value = server_meta.chat_params.allow_image;
     res.has_audio_input.value = server_meta.chat_params.allow_audio;
+    res.has_video_input.value = server_meta.chat_params.allow_video;
     res.has_audio_output.value = server_meta.has_cap_tts;
     res.has_chat.value = server_meta.has_cap_chat;
     res.has_audio_stream.value = server_meta.has_audio_stream;
