@@ -140,7 +140,7 @@ jobs:
               > ~/.pi/agent/models.json
           fi
 
-          # let the agent try for 20 min, but always stop in time to test, bump and open the PR
+          # let the agent try for 20 min, but always stop in time to test and open the PR
           elapsed=$(( $(date +%s) - $(cat tmp/start_time) ))
           budget=$(( 20 * 60 ))
           remaining=$(( 23 * 60 - elapsed ))
@@ -175,13 +175,6 @@ jobs:
         with:
           path: build
           key: ${{ steps.cache.outputs.cache-primary-key }}
-
-      - name: Bump minor version
-        if: steps.upstream.outputs.changed == 'true'
-        continue-on-error: true
-        run: |
-          npm version minor --no-git-tag-version
-          npm run build
 
       - name: Push and open PR
         if: steps.upstream.outputs.changed == 'true'
