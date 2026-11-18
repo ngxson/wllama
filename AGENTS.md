@@ -27,11 +27,11 @@ The `llama.cpp` submodule is bumped weekly by `.github/workflows/sync-upstream.y
 3. If the build fails, the break is almost always in `cpp/` - our glue calls a llama.cpp API that changed. Find the upstream change with `git -C llama.cpp log -p --since=2.weeks -- <path>`, then adapt our side to match
 4. Rerun `./scripts/sync_upstream.sh` until it passes
 5. Once it builds, run `npm run build` (some tests import from `esm/`), then `npm run test`. It runs the suite on Chrome, which is enough here - do NOT run `npm run test:firefox` or `npm run test:safari`
-6. Bump the minor version with `npm version minor --no-git-tag-version`, then run `npm run build` so the generated files pick it up
 
 Rules for this task:
 
 - Do NOT edit anything under `llama.cpp/` - it is upstream, our fix belongs in `cpp/` or `src/`
+- Do NOT bump the package version (`package.json`, `compat/package.json`), a human does that at release time
 - Do NOT comment out, stub or `#ifdef` away code to make the build pass. If the upstream API is gone, port to the new one
 - If several solutions work, always pick the one with the smallest diff. The human reviewer compares it against the upstream changelog
 - You have a 30 minute budget. `./tmp/start_time` holds the start time in epoch seconds, check how long you have been running with `echo $(( $(date +%s) - $(cat ./tmp/start_time) ))`. Once past 1200 seconds, stop trying and report where you got stuck - a partial PR a human can pick up is much better than a run that gets killed with nothing to show
