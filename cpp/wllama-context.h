@@ -349,16 +349,23 @@ struct realtime_session
   }
 };
 
+// deps.params is a full common_params upstream, so keep our own copy with the sampling of the request
+static common_params make_realtime_params(const common_params & base, const common_params_sampling & sampling) {
+  common_params res = base;
+  res.sampling = sampling;
+  return res;
+}
+
 // models that answer after the audio, see server_realtime_conversation()
 struct realtime_session_conversation : realtime_session
 {
-  common_params_sampling sampling;
+  common_params params;
   mtmd_helper_cap cap;
   server_realtime_deps deps;
   realtime_conversation conversation;
 
-  realtime_session_conversation(server_response_reader &rd, const server_context_meta &meta, const common_params_sampling &sampling, const mtmd_helper_cap &cap, const llama_vocab *vocab)
-      : sampling(sampling), cap(cap), deps{rd.queue_tasks, rd.queue_results, meta, this->sampling, shared_mctx, this->cap, vocab}, conversation(deps, conn)
+  realtime_session_conversation(server_response_reader &rd, const server_context_meta &meta, const common_params &parent_params, const common_params_sampling &sampling, const mtmd_helper_cap &cap, const llama_vocab *vocab)
+      : params(make_realtime_params(parent_params, sampling)), cap(cap), deps{rd.queue_tasks, rd.queue_results, meta, this->params, shared_mctx, this->cap, vocab}, conversation(deps, conn)
   {
     conversation.input_rate = mtmd_get_audio_sample_rate(shared_mctx);
     if (cap.audio_gen)
@@ -1337,7 +1344,7 @@ struct wllama_context
     std::unique_ptr<realtime_session> session;
     if (is_conversation)
     {
-      auto conversation = std::make_unique<realtime_session_conversation>(*rd, *meta, sampling, mtmd_cap, vocab);
+      auto conversation = std::make_unique<realtime_session_conversation>(*rd, *meta, params, sampling, mtmd_cap, vocab);
       if (!conversation->conversation.configure())
       {
         res.success.value = false;
@@ -1978,7 +1985,7 @@ void common_log_default_callback(enum ggml_log_level level, const char *text, vo
 }
 
 enum common_params_fit_status common_fit_params(
-    const char *path_model,
+    const std::vector<std::string> &paths_model,
     llama_model_params *mparams,
     llama_context_params *cparams,
     float *tensor_split,
