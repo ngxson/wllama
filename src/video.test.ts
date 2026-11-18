@@ -23,38 +23,16 @@ const MERGE_MODEL = {
 
 const WIDTH = 640;
 const HEIGHT = 320;
-const CLIP_MS = 2000;
 
-// red for the first half, blue for the second half
-const recordClip = async (): Promise<Blob> => {
-  const canvas = document.createElement('canvas');
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
-  const ctx = canvas.getContext('2d')!;
-  const paint = (color: string) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  };
-  paint('red');
+// 2 seconds of VP8 at 10 fps: red for the first second, then blue. Only the first frame is a keyframe, so a seek must be exact
+// ffmpeg -f lavfi -i color=red:s=640x320:d=1:r=10 -f lavfi -i color=blue:s=640x320:d=1:r=10 -filter_complex "[0][1]concat=n=2:v=1" -c:v libvpx -g 300 -keyint_min 300 -auto-alt-ref 0
+const CLIP_BASE64 =
+  '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';
 
-  const recorder = new MediaRecorder(canvas.captureStream(30), {
-    mimeType: 'video/webm',
+const loadClip = (): Blob =>
+  new Blob([Uint8Array.from(atob(CLIP_BASE64), (c) => c.charCodeAt(0))], {
+    type: 'video/webm',
   });
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (e) => chunks.push(e.data);
-  const stopped = new Promise((resolve) => (recorder.onstop = resolve));
-
-  recorder.start();
-  const start = performance.now();
-  const timer = setInterval(() => {
-    paint(performance.now() - start < CLIP_MS / 2 ? 'red' : 'blue');
-  }, 20);
-  await new Promise((resolve) => setTimeout(resolve, CLIP_MS));
-  clearInterval(timer);
-  recorder.stop();
-  await stopped;
-  return new Blob(chunks, { type: 'video/webm' });
-};
 
 const readFrame = async (data: ArrayBuffer) => {
   const bitmap = await createImageBitmap(
@@ -101,8 +79,8 @@ describe('getVideoSampleTimes', () => {
 describe('sampleVideoFrames', () => {
   let clip: Blob;
 
-  beforeAll(async () => {
-    clip = await recordClip();
+  beforeAll(() => {
+    clip = loadClip();
   });
 
   test('reads the frames at the correct positions', async () => {

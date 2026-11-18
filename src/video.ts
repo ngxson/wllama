@@ -162,16 +162,19 @@ const readVideoFrames = async (
       throw new WllamaError('Cannot create 2D canvas', 'inference_error');
     }
 
-    const times = getVideoSampleTimes(video.duration, fps, maxFrames);
+    // the browser can refine the duration during a seek, so read it only once
+    const duration = video.duration;
+    const times = getVideoSampleTimes(duration, fps, maxFrames);
     for (let index = 0; index < times.length; index++) {
       await seekTo(video, times[index]);
+      ctx.clearRect(0, 0, canvas.width, canvas.height); // for a video with transparency
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       await onFrame({
         ctx,
         time: times[index],
         index,
         count: times.length,
-        fps: times.length / video.duration,
+        fps: times.length / duration,
       });
     }
   } finally {

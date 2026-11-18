@@ -180,7 +180,7 @@ Each frame uses context tokens, so set `maxFrames` according to `n_ctx`. A model
 
 `videoToMessageContent()` gives the same frames as separate `image` parts, each one after a text part with its timestamp. Use it if you want to change the frames or the timestamps. A model that merges video frames (for example Qwen3-VL) uses more tokens with it.
 
-These functions need the DOM, so they cannot run in a web worker. To read a URL from another origin, the server must allow CORS.
+These functions need the DOM, so they cannot run in a web worker. To read a URL from another origin, the server must allow CORS. Firefox cannot seek in a video that it recorded itself with `MediaRecorder`: every frame comes back as the first frame.
 
 ## Migration from v2.0
 

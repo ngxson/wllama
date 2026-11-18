@@ -1,8 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 #include "mtmd-helper.h"
@@ -69,12 +71,13 @@ static void *wllama_video_open(void *, const char *, const unsigned char *buf, s
 
   const uint64_t n_bytes = len - sizeof(h);
   const uint64_t n_pixels = (uint64_t)h.width * h.height;
-  if (n_pixels == 0 || h.n_frames == 0 || !(h.fps > 0.0f))
+  const float duration = h.n_frames / h.fps;
+  if (n_pixels == 0 || h.n_frames == 0 || !(h.fps > 0.0f) || !std::isfinite(h.fps) || !std::isfinite(duration))
     return nullptr;
   if (n_pixels > n_bytes / 3 || n_bytes % (n_pixels * 3) != 0 || n_bytes / (n_pixels * 3) != h.n_frames)
     return nullptr;
 
-  auto *st = new wllama_video_state;
+  auto st = std::make_unique<wllama_video_state>();
   st->header = h;
   st->frames.assign(buf + sizeof(h), buf + len); // buf is only valid during this call
 
@@ -82,8 +85,8 @@ static void *wllama_video_open(void *, const char *, const unsigned char *buf, s
   info->height = h.height;
   info->fps = h.fps;
   info->n_frames = h.n_frames;
-  info->duration = h.n_frames / h.fps;
-  return st;
+  info->duration = duration;
+  return st.release();
 }
 
 static bool wllama_video_read_frame(void *state, unsigned char *rgb, uint32_t width, uint32_t height)
