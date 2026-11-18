@@ -26,5 +26,9 @@ a.out.wasm
 /compat/wasm/*.wasm
 /src/wasm/*.wasm
 
+# emscripten JS glue, embedded inside wllama.wasm by scripts/pack_wasm.js
+/compat/wasm/*.js
+/src/wasm/*.js
+
 # vitest browser screenshots of failed tests
 __screenshots__/

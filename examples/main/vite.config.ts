@@ -11,11 +11,7 @@ const COMPAT_WASM = resolve(
   __dirname,
   'node_modules/@wllama/wllama-compat/wasm/wllama.wasm'
 );
-const COMPAT_JS = resolve(
-  __dirname,
-  'node_modules/@wllama/wllama-compat/wasm/wllama.js'
-);
-const compatAvailable = existsSync(COMPAT_WASM) && existsSync(COMPAT_JS);
+const compatAvailable = existsSync(COMPAT_WASM);
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -32,8 +28,7 @@ export default defineConfig({
         if (compatAvailable) {
           return `
 import wasm from '${COMPAT_WASM}?url';
-import worker from '${COMPAT_JS}?raw';
-export default { wasm, worker: { code: worker } };
+export default { wasm };
 `;
         } else {
           console.warn(

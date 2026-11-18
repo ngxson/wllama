@@ -1,13 +1,21 @@
 #!/usr/bin/env node
-// Usage: node scripts/add_wasm_names.js <input.wasm> <output.wasm>
-// Copies a wasm file and adds a "name" section, so browsers show function names in stack traces.
-// Names come from the .js.symbols file next to the input, made by --emit-symbol-map.
+// Usage: node scripts/pack_wasm.js <input.wasm> <output.wasm>
+// Packs the emscripten output into a single wasm file:
+// - adds a "name" section, so browsers show function names in stack traces.
+//   Names come from the .js.symbols file next to the input, made by --emit-symbol-map.
+// - embeds the emscripten JS glue (the .js file next to the input) as a custom section,
+//   so the JS and the wasm of one build always ship together. See getModuleCode() in src/worker.ts
+//
+// If the input already has a "wllama_js" section (= already packed), it is copied as-is.
 
-import { readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+
+// keep in sync with src/worker.ts
+const JS_SECTION_NAME = 'wllama_js';
 
 const [inputFile, outputFile] = process.argv.slice(2);
 if (!inputFile || !outputFile) {
-  console.error('Usage: node scripts/add_wasm_names.js <input.wasm> <output.wasm>');
+  console.error('Usage: node scripts/pack_wasm.js <input.wasm> <output.wasm>');
   process.exit(1);
 }
 
@@ -127,23 +135,84 @@ function encodeNameSection(symbols) {
     encodeUleb(names.length),
     names,
   ]);
+  return encodeCustomSection(body);
+}
+
+function encodeCustomSection(body) {
   const CUSTOM_SECTION = 0;
   return Buffer.concat([Buffer.from([CUSTOM_SECTION]), encodeUleb(body.length), body]);
 }
 
+function encodeDataSection(name, data) {
+  return encodeCustomSection(Buffer.concat([encodeString(name), data]));
+}
+
+// -- wasm decoder -------------------------------------------------------------
+
+function decodeUleb(buf, pos) {
+  let value = 0, shift = 0, b;
+  do {
+    b = buf[pos++];
+    value += (b & 0x7F) * 2 ** shift;
+    shift += 7;
+  } while (b & 0x80);
+  return [value, pos];
+}
+
+// list the names of all custom sections
+function listCustomSections(wasm) {
+  const names = [];
+  let pos = 8; // skip magic + version
+  while (pos < wasm.length) {
+    const id = wasm[pos++];
+    let size;
+    [size, pos] = decodeUleb(wasm, pos);
+    if (id === 0) {
+      const [len, p] = decodeUleb(wasm, pos);
+      names.push(wasm.subarray(p, p + len).toString());
+    }
+    pos += size;
+  }
+  return names;
+}
+
 // -- main ---------------------------------------------------------------------
 
-// the name section needs ascending function indices
-const symbols = readFileSync(inputFile.replace(/\.wasm$/, '.js.symbols'), 'utf8')
-  .split('\n')
-  .map((line) => {
-    const colon = line.indexOf(':');
-    return [parseInt(line.slice(0, colon)), line.slice(colon + 1).trim()];
-  })
-  .filter(([id]) => !isNaN(id))
-  .sort(([a], [b]) => a - b);
-
 const wasm = readFileSync(inputFile);
-const section = encodeNameSection(symbols);
-writeFileSync(outputFile, Buffer.concat([wasm, section]));
-process.stderr.write(`${outputFile}: ${symbols.length} symbols, name section is ${section.length.toLocaleString()} bytes\n`);
+const existingSections = listCustomSections(wasm);
+if (existingSections.includes(JS_SECTION_NAME)) {
+  writeFileSync(outputFile, wasm);
+  process.stderr.write(`${outputFile}: already packed, copied as-is\n`);
+  process.exit(0);
+}
+
+const sections = [];
+
+// the name section needs ascending function indices
+const symbolsFile = inputFile.replace(/\.wasm$/, '.js.symbols');
+if (existingSections.includes('name')) {
+  process.stderr.write(`${outputFile}: already has a name section, skipped\n`);
+} else if (!existsSync(symbolsFile)) {
+  process.stderr.write(`${outputFile}: ${symbolsFile} not found, name section skipped\n`);
+} else {
+  const symbols = readFileSync(symbolsFile, 'utf8')
+    .split('\n')
+    .map((line) => {
+      const colon = line.indexOf(':');
+      return [parseInt(line.slice(0, colon)), line.slice(colon + 1).trim()];
+    })
+    .filter(([id]) => !isNaN(id))
+    .sort(([a], [b]) => a - b);
+  const section = encodeNameSection(symbols);
+  sections.push(section);
+  process.stderr.write(`${outputFile}: ${symbols.length} symbols, name section is ${section.length.toLocaleString()} bytes\n`);
+}
+
+// the JS glue is required, the runtime cannot work without it
+const jsFile = inputFile.replace(/\.wasm$/, '.js');
+const js = readFileSync(jsFile);
+const jsSection = encodeDataSection(JS_SECTION_NAME, js);
+sections.push(jsSection);
+process.stderr.write(`${outputFile}: embedded ${jsFile}, ${JS_SECTION_NAME} section is ${jsSection.length.toLocaleString()} bytes\n`);
+
+writeFileSync(outputFile, Buffer.concat([wasm, ...sections]));

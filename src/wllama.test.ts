@@ -619,9 +619,12 @@ test.sequential('allowOffline', async () => {
     allowOffline: true,
   });
 
-  // Mock fetch to simulate offline
+  // Mock fetch to simulate offline (the wasm is still loaded, like it would be from the HTTP cache)
   const origFetch = window.fetch;
-  window.fetch = () => Promise.reject(new Error('offline'));
+  window.fetch = (input, init) =>
+    String(input instanceof Request ? input.url : input).endsWith('.wasm')
+      ? origFetch(input, init)
+      : Promise.reject(new Error('offline'));
 
   try {
     await wllama.loadModelFromUrl(TINY_MODEL);

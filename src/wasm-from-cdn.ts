@@ -6,7 +6,6 @@ const WasmFromCDN = {
 };
 
 export const WasmCompatFromCDN = {
-  worker: 'https://cdn.jsdelivr.net/npm/@wllama/wllama-compat@3.13.0/wasm/wllama.js',
   wasm: 'https://cdn.jsdelivr.net/npm/@wllama/wllama-compat@3.13.0/wasm/wllama.wasm',
 };
 

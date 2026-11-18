@@ -10,7 +10,7 @@ export const WLLAMA_CONFIG_PATHS = {
   default: wllamaWasm,
 };
 
-// Either a local { wasm, worker } object (when compat package is built) or 'default' (CDN fallback)
+// Either a local { wasm } object (when compat package is built) or 'default' (CDN fallback)
 export const WLLAMA_COMPAT_CONFIG = compatConfig;
 
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB

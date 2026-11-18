@@ -19,10 +19,7 @@ import {
   isSafariMobile,
   isString,
 } from './utils';
-import {
-  LLAMA_CPP_WORKER_CODE,
-  WLLAMA_EMSCRIPTEN_CODE,
-} from './workers-code/generated';
+import { LLAMA_CPP_WORKER_CODE } from './workers-code/generated';
 import { WllamaError, WllamaRuntimeError } from './wllama';
 
 interface Logger {
@@ -33,6 +30,10 @@ interface Logger {
 }
 
 const FILE_READ_REQ_EVENT = 'fs.read_req';
+
+// Custom section of the wasm file holding the emscripten JS glue code.
+// Keep in sync with scripts/pack_wasm.js
+const WASM_JS_SECTION_NAME = 'wllama_js';
 
 interface TaskParam {
   verb:
@@ -78,7 +79,7 @@ if (!WebAssembly.Suspending) {
 
 export interface WllamaWorkerResources {
   wasmPath: string;
-  // if jsPath is not provided, use WLLAMA_EMSCRIPTEN_CODE
+  // if jsPath is not provided, use the JS code embedded inside the wasm file
   jsPath?: string | { code: string } | undefined;
   // in compat mode, mem64 must be disabled
   compat: boolean;
@@ -115,14 +116,47 @@ export class ProxyToWorker {
     this.useAsyncFile = canUseAsyncFileRead(resources.compat);
   }
 
-  async getModuleCode(): Promise<string> {
-    if (!this.resources.jsPath) {
-      if (this.resources.compat) {
-        throw new Error(
-          'compat mode is enabled but no jsPath was provided. Pass a worker JS via setCompat() or install @wllama/wllama-compat.'
+  /**
+   * Fetch and compile the wasm file.
+   * The compiled module is then sent to the worker, emscripten instantiates it via Module.instantiateWasm
+   */
+  async compileWasm(): Promise<WebAssembly.Module> {
+    const url = this.resources.wasmPath;
+    const fetchWasm = () => fetch(url, { credentials: 'same-origin' });
+    if (typeof WebAssembly.compileStreaming === 'function') {
+      try {
+        return await WebAssembly.compileStreaming(fetchWasm());
+      } catch (e) {
+        // streaming requires the server to send "Content-Type: application/wasm"
+        this.logger.warn(
+          `wasm streaming compile failed: ${e}; falling back to ArrayBuffer instantiation`
         );
       }
-      return WLLAMA_EMSCRIPTEN_CODE;
+    }
+    const response = await fetchWasm();
+    if (!response.ok) {
+      throw new Error(`Failed to fetch wasm from ${url}`);
+    }
+    return await WebAssembly.compile(await response.arrayBuffer());
+  }
+
+  /**
+   * Get the emscripten JS glue code. By default, it is embedded inside the wasm file (see scripts/pack_wasm.js),
+   * so that the JS and the wasm of one build always come together.
+   */
+  async getModuleCode(wasmModule: WebAssembly.Module): Promise<string> {
+    if (!this.resources.jsPath) {
+      const sections = WebAssembly.Module.customSections(
+        wasmModule,
+        WASM_JS_SECTION_NAME
+      );
+      if (sections.length === 0) {
+        throw new Error(
+          `The wasm file "${this.resources.wasmPath}" does not contain the JS code ("${WASM_JS_SECTION_NAME}" section). ` +
+            'Make sure the wasm file comes from the same version of wllama.'
+        );
+      }
+      return new TextDecoder().decode(sections[0]);
     } else if ((this.resources.jsPath as { code: string }).code) {
       return (this.resources.jsPath as { code: string }).code;
     } else if (isString(this.resources.jsPath)) {
@@ -139,7 +173,8 @@ export class ProxyToWorker {
   }
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
-    let moduleCode = JSPI_STUB + (await this.getModuleCode());
+    const wasmModule = await this.compileWasm();
+    let moduleCode = JSPI_STUB + (await this.getModuleCode(wasmModule));
     if (this.resources.noWebGPU) {
       // make requestAdapter() resolve to null so ggml-webgpu skips device registration
       moduleCode =
@@ -168,6 +203,7 @@ export class ProxyToWorker {
       args: [
         new Blob([moduleCode], { type: 'text/javascript' }),
         this.useAsyncFile,
+        wasmModule,
       ],
       callbackId: this.taskId++,
     });

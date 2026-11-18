@@ -305,7 +305,6 @@
         if (window.location.href.match(/localhost|127\.0\.0\.1/)) {
           w.setCompat({
             wasm: '../../compat/wasm/wllama.wasm',
-            worker: '../../compat/wasm/wllama.js',
           });
         } else {
           w.setCompat('default');
