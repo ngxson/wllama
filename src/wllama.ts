@@ -734,6 +734,13 @@ export class Wllama {
       spec_draft_p_min: params.spec_draft_p_min,
       spec_draft_threads: params.spec_draft_threads,
       spec_draft_threads_batch: params.spec_draft_threads_batch,
+      spec_type: params.spec_type,
+      spec_ngram_simple_size_n: params.spec_ngram_simple_size_n,
+      spec_ngram_simple_size_m: params.spec_ngram_simple_size_m,
+      spec_ngram_simple_min_hits: params.spec_ngram_simple_min_hits,
+      spec_ngram_mod_n_min: params.spec_ngram_mod_n_min,
+      spec_ngram_mod_n_max: params.spec_ngram_mod_n_max,
+      spec_ngram_mod_n_match: params.spec_ngram_mod_n_match,
       kv_overrides_keys: params.kv_overrides
         ? Object.keys(params.kv_overrides)
         : undefined,
@@ -746,6 +753,10 @@ export class Wllama {
       skip_chat_parsing: params.skip_chat_parsing,
       prefill_assistant: params.prefill_assistant,
     });
+    if (!loadResult.success) {
+      await this.exit();
+      throw new WllamaError('Failed to load model', 'load_error');
+    }
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
       metadata: {},

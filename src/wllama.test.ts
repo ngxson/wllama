@@ -11,6 +11,7 @@ if (typeof __GITHUB_CI__ !== 'undefined' && __GITHUB_CI__) {
 }
 import {
   Wllama,
+  WllamaError,
   decodeRealtimeAudio,
   encodeRealtimeAudio,
   type WllamaConfig,
@@ -234,6 +235,22 @@ test.sequential('loads split model files', async () => {
   await wllama.exit();
 });
 
+test.sequential('throws load_error if the model fails to load', async () => {
+  const wllama = createWllama();
+
+  const err: unknown = await wllama
+    .loadModel([new Blob(['this is not a gguf file'])])
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WllamaError);
+  expect((err as WllamaError).type).toBe('load_error');
+  expect(wllama.isModelLoaded()).toBe(false);
+
+  // the same instance can load again
+  await wllama.loadModelFromUrl(TINY_MODEL);
+  expect(wllama.isModelLoaded()).toBe(true);
+  await wllama.exit();
+});
+
 test.sequential('generates completion', async () => {
   const wllama = createWllama();
 
@@ -255,6 +272,32 @@ test.sequential('generates completion', async () => {
   expect(res.choices[0].text.length).toBeGreaterThan(10);
 
   await wllama.exit();
+});
+
+test.sequential('generates completion with ngram speculative', async () => {
+  const run = async (spec_type?: string) => {
+    const wllama = createWllama();
+    await wllama.loadModelFromUrl(TINY_MODEL, {
+      n_ctx: 1024,
+      spec_type,
+      spec_ngram_simple_size_n: 2,
+      spec_ngram_simple_size_m: 4,
+    });
+    const res = await wllama.createCompletion({
+      prompt: 'One day, Lily met a cat. One day, Lily met a cat. One day,',
+      max_tokens: 20,
+      temperature: 0.0,
+      seed: 42,
+    });
+    await wllama.exit();
+    return res;
+  };
+
+  const base = await run();
+  const spec = await run('ngram-simple');
+  expect(spec.choices[0].text).toBe(base.choices[0].text);
+  expect(base.timings?.draft_n ?? 0).toBe(0);
+  expect(spec.timings?.draft_n).toBeGreaterThan(0);
 });
 
 test.sequential('generates completions in parallel', async () => {
