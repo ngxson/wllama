@@ -458,7 +458,7 @@ export class ProxyToWorker {
         this.logger.error(originalErr);
       }
       let stack = '';
-      let newMsg = message.replace(
+      let newMsg = String(message).replace(
         'Build with -sASSERTIONS for more info.',
         ''
       );

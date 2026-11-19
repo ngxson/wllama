@@ -251,6 +251,12 @@ test.sequential('throws load_error if the model fails to load', async () => {
   await wllama.exit();
 });
 
+test.sequential('throws if the wasm file is not valid', async () => {
+  const wllama = createWllama({ default: '/package.json' });
+  await expect(wllama.loadModelFromUrl(TINY_MODEL)).rejects.toThrow();
+  expect(wllama.isModelLoaded()).toBe(false);
+});
+
 test.sequential('generates completion', async () => {
   const wllama = createWllama();
 

@@ -105,8 +105,10 @@ const getWModuleConfig = (_argMainScriptBlob, wasmModule) => {
       : 'throw new Error("Multithreading is not enabled")',
     pthreadPoolSize: hasMultithread ? pthreadPoolSize : 0,
     wasmMemory: hasMultithread ? getWasmMemory() : null,
-    onAbort: function (message) {
+    onAbort: function (reason) {
       isAborted = true;
+      // the reason can be an Error (for example a failed wasm instantiate)
+      const message = reason?.message ?? String(reason);
       msg({ verb: 'signal.abort', args: ['abort', message, lastStack, null] });
     },
     onExit: function (code) {
