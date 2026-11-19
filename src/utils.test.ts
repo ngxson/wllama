@@ -232,12 +232,20 @@ describe('GGUF file validation', () => {
 });
 
 describe('isSupportMem64', () => {
-  test('is false if the compiler rejects memory64', () => {
-    expect(isSupportMem64()).toBe(true);
-
+  test('needs both the Memory constructor and the compiler', () => {
     // Safari 27: the Memory constructor accepts i64, the compiler does not
-    const spy = vi.spyOn(WebAssembly, 'validate').mockReturnValue(false);
-    expect(isSupportMem64()).toBe(false);
-    spy.mockRestore();
+    const memory = vi
+      .spyOn(WebAssembly, 'Memory')
+      .mockImplementation(function () {} as any);
+    const validate = vi.spyOn(WebAssembly, 'validate');
+    try {
+      validate.mockReturnValue(true);
+      expect(isSupportMem64()).toBe(true);
+      validate.mockReturnValue(false);
+      expect(isSupportMem64()).toBe(false);
+    } finally {
+      memory.mockRestore();
+      validate.mockRestore();
+    }
   });
 });
