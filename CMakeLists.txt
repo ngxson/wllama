@@ -63,6 +63,7 @@ if (WLLAMA_COMPAT)
     )
 else()
     list(APPEND WLLAMA_COMPILE_OPTIONS
+        -mrelaxed-simd
         -sMEMORY64=1
         -fwasm-exceptions
         -include ${CMAKE_CURRENT_SOURCE_DIR}/cpp/wasm64-stdint.h
