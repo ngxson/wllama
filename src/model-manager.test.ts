@@ -242,6 +242,74 @@ test.sequential(
   }
 );
 
+// a response with the given headers and the first `bytes` bytes of the body, then a network error
+const cutResponse = async (
+  res: Response,
+  bytes: number,
+  headers: Record<string, string>
+) => {
+  const data = new Uint8Array(await res.arrayBuffer()).slice(0, bytes);
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(data);
+      controller.error(new TypeError('network error (simulated)'));
+    },
+  });
+  const h = new Headers(res.headers);
+  Object.entries(headers).forEach(([k, v]) => h.set(k, v));
+  return new Response(body, { status: res.status, headers: h });
+};
+
+test.sequential('continue if the server sends a shorter range', async () => {
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+
+  net.on({ method: 'GET', url: TINY_MODEL }, { times: 1 }).cutAfter(1024);
+  await expect(
+    manager.downloadModel(TINY_MODEL, { retries: 0 })
+  ).rejects.toThrow('network error');
+
+  // the server answers the range with bytes 1024-50000 only
+  net
+    .on({ method: 'GET', url: TINY_MODEL }, { times: 1 })
+    .handle(async (_req, next) => {
+      const res = await next();
+      const part = new Uint8Array(await res.arrayBuffer()).slice(
+        0,
+        50001 - 1024
+      );
+      const headers = new Headers(res.headers);
+      headers.set('content-range', 'bytes 1024-50000/1185376');
+      headers.set('content-length', String(part.byteLength));
+      return new Response(part, { status: 206, headers });
+    });
+  const ranges = recordRanges(net, TINY_MODEL);
+
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect(ranges).toEqual(['bytes=50001-']);
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
+test.sequential('do not resume with a weak ETag', async () => {
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+
+  net
+    .on({ method: 'GET', url: TINY_MODEL }, { times: 1 })
+    .handle(async (_req, next) =>
+      cutResponse(await next(), 1024, { etag: 'W/"weak"' })
+    );
+  const ranges = recordRanges(net, TINY_MODEL);
+
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect(ranges).toEqual([null]);
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
 test.sequential('give up after too many tries without new bytes', async () => {
   const manager = opfsManager();
   await manager.clear();

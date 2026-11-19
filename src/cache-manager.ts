@@ -141,7 +141,7 @@ export class CacheManager {
 
     // a partial file left by an interrupted download, continue it from here
     let offset = 0;
-    let etag = '';
+    let etag = ''; // exact ETag of the bytes on disk
 
     const cachedSize = await this.sb.getSize(fileKey, hint);
     if (cachedSize !== -1) {
@@ -158,7 +158,7 @@ export class CacheManager {
       if (
         canResume &&
         partial?.originalURL === url &&
-        partial.etag &&
+        isStrongEtag(partial.etag) &&
         cachedSize < partial.originalSize
       ) {
         offset = cachedSize;
@@ -195,6 +195,8 @@ export class CacheManager {
     let total = 0;
     let loaded = 0;
     let failures = 0; // failures in a row without new bytes
+    // largest part of the file kept on disk so far, a try that does not grow it is a failure
+    let kept = offset;
     // true if the bytes on disk can be kept for the next try
     let resumable = offset > 0;
 
@@ -220,12 +222,13 @@ export class CacheManager {
           );
         }
 
-        const resEtag = cleanEtag(response.headers.get('etag'));
+        const resEtag = response.headers.get('etag') ?? '';
+        const range = parseContentRange(response);
         if (offset > 0) {
           const sameFile =
             response.status === 206 &&
             resEtag === etag &&
-            contentRangeStart(response) === offset;
+            range?.start === offset;
           if (!sameFile) {
             // the file changed on the server, or the server ignored the range
             offset = 0;
@@ -237,13 +240,17 @@ export class CacheManager {
           }
         }
         etag = resEtag;
-        // on a 206, content-length is the size of the rest of the file
+        // on a 206, content-length is only the size of this part
         total =
-          offset + parseInt(response.headers.get('content-length') ?? '0', 10);
-        if (total === offset) total = 0; // unknown size
+          response.status === 206
+            ? (range?.total ?? 0)
+            : parseInt(response.headers.get('content-length') ?? '0', 10);
 
-        resumable = canResume && etag !== '' && total > 0;
+        // a weak ETag can be the same for different bytes, do not resume with it
+        resumable = canResume && isStrongEtag(etag) && total > 0;
         if (resumable && offset === 0) {
+          // drop the old bytes first, so this metadata never goes with the start of another version
+          await this.sb.delete(fileKey);
           // written before the body, so a later call can resume this file
           await this.writeMetadata(`${PREFIX_PARTIAL}${fileKey}`, {
             originalURL: url,
@@ -277,17 +284,24 @@ export class CacheManager {
           hint,
           offset
         );
+        // the server can send less than the requested range
+        if (total > 0 && loaded < total) {
+          throw new Error(`Incomplete download: ${loaded} of ${total} bytes`);
+        }
         break;
       } catch (e: any) {
         const fatal =
           e instanceof DownloadHttpError ||
           options.signal?.aborted ||
-          e?.name === 'QuotaExceededError';
+          e?.name === 'QuotaExceededError' ||
+          // another download has the same file open
+          e?.name === 'NoModificationAllowedError';
         if (fatal) throw e;
         // keep the bytes on disk only if the next try can check that the file did not change
         const size = resumable ? await this.sb.getSize(fileKey, hint) : 0;
-        if (size > offset) {
+        if (size > kept) {
           failures = 0;
+          kept = size;
         } else {
           failures++;
         }
@@ -304,7 +318,7 @@ export class CacheManager {
       originalURL: url,
       // without Content-Length, the size is only known once the body is fully read
       originalSize: total || loaded,
-      etag,
+      etag: cleanEtag(etag),
       ...(options.metadataAdditional ?? {}),
     };
     if (sha256) {
@@ -464,12 +478,22 @@ function cleanEtag(etag: string | null): string {
   return (etag || '').replace(/[^A-Za-z0-9]/g, '');
 }
 
-// start of the range in a 206 response, e.g. "bytes 1024-2047/4096" -> 1024
-function contentRangeStart(response: Response): number {
-  const match = /^bytes (\d+)-/.exec(
+function isStrongEtag(etag: string | undefined): boolean {
+  return !!etag && !etag.startsWith('W/');
+}
+
+// e.g. "bytes 1024-2047/4096" -> { start: 1024, total: 4096 }; total is 0 if unknown
+function parseContentRange(
+  response: Response
+): { start: number; total: number } | null {
+  const match = /^bytes (\d+)-\d+\/(\d+|\*)$/.exec(
     response.headers.get('content-range') ?? ''
   );
-  return match ? parseInt(match[1], 10) : -1;
+  if (!match) return null;
+  return {
+    start: parseInt(match[1], 10),
+    total: match[2] === '*' ? 0 : parseInt(match[2], 10),
+  };
 }
 
 async function urlToFileName(url: string, prefix: string): Promise<string> {
