@@ -410,6 +410,7 @@ test.sequential('generates embeddings', async () => {
   await wllama.loadModelFromUrl(EMBD_MODEL, {
     n_ctx: 1024,
     embeddings: true,
+    pooling_type: 'mean',
   });
 
   expect(wllama.isModelLoaded()).toBe(true);
@@ -463,6 +464,7 @@ test.sequential('embeds more inputs than n_parallel', async () => {
   await wllama.loadModelFromUrl(EMBD_MODEL, {
     n_ctx: 1024,
     embeddings: true,
+    pooling_type: 'mean',
     n_parallel: 2,
   });
 
