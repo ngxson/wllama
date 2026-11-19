@@ -1052,6 +1052,12 @@ struct wllama_context
 
   void create_embedding_tasks(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &input_files)
   {
+    // with no pooling, the OAI response only keeps the first token (BOS), so every input gets the same embedding
+    if (llama_pooling_type(ctx_server.get_llama_context()) == LLAMA_POOLING_TYPE_NONE)
+    {
+      throw app_exception("Pooling type 'none' cannot be used for embeddings, please load the model with pooling_type (for example 'mean')");
+    }
+
     json body = json::parse(req_raw);
 
     json prompt;
