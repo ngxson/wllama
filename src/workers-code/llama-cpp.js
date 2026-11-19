@@ -59,8 +59,7 @@ const getWModuleConfig = (_argMainScriptBlob, wasmModule) => {
   }
   return {
     noInitialRun: true,
-    // the wasm is already compiled by the main thread (it also holds this JS code)
-    // passing the module to the callback is required, emscripten shares it with pthread workers
+    // wasm is compiled by main thread; onSuccess needs the module to share it with pthreads
     instantiateWasm: function (imports, onSuccess) {
       WebAssembly.instantiate(wasmModule, imports)
         .then((instance) => onSuccess(instance, wasmModule))

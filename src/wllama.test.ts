@@ -619,7 +619,7 @@ test.sequential('allowOffline', async () => {
     allowOffline: true,
   });
 
-  // Mock fetch to simulate offline (the wasm is still loaded, like it would be from the HTTP cache)
+  // Mock fetch to simulate offline, but let wasm load (like from HTTP cache)
   const origFetch = window.fetch;
   window.fetch = (input, init) =>
     String(input instanceof Request ? input.url : input).endsWith('.wasm')

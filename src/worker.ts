@@ -31,8 +31,7 @@ interface Logger {
 
 const FILE_READ_REQ_EVENT = 'fs.read_req';
 
-// Custom section of the wasm file holding the emscripten JS glue code.
-// Keep in sync with scripts/pack_wasm.js
+// wasm custom section with the emscripten JS glue, see scripts/pack_wasm.js
 const WASM_JS_SECTION_NAME = 'wllama_js';
 
 interface TaskParam {
@@ -116,10 +115,7 @@ export class ProxyToWorker {
     this.useAsyncFile = canUseAsyncFileRead(resources.compat);
   }
 
-  /**
-   * Fetch and compile the wasm file.
-   * The compiled module is then sent to the worker, emscripten instantiates it via Module.instantiateWasm
-   */
+  // the compiled module is sent to the worker, emscripten uses it via Module.instantiateWasm
   async compileWasm(): Promise<WebAssembly.Module> {
     const url = this.resources.wasmPath;
     const fetchWasm = () => fetch(url, { credentials: 'same-origin' });
@@ -140,10 +136,6 @@ export class ProxyToWorker {
     return await WebAssembly.compile(await response.arrayBuffer());
   }
 
-  /**
-   * Get the emscripten JS glue code. By default, it is embedded inside the wasm file (see scripts/pack_wasm.js),
-   * so that the JS and the wasm of one build always come together.
-   */
   async getModuleCode(wasmModule: WebAssembly.Module): Promise<string> {
     if (!this.resources.jsPath) {
       const sections = WebAssembly.Module.customSections(

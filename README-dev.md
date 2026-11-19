@@ -109,19 +109,26 @@ These steps are performed:
 
 The main downside of this approach is that on WebGPU, even though some tensors can be offloaded to the GPU, we still need to allocate the full model in main memory. For example, a 4GB model will still occupy 4GB of main memory, even if half of the layers (~2GB) are offloaded to the GPU.
 
-## Function names in stack traces
+## Packing the wasm
 
-The release wasm has no debug info, so `scripts/add_wasm_names.js` adds a standard wasm `name` section with cleaned names after each build. Browsers read this section themselves, so a stack trace shows `server_response::send` without any decoding in JS.
+After each build, `scripts/pack_wasm.js` packs the emscripten output into a single `wllama.wasm`. It adds 2 custom sections:
 
-Emscripten's `--emit-symbol-map` flag produces a `.js.symbols` file mapping each wasm function index to its demangled C++ name. The script reads this file from the build directory and writes the result to `src/wasm/` or `compat/wasm/`. It always reads from the build directory, so running it twice does not add a second section.
+- `wllama_js`: the emscripten JS glue (`build/wllama.js`). At runtime, `src/worker.ts` compiles the wasm, reads the JS from this section and runs it in the worker. So the JS and the wasm of one build always ship together, and `wllama.js` is not tracked in git.
+- `name`: function names for stack traces, see below.
+
+### Function names in stack traces
+
+The release wasm has no debug info, so `scripts/pack_wasm.js` adds a standard wasm `name` section with cleaned names after each build. Browsers read this section themselves, so a stack trace shows `server_response::send` without any decoding in JS.
+
+Emscripten's `--emit-symbol-map` flag produces a `.js.symbols` file mapping each wasm function index to its demangled C++ name. The script reads this file from the build directory and writes the result to `src/wasm/` or `compat/wasm/`. It skips a section that is already there, so running it twice does not add a second one.
 
 The script runs as part of the docker build (see `scripts/docker-compose.yml`). It can also be run by hand:
 
 ```sh
-node scripts/add_wasm_names.js build/wllama.wasm src/wasm/wllama.wasm
+node scripts/pack_wasm.js build/wllama.wasm src/wasm/wllama.wasm
 ```
 
-### Name cleaning rules
+#### Name cleaning rules
 
 Raw demangled names can be hundreds of characters. The following rules are applied in order:
 

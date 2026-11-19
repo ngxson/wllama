@@ -186,10 +186,7 @@ export class WllamaRuntimeError extends Error {
  */
 export interface WllamaCompat {
   wasm: string;
-  /**
-   * Optional, override the JS code that is embedded inside the wasm file.
-   * Only needed for custom builds.
-   */
+  /** Optional, override the JS code embedded inside the wasm file */
   worker?: string | { code: string } | undefined;
 }
 

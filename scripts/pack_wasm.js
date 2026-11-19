@@ -1,12 +1,6 @@
 #!/usr/bin/env node
 // Usage: node scripts/pack_wasm.js <input.wasm> <output.wasm>
-// Packs the emscripten output into a single wasm file:
-// - adds a "name" section, so browsers show function names in stack traces.
-//   Names come from the .js.symbols file next to the input, made by --emit-symbol-map.
-// - embeds the emscripten JS glue (the .js file next to the input) as a custom section,
-//   so the JS and the wasm of one build always ship together. See getModuleCode() in src/worker.ts
-//
-// If the input already has a "wllama_js" section (= already packed), it is copied as-is.
+// Pack the emscripten output into one wasm file: add the JS glue and the function names as custom sections. See README-dev.md
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 
@@ -208,7 +202,6 @@ if (existingSections.includes('name')) {
   process.stderr.write(`${outputFile}: ${symbols.length} symbols, name section is ${section.length.toLocaleString()} bytes\n`);
 }
 
-// the JS glue is required, the runtime cannot work without it
 const jsFile = inputFile.replace(/\.wasm$/, '.js');
 const js = readFileSync(jsFile);
 const jsSection = encodeDataSection(JS_SECTION_NAME, js);
