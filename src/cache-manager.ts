@@ -196,6 +196,7 @@ export class CacheManager {
     let loaded = 0;
     let failures = 0; // failures in a row without new bytes
     // largest part of the file kept on disk so far, a try that does not grow it is a failure
+    // it never goes down, so the retries always run out
     let kept = offset;
     // true if the bytes on disk can be kept for the next try
     let resumable = offset > 0;
@@ -213,7 +214,6 @@ export class CacheManager {
         if (response.status === 416 && offset > 0) {
           // the file on the server is smaller than the partial file
           offset = 0;
-          kept = 0;
           resumable = false;
           continue;
         }
@@ -234,8 +234,6 @@ export class CacheManager {
             // the file changed on the server, or the server ignored the range
             offset = 0;
             resumable = false;
-            // new version: count progress from zero again
-            if (resEtag !== etag) kept = 0;
             if (response.status === 206) {
               await response.body.cancel();
               continue;
