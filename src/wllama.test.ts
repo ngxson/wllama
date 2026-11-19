@@ -810,6 +810,76 @@ test.skip('stack trace (OOB memory access)', async () => {
   await wllama.exit();
 });
 
+// a 3GB file that makes up its bytes from the offset, so it uses no memory or disk
+const BIG_FILE_SIZE = 3 * 1024 * 1024 * 1024;
+const bigFileByte = (offset: number) => Math.floor(offset / 3) % 251;
+class BigPatternBlob {
+  constructor(
+    public size = BIG_FILE_SIZE,
+    private start = 0,
+    public name = 'big.gguf'
+  ) {}
+  slice(a = 0, b = this.size) {
+    b = Math.min(b, this.size);
+    return new BigPatternBlob(Math.max(0, b - a), this.start + a, this.name);
+  }
+  async arrayBuffer() {
+    const buf = new Uint8Array(this.size);
+    for (let i = 0; i < this.size; i++) buf[i] = bigFileByte(this.start + i);
+    return buf.buffer;
+  }
+}
+
+const testReadBigFile = async (compat: boolean) => {
+  const logs: string[] = [];
+  const log = (...args: any[]) => logs.push(args.join(' '));
+  const logger = { debug: log, log, warn: log, error: log };
+  const wllama = createWllama(CONFIG_PATHS, { logger });
+  const jspi = (WebAssembly as any).Suspending;
+  if (compat) {
+    // hide JSPI so the wasm32 compat build is used
+    delete (WebAssembly as any).Suspending;
+    wllama.setCompat({ wasm: '/compat/wasm/wllama.wasm' });
+  }
+  try {
+    await expect(
+      wllama.loadModel([new BigPatternBlob() as unknown as Blob], {
+        pooling_type: 'test_read_big_file' as any,
+        n_threads: 1,
+      })
+    ).rejects.toThrow('Failed to load model');
+  } finally {
+    if (compat) (WebAssembly as any).Suspending = jspi;
+  }
+  const offset = 2 ** 31 + 12345;
+  const expected = [16, 2 * 1024 * 1024]
+    .map(
+      (n) =>
+        ` ${n} ${bigFileByte(offset)},${bigFileByte(offset + 1)},${bigFileByte(offset + n - 1)};`
+    )
+    .join('');
+  expect(logs.find((l) => l.includes('test_read_big_file:'))).toBe(
+    `test_read_big_file:${expected}`
+  );
+  await wllama.exit();
+};
+
+test.sequential('reads a file past 2GB', async () => {
+  await testReadBigFile(false);
+});
+
+// compat wasm is not built on CI, run it locally after a full build
+const hasCompatWasm = await fetch('/compat/wasm/wllama.wasm', {
+  method: 'HEAD',
+})
+  .then((r) => r.ok && !!r.headers.get('content-type')?.includes('wasm'))
+  .catch(() => false);
+test
+  .skipIf(!hasCompatWasm)
+  .sequential('reads a file past 2GB (compat)', async () => {
+    await testReadBigFile(true);
+  });
+
 test.sequential('cleans up resources', async () => {
   const wllama = createWllama();
   await wllama.loadModelFromUrl(TINY_MODEL);

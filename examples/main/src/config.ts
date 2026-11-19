@@ -13,6 +13,7 @@ export const WLLAMA_CONFIG_PATHS = {
 // Either a local { wasm } object (when compat package is built) or 'default' (CDN fallback)
 export const WLLAMA_COMPAT_CONFIG = compatConfig;
 
+// models above this size get a RAM warning; it is not a hard limit
 export const MAX_GGUF_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 export const LIST_MODELS: {
