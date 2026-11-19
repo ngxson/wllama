@@ -95,6 +95,7 @@ export class ProxyToWorker {
   resultQueue: Task[] = [];
   busy = false; // is the work loop is running?
   private exited = false;
+  private exitCtrl = new AbortController(); // cancel fetches of moduleInit on exit
   worker?: Worker | undefined;
   multiThread: boolean;
   nbThread: number;
@@ -118,11 +119,13 @@ export class ProxyToWorker {
   // the compiled module is sent to the worker, emscripten uses it via Module.instantiateWasm
   async compileWasm(): Promise<WebAssembly.Module> {
     const url = this.resources.wasmPath;
-    const fetchWasm = () => fetch(url, { credentials: 'same-origin' });
+    const fetchWasm = () =>
+      fetch(url, { credentials: 'same-origin', signal: this.exitCtrl.signal });
     if (typeof WebAssembly.compileStreaming === 'function') {
       try {
         return await WebAssembly.compileStreaming(fetchWasm());
       } catch (e) {
+        this.throwIfExited();
         // streaming requires the server to send "Content-Type: application/wasm"
         this.logger.warn(
           `wasm streaming compile failed: ${e}; falling back to ArrayBuffer instantiation`
@@ -143,7 +146,9 @@ export class ProxyToWorker {
     } else if ((this.resources.jsPath as { code: string }).code) {
       code = (this.resources.jsPath as { code: string }).code;
     } else if (isString(this.resources.jsPath)) {
-      const response = await fetch(this.resources.jsPath as string);
+      const response = await fetch(this.resources.jsPath as string, {
+        signal: this.exitCtrl.signal,
+      });
       if (!response.ok) {
         throw new Error(
           `Failed to fetch worker code from ${this.resources.jsPath}`
@@ -177,9 +182,23 @@ export class ProxyToWorker {
     return new TextDecoder().decode(sections[0]);
   }
 
+  private throwIfExited() {
+    if (this.exited) {
+      throw new WllamaError('The model was unloaded', 'model_not_loaded');
+    }
+  }
+
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
-    const wasmModule = await this.compileWasm();
-    let moduleCode = JSPI_STUB + (await this.getModuleCode(wasmModule));
+    let wasmModule: WebAssembly.Module;
+    let moduleCode: string;
+    try {
+      wasmModule = await this.compileWasm();
+      moduleCode = JSPI_STUB + (await this.getModuleCode(wasmModule));
+    } catch (e) {
+      this.throwIfExited(); // fetch was aborted by exit
+      throw e;
+    }
+    this.throwIfExited(); // exit while compiling, do not create the worker
     if (this.resources.noWebGPU) {
       // make requestAdapter() resolve to null so ggml-webgpu skips device registration
       moduleCode =
@@ -279,6 +298,7 @@ export class ProxyToWorker {
     }
     // nothing answers anymore, so fail the actions that wait and the next ones
     this.exited = true;
+    this.exitCtrl.abort();
     this.rejectAll(
       new WllamaError('The model was unloaded', 'model_not_loaded')
     );
