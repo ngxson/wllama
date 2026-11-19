@@ -1,6 +1,8 @@
 services:
   llamacpp-wasm-builder:
-    container_name: llamacpp-wasm-builder
+    # no container_name: build_wasm.sh sets a per-worktree COMPOSE_PROJECT_NAME so
+    # parallel builds in different worktrees get their own containers
+    image: wllama-emsdk:${EMSDK_IMAGE_TAG}  # shared across worktrees
     build:
       context: .
       dockerfile_inline: |
