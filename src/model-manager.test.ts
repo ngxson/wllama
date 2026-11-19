@@ -3,6 +3,7 @@ import { ModelManager, Model, ModelValidationStatus } from './model-manager';
 import { OPFSBackend } from './storage/opfs';
 import CacheManager from './cache-manager';
 import { hookNetwork, type NetworkHook } from './testing/network-hook';
+import { getHFFileSHA256 } from './huggingface';
 
 const TINY_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf';
@@ -141,24 +142,184 @@ test.sequential('recover from missing metadata', async () => {
   expect((await manager.getModels()).length).toBe(1);
 });
 
-test.sequential('recover from partial file in cache', async () => {
-  const manager = new ModelManager();
+const sha256Hex = async (blob: Blob) =>
+  Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+    )
+  )
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+// checks the cached file has the same content as the file on the server
+const expectSameAsRemote = async (manager: ModelManager, url: string) => {
+  const expected = await getHFFileSHA256(url, {});
+  expect(expected).toBeDefined();
+  const blob = await manager.cacheManager.open(url);
+  expect(blob).not.toBeNull();
+  expect(await sha256Hex(blob!)).toBe(expected);
+};
+
+// records the Range header of each GET to the URL, from the requests that match no earlier rule
+const recordRanges = (net: NetworkHook, url: string) => {
+  const ranges: (string | null)[] = [];
+  net.on({ method: 'GET', url }).handle((req, next) => {
+    ranges.push(req.headers.get('range'));
+    return next();
+  });
+  return ranges;
+};
+
+test.sequential('resume download after the connection drops', async () => {
+  const manager = opfsManager();
   await manager.clear();
   const net = hookNetwork();
 
-  // connection drops after 1024 bytes
+  net.on({ method: 'GET', url: TINY_MODEL }, { times: 1 }).cutAfter(100000);
+  const ranges = recordRanges(net, TINY_MODEL);
+
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect(ranges).toEqual(['bytes=100000-']);
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
+test.sequential('resume partial file in cache', async () => {
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+
+  // connection drops after 1024 bytes, without retry
   net.on({ method: 'GET', url: TINY_MODEL }, { times: 1 }).cutAfter(1024);
-  await expect(manager.downloadModel(TINY_MODEL)).rejects.toThrow(
-    'network error'
-  );
+  await expect(
+    manager.downloadModel(TINY_MODEL, { retries: 0 })
+  ).rejects.toThrow('network error');
   const fileKey = await manager.cacheManager.getNameFromURL(TINY_MODEL);
   expect(await manager.cacheManager.getSize(fileKey)).toBe(1024);
   expect((await manager.getModels()).length).toBe(0);
 
-  const model = await manager.downloadModel(TINY_MODEL);
+  const ranges = recordRanges(net, TINY_MODEL);
+  let lastProgress = { loaded: 0, total: 0 };
+  const model = await manager.downloadModel(TINY_MODEL, {
+    progressCallback: (progress) => {
+      lastProgress = progress;
+    },
+  });
+  expect(ranges).toEqual(['bytes=1024-']);
+  expect(lastProgress).toEqual({ loaded: 1185376, total: 1185376 });
   expect(model.files.length).toBe(1);
-  expect(model.files[0].size).toBe(1185376);
   expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
+test.sequential(
+  'download again if the file changed on the server',
+  async () => {
+    const manager = opfsManager();
+    await manager.clear();
+    const net = hookNetwork();
+
+    net.on({ method: 'GET', url: TINY_MODEL }, { times: 1 }).cutAfter(1024);
+    await expect(
+      manager.downloadModel(TINY_MODEL, { retries: 0 })
+    ).rejects.toThrow('network error');
+
+    // the resumed response has another ETag: the partial file must not be kept
+    net
+      .on({ method: 'GET', url: TINY_MODEL }, { times: 1 })
+      .handle(async (_req, next) => {
+        const res = await next();
+        const headers = new Headers(res.headers);
+        headers.set('etag', '"changed"');
+        return new Response(res.body, { status: res.status, headers });
+      });
+    const ranges = recordRanges(net, TINY_MODEL);
+
+    const model = await manager.downloadModel(TINY_MODEL);
+    expect(ranges).toEqual([null]);
+    expect(model.size).toBe(1185376);
+    await expectSameAsRemote(manager, TINY_MODEL);
+  }
+);
+
+// a response with the given headers and the first `bytes` bytes of the body, then a network error
+const cutResponse = async (
+  res: Response,
+  bytes: number,
+  headers: Record<string, string>
+) => {
+  const data = new Uint8Array(await res.arrayBuffer()).slice(0, bytes);
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(data);
+      controller.error(new TypeError('network error (simulated)'));
+    },
+  });
+  const h = new Headers(res.headers);
+  Object.entries(headers).forEach(([k, v]) => h.set(k, v));
+  return new Response(body, { status: res.status, headers: h });
+};
+
+test.sequential('continue if the server sends a shorter range', async () => {
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+
+  net.on({ method: 'GET', url: TINY_MODEL }, { times: 1 }).cutAfter(1024);
+  await expect(
+    manager.downloadModel(TINY_MODEL, { retries: 0 })
+  ).rejects.toThrow('network error');
+
+  // the server answers the range with bytes 1024-50000 only
+  net
+    .on({ method: 'GET', url: TINY_MODEL }, { times: 1 })
+    .handle(async (_req, next) => {
+      const res = await next();
+      const part = new Uint8Array(await res.arrayBuffer()).slice(
+        0,
+        50001 - 1024
+      );
+      const headers = new Headers(res.headers);
+      headers.set('content-range', 'bytes 1024-50000/1185376');
+      headers.set('content-length', String(part.byteLength));
+      return new Response(part, { status: 206, headers });
+    });
+  const ranges = recordRanges(net, TINY_MODEL);
+
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect(ranges).toEqual(['bytes=50001-']);
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
+test.sequential('do not resume with a weak ETag', async () => {
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+
+  net
+    .on({ method: 'GET', url: TINY_MODEL }, { times: 1 })
+    .handle(async (_req, next) =>
+      cutResponse(await next(), 1024, { etag: 'W/"weak"' })
+    );
+  const ranges = recordRanges(net, TINY_MODEL);
+
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect(ranges).toEqual([null]);
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
+test.sequential('give up after too many tries without new bytes', async () => {
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+
+  net.on({ method: 'GET', url: TINY_MODEL }).fail();
+  await expect(
+    manager.downloadModel(TINY_MODEL, { retries: 1 })
+  ).rejects.toThrow('network error');
+  expect(getRequests(net).length).toBe(2);
 });
 
 test.sequential('recover from missing shard in cache', async () => {
@@ -171,9 +332,9 @@ test.sequential('recover from missing shard in cache', async () => {
   // connection drops during the second shard: shard 1 is complete,
   // shard 2 is partial and shard 3 is never downloaded
   net.on({ method: 'GET', url: SPLIT_SHARDS[1] }, { times: 1 }).cutAfter(1024);
-  await expect(manager.downloadModel(SPLIT_MODEL)).rejects.toThrow(
-    'network error'
-  );
+  await expect(
+    manager.downloadModel(SPLIT_MODEL, { retries: 0 })
+  ).rejects.toThrow('network error');
 
   // the incomplete model does not hide the other models
   const models = await manager.getModels();

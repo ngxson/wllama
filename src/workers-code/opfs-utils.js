@@ -1,16 +1,27 @@
 let accessHandle;
+let fileHandler;
+let writePos = 0;
 let abortController = new AbortController();
 
-async function openFile(filename) {
+// keep the first `offset` bytes, the next writes go after them
+async function openFile(filename, offset = 0) {
   const opfsRoot = await navigator.storage.getDirectory();
   const cacheDir = await opfsRoot.getDirectoryHandle('cache', { create: true });
-  const fileHandler = await cacheDir.getFileHandle(filename, { create: true });
+  fileHandler = await cacheDir.getFileHandle(filename, { create: true });
   accessHandle = await fileHandler.createSyncAccessHandle();
-  accessHandle.truncate(0); // clear file content
+  accessHandle.truncate(offset);
+  writePos = offset;
 }
 
 async function writeFile(buf) {
-  accessHandle.write(buf);
+  try {
+    writePos += accessHandle.write(buf, { at: writePos });
+  } catch (e) {
+    // iOS Safari can close the handle in the middle of a download, open a new one and try once more
+    if (e?.name !== 'InvalidStateError') throw e;
+    accessHandle = await fileHandler.createSyncAccessHandle();
+    writePos += accessHandle.write(buf, { at: writePos });
+  }
 }
 
 async function closeFile() {
@@ -55,7 +66,7 @@ onmessage = async (e) => {
      * @param {Object} e.data
      *
      * Fine-control FS actions:
-     * - { action: 'open', filename: 'string' }
+     * - { action: 'open', filename: 'string', offset: number }
      * - { action: 'write', buf: ArrayBuffer }
      * - { action: 'close' }
      *
@@ -78,7 +89,7 @@ onmessage = async (e) => {
 
     if (action === 'open') {
       assertNonNull(filename);
-      await openFile(filename);
+      await openFile(filename, e.data.offset ?? 0);
       return resOK();
     } else if (action === 'write') {
       assertNonNull(buf);

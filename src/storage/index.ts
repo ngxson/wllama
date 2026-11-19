@@ -14,12 +14,19 @@ export interface StorageBackend {
   /**
    * Write a ReadableStream to storage under the given key.
    * Overwrites any existing content for that key.
+   * With `offset > 0`, keep the first `offset` bytes and write after them (only if `canWriteAt()` is true).
    */
   write(
     key: string,
     stream: ReadableStream,
-    hint?: StorageFileHint
+    hint?: StorageFileHint,
+    offset?: number
   ): Promise<void>;
+
+  /**
+   * True if `write()` accepts an offset, used to resume a download
+   */
+  canWriteAt?(hint?: StorageFileHint): boolean;
 
   /**
    * Get the stored size of a file in bytes.
