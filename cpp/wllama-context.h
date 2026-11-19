@@ -1442,6 +1442,70 @@ struct wllama_context
     return res;
   }
 
+  // llama-server saves and restores a slot with a file, the file here is in MEMFS and lives only during the action
+  const char *slot_state_path = "/tmp/wllama_slot_state.bin";
+
+  server_task_result_ptr run_slot_action(server_task_type type, int id_slot)
+  {
+    server_response_reader rd = ctx_server.get_response_reader();
+    server_task task(type);
+    task.id = rd.get_new_id();
+    task.slot_action.id_slot = id_slot;
+    task.slot_action.filename = slot_state_path;
+    task.slot_action.filepath = slot_state_path;
+    rd.post_task(std::move(task));
+    run_queue_scope scope;
+    return rd.next(should_stop);
+  }
+
+  glue_msg_slot_save_res action_slot_save(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_slot_save_req);
+    glue_msg_slot_save_res res;
+
+    auto result = run_slot_action(SERVER_TASK_TYPE_SLOT_SAVE, req.id_slot.value);
+    auto *saved = result ? dynamic_cast<server_task_result_slot_save_load *>(result.get()) : nullptr;
+    if (saved)
+    {
+      std::ifstream file(slot_state_path, std::ios::binary);
+      res.data.buf.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+      res.n_tokens.value = saved->n_tokens;
+    }
+    else
+    {
+      res.message.value = result ? json_value(result->to_json(), "message", std::string("server error")) : "server error";
+    }
+    std::remove(slot_state_path);
+
+    res.success.value = saved != nullptr;
+    return res;
+  }
+
+  glue_msg_slot_restore_res action_slot_restore(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_slot_restore_req);
+    glue_msg_slot_restore_res res;
+
+    {
+      std::ofstream file(slot_state_path, std::ios::binary);
+      file.write(req.data.buf.data(), req.data.buf.size());
+    }
+    auto result = run_slot_action(SERVER_TASK_TYPE_SLOT_RESTORE, req.id_slot.value);
+    auto *restored = result ? dynamic_cast<server_task_result_slot_save_load *>(result.get()) : nullptr;
+    if (restored)
+    {
+      res.n_tokens.value = restored->n_tokens;
+    }
+    else
+    {
+      res.message.value = result ? json_value(result->to_json(), "message", std::string("server error")) : "server error";
+    }
+    std::remove(slot_state_path);
+
+    res.success.value = restored != nullptr;
+    return res;
+  }
+
   json format_decision_response(const decision_request &dreq)
   {
     json answers = json::object();
