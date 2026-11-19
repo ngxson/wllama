@@ -251,6 +251,14 @@ test.sequential('throws load_error if the model fails to load', async () => {
   await wllama.exit();
 });
 
+test.sequential('throws if the wasm file is not valid', async () => {
+  const wllama = createWllama({ default: '/package.json' });
+  await expect(
+    wllama.loadModel([new Blob([new Uint8Array(16)])])
+  ).rejects.toBeInstanceOf(WebAssembly.CompileError);
+  expect(wllama.isModelLoaded()).toBe(false);
+});
+
 test.sequential('generates completion', async () => {
   const wllama = createWllama();
 
