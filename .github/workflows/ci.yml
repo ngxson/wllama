@@ -71,14 +71,22 @@ jobs:
       - name: Install Playwright Dependencies
         run: npx playwright install --with-deps
 
+      # run before "npm run build", as it regenerates the file to check
+      - name: Check wasm version
+        run: node scripts/check_wasm_version.js
+
       - name: Build
         run: npm run build
 
       - name: Test (Chrome)
         run: npm run test
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN_READONLY }}
 
       - name: Test (Firefox)
         run: npm run test:firefox
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN_READONLY }}
 
   # TODO: add test for WebGPU on github hosted runner ; current missing ShaderF16 support
 

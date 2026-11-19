@@ -51,6 +51,17 @@ The thread pool size is passed to emscripten via `-sPTHREAD_POOL_SIZE=Module["pt
 
 This logic lives in `wllama.ts` (`isSupportMultiThread()` from `utils.ts` performs the feature detection).
 
+**The maximum number of threads is fixed by the number of threads of the ggml threadpool (`n_threads`). Do NOT increase `pthreadPoolSize` above it, in any case.** If some code needs more threads than that, a new worker cannot start while the wasm thread waits, so it hangs. Fix that code instead: make it use the ggml threadpool (see `shared_threadpool` in `wllama-context.h`) or no extra threads. Growing the pool (for example `+ 4` or `* 2`) is not an accepted fix.
+
+### Realtime audio
+
+The realtime session of llama-server needs a thread and blocking reads, but wllama has one thread and polls. So `wllama-context.h` includes `server-realtime.cpp` directly (it is not in the CMake source list) and calls the `handle()` and `on_result()` steps of `realtime_conversation` itself, without `run()`:
+- `realtime_send` passes a client event to `handle()`. `server_response_reader::next()` runs the queue while it waits for the result of a control
+- `get_result` runs one step of the loop, passes the result to `on_result()` and returns the events
+- `cancel` ends the session
+
+If upstream changes `realtime_conversation`, the fix belongs in `realtime_session_conversation`. Live ASR has no such class upstream (it is inside the `ws_realtime` route), so `realtime_session_live` is a copy of that route.
+
 ## Startup process
 
 Upon startup, these steps are performed:
@@ -98,21 +109,16 @@ These steps are performed:
 
 The main downside of this approach is that on WebGPU, even though some tensors can be offloaded to the GPU, we still need to allocate the full model in main memory. For example, a 4GB model will still occupy 4GB of main memory, even if half of the layers (~2GB) are offloaded to the GPU.
 
-## Compressed source map
+## Function names in stack traces
 
-Emscripten's `--emit-symbol-map` flag produces a `.js.symbols` file mapping each wasm function index to its demangled C++ name. `scripts/build_source_map.js` reads this file alongside the `.wasm` binary and produces a single TypeScript file (`src/wasm/source-map.ts`) containing a compact deduplicated name table per build, gzip-compressed and base64-encoded.
+The release wasm has no debug info, so `scripts/add_wasm_names.js` adds a standard wasm `name` section with cleaned names after each build. Browsers read this section themselves, so a stack trace shows `server_response::send` without any decoding in JS.
 
-The script runs automatically as part of the docker build (see `scripts/docker-compose.yml`). It can also be run manually:
+Emscripten's `--emit-symbol-map` flag produces a `.js.symbols` file mapping each wasm function index to its demangled C++ name. The script reads this file from the build directory and writes the result to `src/wasm/` or `compat/wasm/`. It always reads from the build directory, so running it twice does not add a second section.
+
+The script runs as part of the docker build (see `scripts/docker-compose.yml`). It can also be run by hand:
 
 ```sh
-# uses build/ and build-compat/ by default
-node scripts/build_source_map.js
-
-# or with explicit paths
-node scripts/build_source_map.js \
-  --input default:build \
-  --input compat:build-compat \
-  --output src/wasm/source-map.ts
+node scripts/add_wasm_names.js build/wllama.wasm src/wasm/wllama.wasm
 ```
 
 ### Name cleaning rules
@@ -120,37 +126,21 @@ node scripts/build_source_map.js \
 Raw demangled names can be hundreds of characters. The following rules are applied in order:
 
 1. **std:: collapse** - any name starting with `std::` is replaced with the single hint `std::...`
-2. **Lambda/closure extraction** - names containing `::$_N` or `::'lambda'` are replaced with the nearest enclosing context (the segment inside the last `<…>` before the marker)
+2. **Lambda/closure extraction** - names containing `::$_N` or `::'lambda'` are replaced with the nearest enclosing context (the segment inside the last `<...>` before the marker)
 3. **Parameter stripping** - parameter lists are dropped; empty `()` is kept, non-empty is removed entirely
 4. **libc++ internals** - `::__1::`, `::__2::`, etc. are collapsed to `::`
-5. **ABI tags** - `[abi:…]` annotations are removed
+5. **ABI tags** - `[abi:...]` annotations are removed
 6. **Template truncation** - template argument content longer than 10 characters is truncated to `<first10chars...>`
 7. **Final cleanup** - double `::::` collapsed, whitespace normalised
 
-### Binary format (before gzip)
+## Version check
 
-All integers are little-endian.
+`LIBLLAMA_VERSION` exists on both sides: `scripts/build_worker.sh` writes it to `src/workers-code/generated.ts`, and `CMakeLists.txt` compiles it into the wasm. `wllama_start()` returns the wasm version, and `Wllama` raises a `version_mismatch` error before it loads the model if the two commits differ. Set `WllamaConfig.skipVersionCheck` to get a warning instead.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ HEADER (12 bytes)                                        │
-│   u32  first_func_id  - wasm function index of entry 0  │
-│   u32  num_funcs      - number of functions              │
-│   u32  num_names      - number of unique names           │
-├──────────────────────────────────────────────────────────┤
-│ NAME TABLE  (num_names entries)                          │
-│   for each name:                                         │
-│     u8   length       - byte length of name (max 254)   │
-│     u8[] name         - UTF-8 string (no null term)      │
-├──────────────────────────────────────────────────────────┤
-│ INDEX ARRAY  (num_funcs × u16)                           │
-│   u16  name_idx       - index into name table            │
-│                         0xFFFF = no name / unknown       │
-└──────────────────────────────────────────────────────────┘
-```
+Only the commit is compared, because the build number is wrong in a shallow clone.
 
-To decode at runtime: base64-decode -> `DecompressionStream('gzip')` -> parse binary. Given a wasm function index `id`, look up `index_array[id - first_func_id]` to get the name table slot.
-%
+`scripts/check_wasm_version.js` does the same check on the wasm files without running them. CI runs it before `npm run build`, and `scripts/check_package_size.js` runs it before publish. Publish also requires the compat wasm, so a build with `SKIP_COMPAT=1` cannot be published.
+
 ## Debugging backend ops
 
 > [!IMPORTANT]

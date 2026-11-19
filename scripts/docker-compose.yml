@@ -48,7 +48,7 @@ services:
         # copy output files
         mkdir -p src/wasm
         cp build/wllama.js   src/wasm
-        cp build/wllama.wasm src/wasm
+        node scripts/add_wasm_names.js build/wllama.wasm src/wasm/wllama.wasm
 
         # build compat package (skip if SKIP_COMPAT=1)
         if [ -z "${SKIP_COMPAT}" ]; then
@@ -63,11 +63,8 @@ services:
           # copy output files (compat build)
           mkdir -p compat/wasm
           cp build-compat/wllama.js   compat/wasm
-          cp build-compat/wllama.wasm compat/wasm
+          node scripts/add_wasm_names.js build-compat/wllama.wasm compat/wasm/wllama.wasm
         fi
-
-        # generate source map
-        node scripts/build_source_map.js
 
         # list files (optional, for verification)
         ls -lh build

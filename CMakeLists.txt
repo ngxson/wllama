@@ -44,6 +44,9 @@ set(WLLAMA_LINK_OPTIONS
     -Wl,--wrap,ftell
     -Wl,--wrap,abort
     -Wl,--wrap,ggml_graph_plan # for test-backend-ops
+    -Wl,--wrap,ggml_threadpool_new
+    -Wl,--wrap,ggml_threadpool_free
+    -Wl,--wrap,mtmd_init_from_file
 )
 
 if (WLLAMA_COMPAT)
@@ -62,6 +65,7 @@ else()
     list(APPEND WLLAMA_COMPILE_OPTIONS
         -sMEMORY64=1
         -fwasm-exceptions
+        -include ${CMAKE_CURRENT_SOURCE_DIR}/cpp/wasm64-stdint.h
     )
     list(APPEND WLLAMA_LINK_OPTIONS
         -sMEMORY64=1
@@ -103,8 +107,11 @@ set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
     llama.cpp/tools/server/server-task.cpp
     llama.cpp/tools/server/server-chat.cpp
     llama.cpp/tools/server/server-common.cpp
+    llama.cpp/tools/server/server-decision.cpp
     llama.cpp/tools/server/server-schema.cpp
+    llama.cpp/tools/server/server-slot-sched.cpp
     llama.cpp/tools/server/server-stream.cpp
+    llama.cpp/vendor/cpp-httplib/httplib.cpp
 )
 
 set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}
@@ -130,4 +137,16 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/server)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/mtmd)
 
 add_executable(wllama ${WLLAMA_SRC})
+
+# must match LIBLLAMA_VERSION in scripts/build_worker.sh
+execute_process(COMMAND git rev-list --count HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp
+    OUTPUT_VARIABLE LIBLLAMA_BUILD_NUMBER OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND git rev-parse --short=7 HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp
+    OUTPUT_VARIABLE LIBLLAMA_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+set_source_files_properties(cpp/wllama.cpp PROPERTIES
+    COMPILE_DEFINITIONS "LIBLLAMA_VERSION=\"b${LIBLLAMA_BUILD_NUMBER}-${LIBLLAMA_COMMIT}\"")
 target_link_libraries(wllama PRIVATE ggml llama mtmd ${CMAKE_THREAD_LIBS_INIT})

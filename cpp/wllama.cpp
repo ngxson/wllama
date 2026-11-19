@@ -88,7 +88,8 @@ extern "C" const char *wllama_start()
       printStr(GGML_LOG_LEVEL_INFO, "Using async file read");
     }
 
-    return "{\"success\":true}";
+    // scripts/check_wasm_version.js reads this string from the wasm file
+    return "{\"success\":true,\"version\":\"" LIBLLAMA_VERSION "\"}";
   }
   catch (std::exception &e)
   {
@@ -113,6 +114,10 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
     WLLAMA_ACTION(completion)
     WLLAMA_ACTION(embedding)
     WLLAMA_ACTION(rerank)
+    WLLAMA_ACTION(systemone)
+    WLLAMA_ACTION(tts)
+    WLLAMA_ACTION(realtime_start)
+    WLLAMA_ACTION(realtime_send)
     WLLAMA_ACTION(get_result)
     WLLAMA_ACTION(cancel)
     WLLAMA_ACTION(test_backend_ops)

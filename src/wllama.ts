@@ -19,10 +19,14 @@ import type {
   GlueMsgCancelRes,
   GlueMsgCompletionRes,
   GlueMsgEmbeddingRes,
+  GlueMsgRealtimeSendRes,
+  GlueMsgRealtimeStartRes,
   GlueMsgRerankRes,
+  GlueMsgSystemoneRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
   GlueMsgTestBackendOpsRes,
+  GlueMsgTtsRes,
 } from './glue/messages';
 import { LIBLLAMA_VERSION } from './workers-code/generated';
 import type {
@@ -36,12 +40,26 @@ import type {
   ChatCompletionResponse,
   ChatCompletionUserMessage,
   CreateEmbeddingResponse,
+  EmbeddingContent,
   EmbeddingCreateParams,
+  RealtimeEvent,
+  RealtimeSessionParams,
   RawCompletionChunk,
   RawCompletionParams,
   RawCompletionResponse,
   RerankParams,
   RerankResponse,
+  SpeechChunk,
+  SpeechParams,
+  SpeechResponse,
+  SystemOneParams,
+  SystemOneResponse,
+  TranscriptionChunk,
+  TranscriptionParams,
+  TranscriptionResponse,
+  ChatCompletionMessageContent,
+  ChatCompletionMessageText,
+  EmbeddingInput,
 } from './types/oai-compat';
 import { LogLevel } from './types/types';
 import { getHFModelSource, type HuggingFaceParams } from './huggingface';
@@ -84,6 +102,12 @@ export interface WllamaConfig {
    * Custom model manager (only for advanced usage)
    */
   modelManager?: ModelManager;
+  /**
+   * If true, allow a wasm file built from a different llama.cpp version
+   *
+   * Default: skipVersionCheck = false
+   */
+  skipVersionCheck?: boolean;
 }
 
 export interface WllamaChatMessage {
@@ -119,6 +143,7 @@ export type WllamaErrorType =
   | 'model_not_loaded'
   | 'download_error'
   | 'load_error'
+  | 'version_mismatch'
   | 'kv_cache_full'
   | 'unknown_error'
   | 'inference_error';
@@ -162,6 +187,140 @@ export class WllamaRuntimeError extends Error {
 export interface WllamaCompat {
   worker: string | { code: string };
   wasm: string;
+}
+
+/**
+ * Encode PCM samples to the base64 PCM16 format of `input_audio_buffer.append`.
+ */
+export const encodeRealtimeAudio = (samples: Float32Array): string => {
+  const pcm = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    pcm[i] = Math.max(-1, Math.min(1, samples[i])) * 32767;
+  }
+  const bytes = new Uint8Array(pcm.buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+};
+
+/**
+ * Decode the base64 PCM16 audio of a `response.output_audio.delta` event.
+ */
+export const decodeRealtimeAudio = (delta: string): Float32Array => {
+  const binary = atob(delta);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const pcm = new Int16Array(bytes.buffer, 0, bytes.length >> 1);
+  return Float32Array.from(pcm, (v) => v / 32768);
+};
+
+// polls with no event before the poll loop starts to wait
+const REALTIME_BUSY_POLLS = 8;
+const REALTIME_IDLE_MS = 20;
+
+/**
+ * A realtime audio session. Events follow the OAI realtime schema, same as the `/v1/realtime` route of llama-server.
+ * Inference runs while `events()` is being read, so keep reading it to get a response.
+ */
+export class WllamaRealtimeSession {
+  private closed = false;
+  private pending: RealtimeEvent[] = []; // read from the worker, not yet given to a reader
+  private wakeUp: () => void = () => {};
+  private sent = false; // a client event was sent since the last poll
+
+  constructor(
+    private proxy: ProxyToWorker,
+    private reqId: number
+  ) {}
+
+  /**
+   * Send a client event, for example `session.update` or `response.create`.
+   */
+  async send(event: RealtimeEvent): Promise<void> {
+    const result = await this.proxy.wllamaAction<GlueMsgRealtimeSendRes>(
+      'realtime_send',
+      {
+        _name: 'rtsd_req',
+        req_id: this.reqId,
+        data_json: JSON.stringify(event),
+      }
+    );
+    if (!result.success) {
+      throw new WllamaError('Realtime session is closed', 'inference_error');
+    }
+    this.sent = true;
+    this.wakeUp();
+  }
+
+  /**
+   * Same as sending `input_audio_buffer.append`.
+   * @param samples mono PCM at `LoadedContextInfo.audio_input_rate`
+   */
+  async appendAudio(samples: Float32Array): Promise<void> {
+    await this.send({
+      type: 'input_audio_buffer.append',
+      audio: encodeRealtimeAudio(samples),
+    });
+  }
+
+  /**
+   * Read the server events. It ends when the session ends. Only one reader at a time.
+   */
+  async *events(): AsyncGenerator<RealtimeEvent> {
+    let nEmpty = 0;
+    while (this.pending.length > 0 || !this.closed) {
+      // a reader that stops early leaves the rest for the next one
+      if (this.pending.length > 0) {
+        yield this.pending.shift()!;
+        continue;
+      }
+      const chunk = await this.proxy.wllamaAction<GlueMsgGetResultRes>(
+        'get_result',
+        { _name: 'gres_req', req_id: this.reqId }
+      );
+      if (!chunk.has_more) {
+        this.closed = true;
+      }
+      // the event may need a few polls of work, poll without waiting again
+      if (this.sent) {
+        this.sent = false;
+        nEmpty = 0;
+      }
+      if (chunk.data_json) {
+        nEmpty = 0;
+        this.pending.push(...(JSON.parse(chunk.data_json) as RealtimeEvent[]));
+      } else if (++nEmpty > REALTIME_BUSY_POLLS) {
+        // nothing to do until the next client event
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, REALTIME_IDLE_MS);
+          this.wakeUp = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+      }
+    }
+  }
+
+  /**
+   * End the session and free its slot.
+   */
+  async close(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    this.pending = [];
+    this.wakeUp();
+    await this.proxy.wllamaAction<GlueMsgCancelRes>('cancel', {
+      _name: 'cncl_req',
+      req_id: this.reqId,
+    });
+  }
 }
 
 export class Wllama {
@@ -514,6 +673,7 @@ export class Wllama {
         `Error while calling start function, result = ${startResult}`
       );
     }
+    await this.checkWasmVersion(startResult.version);
 
     // load the model
     this.logger().debug('Loading model...');
@@ -576,6 +736,13 @@ export class Wllama {
       spec_draft_p_min: params.spec_draft_p_min,
       spec_draft_threads: params.spec_draft_threads,
       spec_draft_threads_batch: params.spec_draft_threads_batch,
+      spec_type: params.spec_type,
+      spec_ngram_simple_size_n: params.spec_ngram_simple_size_n,
+      spec_ngram_simple_size_m: params.spec_ngram_simple_size_m,
+      spec_ngram_simple_min_hits: params.spec_ngram_simple_min_hits,
+      spec_ngram_mod_n_min: params.spec_ngram_mod_n_min,
+      spec_ngram_mod_n_max: params.spec_ngram_mod_n_max,
+      spec_ngram_mod_n_match: params.spec_ngram_mod_n_match,
       kv_overrides_keys: params.kv_overrides
         ? Object.keys(params.kv_overrides)
         : undefined,
@@ -588,6 +755,10 @@ export class Wllama {
       skip_chat_parsing: params.skip_chat_parsing,
       prefill_assistant: params.prefill_assistant,
     });
+    if (!loadResult.success) {
+      await this.exit();
+      throw new WllamaError('Failed to load model', 'load_error');
+    }
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
       metadata: {},
@@ -636,7 +807,7 @@ export class Wllama {
   // High level API
 
   /**
-   * Calculate embedding vector for a given text.
+   * Calculate embedding vector for a given text or multimodal input.
    * By default, BOS and EOS tokens will be added automatically. You can use the "skipBOS" and "skipEOS" option to disable it.
    * @param options OAI-compatible embedding creation options
    * @returns OAI-compatible embedding response
@@ -652,18 +823,30 @@ export class Wllama {
       );
     }
 
+    if (
+      options.embd_normalize !== undefined &&
+      (!Number.isInteger(options.embd_normalize) || options.embd_normalize < -1)
+    ) {
+      throw new WllamaError(
+        'embd_normalize must be an integer >= -1',
+        'inference_error'
+      );
+    }
+
+    const { input, files } = this.prepareEmbeddingInput(options.input);
+
     const result = await this.proxy.wllamaAction<GlueMsgEmbeddingRes>(
       'embedding',
       {
         _name: 'embd_req',
-        data_json: JSON.stringify(options),
-        files: [], // TODO: support file input
+        data_json: JSON.stringify({ ...options, input }),
+        files: files.map((f) => new Uint8Array(f)),
       }
     );
 
     if (!result.success) {
       throw new WllamaError(
-        'Model failed to start inference',
+        result.message || 'Model failed to start inference',
         'inference_error'
       );
     }
@@ -706,9 +889,10 @@ export class Wllama {
         );
       }
 
-      const { score, tokens_evaluated } = await this.getRerankResult(
-        result.req_id
-      );
+      const { score, tokens_evaluated } = await this.getSingleResult<{
+        score: number;
+        tokens_evaluated: number;
+      }>(result.req_id, 'reranking');
       totalTokens += tokens_evaluated;
       rawResults.push({ index: i, score });
     }
@@ -723,6 +907,125 @@ export class Wllama {
         relevance_score: score,
       })),
     };
+  }
+
+  /**
+   * Answer typed questions about a state, using a decision model (TypeSafe-compatible System One API).
+   * Image input is not supported yet.
+   * @param options The state and the questions
+   * @returns The answer of each question
+   */
+  async createSystemOne(options: SystemOneParams): Promise<SystemOneResponse> {
+    this.checkModelLoaded();
+
+    const result = await this.proxy.wllamaAction<GlueMsgSystemoneRes>(
+      'systemone',
+      {
+        _name: 'sys1_req',
+        data_json: JSON.stringify(options),
+      }
+    );
+
+    if (!result.success) {
+      throw new WllamaError(
+        'Model failed to start systemone',
+        'inference_error'
+      );
+    }
+
+    return await this.getSingleResult<SystemOneResponse>(
+      result.req_id,
+      'systemone'
+    );
+  }
+
+  /**
+   * Generate speech from text. The model must have audio output, see `LoadedContextInfo.has_audio_output`.
+   * @param options speech options
+   * @returns the whole audio (stream=false) or an async iterator of audio chunks (stream=true). A stream starts its request on the first read, so errors come from the iterator
+   */
+  async createSpeech(
+    options: SpeechParams & { stream?: false }
+  ): Promise<SpeechResponse>;
+  async createSpeech(
+    options: SpeechParams & { stream: true }
+  ): Promise<AsyncIterable<SpeechChunk>>;
+  async createSpeech(
+    options: SpeechParams & { stream?: boolean }
+  ): Promise<SpeechResponse | AsyncIterable<SpeechChunk>> {
+    this.checkModelLoaded();
+    // a stream starts its request on the first read, so an unread one costs nothing
+    // it belongs to the model loaded now, so take its worker here
+    const chunks = this.getSpeechChunks(options, this.proxy);
+    if (options.stream) {
+      return chunks;
+    }
+    for await (const chunk of chunks) {
+      if (chunk.final) {
+        return { audio: chunk.audio, sample_rate: chunk.sample_rate };
+      }
+    }
+    throw new WllamaError('No speech result received', 'inference_error');
+  }
+
+  /**
+   * Transcribe an audio file. The model must have audio input, see `supportInputModality()`.
+   * @param options OAI-compatible transcription options
+   * @returns OAI-compatible transcription response (stream=false), void when done (stream=true + onData), or async iterator (stream=true, no onData)
+   */
+  async createTranscription(
+    options: TranscriptionParams & { stream?: false }
+  ): Promise<TranscriptionResponse>;
+  async createTranscription(
+    options: TranscriptionParams & StreamParams<TranscriptionChunk>
+  ): Promise<void>;
+  async createTranscription(
+    options: TranscriptionParams & { stream: true }
+  ): Promise<AsyncIterable<TranscriptionChunk>>;
+  async createTranscription(
+    options: TranscriptionParams
+  ): Promise<TranscriptionResponse | void | AsyncIterable<TranscriptionChunk>> {
+    this.checkModelLoaded();
+    if (!this.supportInputModality('audio')) {
+      throw new WllamaError(
+        'Audio input is not supported by the loaded model',
+        'inference_error'
+      );
+    }
+    if (options.stream && (options as any).onData) {
+      await this.createCompletionImpl(options);
+    } else if (options.stream) {
+      return await this.createCompletionGenerator(options);
+    } else {
+      return await this.createCompletionImpl({ ...options, stream: false });
+    }
+  }
+
+  /**
+   * Start a realtime audio session. The model must support it, see `LoadedContextInfo.has_audio_stream`.
+   * It holds one slot until `close()` is called.
+   * @param options session options
+   * @returns the session
+   */
+  async createRealtimeSession(
+    options: RealtimeSessionParams = {}
+  ): Promise<WllamaRealtimeSession> {
+    this.checkModelLoaded();
+    const customOpt = this.seed !== undefined ? { seed: this.seed } : {};
+    const result = await this.proxy.wllamaAction<GlueMsgRealtimeStartRes>(
+      'realtime_start',
+      {
+        _name: 'rtst_req',
+        data_json: JSON.stringify({ ...customOpt, ...options }),
+      }
+    );
+    if (!result.success) {
+      throw new WllamaError(
+        result.message || 'Model failed to start realtime session',
+        'inference_error'
+      );
+    }
+    return new WllamaRealtimeSession(this.proxy, result.req_id);
   }
 
   /**
@@ -801,11 +1104,24 @@ export class Wllama {
 
     const isStream = !!(options as any).stream;
     const isChat = !!(options as any).messages;
+    const isAsr = !!(options as any).file;
     const customOpt: any = {};
     if (this.seed !== undefined) {
       customOpt.seed = this.seed;
     }
     let files: ArrayBuffer[] = [];
+    if (isAsr) {
+      const { file, ...rest } = options as any as TranscriptionParams;
+      files = [file];
+      // upstream reads these as form fields, so they must be strings
+      const formFields: Record<string, string> = {};
+      for (const key of ['stream', 'max_tokens', 'temperature'] as const) {
+        if (rest[key] !== undefined) {
+          formFields[key] = String(rest[key]);
+        }
+      }
+      options = { ...rest, ...formFields } as any;
+    }
     if (isChat) {
       const tmp = this.prepareMultimodalInput(
         options as any as ChatCompletionParams
@@ -818,6 +1134,7 @@ export class Wllama {
       {
         _name: 'cmpl_req',
         is_chat: isChat,
+        is_asr: isAsr,
         data_json: JSON.stringify({ ...options, ...customOpt }),
         files: files.map((f) => new Uint8Array(f)),
       }
@@ -864,12 +1181,14 @@ export class Wllama {
    * @param modality
    * @returns
    */
-  supportInputModality(modality: 'image' | 'audio'): boolean {
+  supportInputModality(modality: 'image' | 'audio' | 'video'): boolean {
     this.checkModelLoaded();
     if (modality === 'image') {
       return !!this.loadedContextInfo.has_image_input;
     } else if (modality === 'audio') {
       return !!this.loadedContextInfo.has_audio_input;
+    } else if (modality === 'video') {
+      return !!this.loadedContextInfo.has_video_input;
     } else {
       throw new WllamaError(
         'Unsupported modality: ' + modality,
@@ -967,6 +1286,22 @@ export class Wllama {
     }
   }
 
+  private replaceMedia(
+    content: ChatCompletionMessageContent[],
+    files: ArrayBuffer[]
+  ): ChatCompletionMessageText[] {
+    return content.map((c) => {
+      if (c.type === 'text') {
+        return c;
+      }
+      if (!this.mediaMarker) {
+        throw new WllamaError('Media marker is undefined', 'inference_error');
+      }
+      files.push(c.data);
+      return { type: 'text', text: this.mediaMarker };
+    });
+  }
+
   private prepareMultimodalInput(params: ChatCompletionParams): {
     params: ChatCompletionParams;
     files: ArrayBuffer[];
@@ -976,29 +1311,9 @@ export class Wllama {
     const files: ArrayBuffer[] = [];
     for (const m of msg) {
       if (Array.isArray(m.content)) {
-        const newContent: typeof m.content = [];
-        for (const c of m.content) {
-          if (c.type === 'text') {
-            // no transform for text content
-            newContent.push(c);
-          } else {
-            // replace multimodal input with media marker
-            if (!this.mediaMarker) {
-              throw new WllamaError(
-                'Media marker is undefined',
-                'inference_error'
-              );
-            }
-            files.push(c.data);
-            newContent.push({
-              type: 'text',
-              text: this.mediaMarker,
-            });
-          }
-        }
         msgNew.push({
           ...m,
-          content: newContent,
+          content: this.replaceMedia(m.content, files),
         } as ChatCompletionUserMessage);
       } else {
         // no transform for non-typed content
@@ -1014,6 +1329,59 @@ export class Wllama {
     };
   }
 
+  private prepareEmbeddingInput(input: EmbeddingInput): {
+    input: EmbeddingInput;
+    files: ArrayBuffer[];
+  } {
+    const files: ArrayBuffer[] = [];
+    const isContentPart = (entry: unknown): entry is EmbeddingContent =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      'type' in entry &&
+      (entry.type === 'text' || entry.type === 'image');
+    const isContent = (entry: unknown): entry is EmbeddingContent[] =>
+      Array.isArray(entry) && entry.length > 0 && entry.every(isContentPart);
+    const toText = (content: EmbeddingContent[]): string => {
+      if (
+        content.some((c) => c.type === 'text' && typeof c.text !== 'string')
+      ) {
+        throw new WllamaError(
+          'Text input must contain a string in "text"',
+          'inference_error'
+        );
+      }
+      const text = this.replaceMedia(content, files)
+        .map((c) => c.text)
+        .join('');
+      if (text.length === 0) {
+        throw new WllamaError(
+          'Input content cannot be empty',
+          'inference_error'
+        );
+      }
+      return text;
+    };
+
+    let prepared = input;
+    if (isContent(input)) {
+      prepared = toText(input);
+    } else if (
+      Array.isArray(input) &&
+      input.length > 0 &&
+      (input as unknown[]).every(isContent)
+    ) {
+      prepared = (input as EmbeddingContent[][]).map(toText);
+    }
+
+    if (files.length > 0 && !this.supportInputModality('image')) {
+      throw new WllamaError(
+        'Image input is not supported by the loaded model',
+        'inference_error'
+      );
+    }
+    return { input: prepared, files };
+  }
+
   // release the slot occupied by the request; cancelling an already-finished request is a no-op
   private async cancelRequest(reqId: number): Promise<void> {
     try {
@@ -1026,10 +1394,85 @@ export class Wllama {
     }
   }
 
-  private async getRerankResult(reqId: number): Promise<{
-    score: number;
-    tokens_evaluated: number;
-  }> {
+  private async *getSpeechChunks(
+    options: SpeechParams & { stream?: boolean },
+    proxy: ProxyToWorker
+  ): AsyncGenerator<SpeechChunk> {
+    const { speaker_ref, abortSignal, ...params } = options;
+    if (abortSignal?.aborted) {
+      throw new WllamaAbortError();
+    }
+    // request ids start again in a new worker, so only talk to the worker that has the request
+    if (this.proxy !== proxy) {
+      throw new WllamaError(
+        'The model of this speech stream is not loaded anymore',
+        'inference_error'
+      );
+    }
+    const customOpt = this.seed !== undefined ? { seed: this.seed } : {};
+    const result = await proxy.wllamaAction<GlueMsgTtsRes>('tts', {
+      _name: 'tts__req',
+      data_json: JSON.stringify({ ...customOpt, ...params }),
+      files: speaker_ref ? [new Uint8Array(speaker_ref)] : [],
+    });
+    if (!result.success) {
+      throw new WllamaError(
+        result.message || 'Model failed to start speech generation',
+        'inference_error'
+      );
+    }
+    const reqId = result.req_id;
+    const cancel = async () => {
+      if (this.proxy === proxy) {
+        await this.cancelRequest(reqId);
+      }
+    };
+    // also cancel while the reader waits between chunks
+    const onAbort = () => void cancel();
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+
+    let completed = false;
+    try {
+      while (true) {
+        if (abortSignal?.aborted) {
+          throw new WllamaAbortError();
+        }
+        const chunk = await proxy.wllamaAction<GlueMsgGetResultRes>(
+          'get_result',
+          { _name: 'gres_req', req_id: reqId }
+        );
+        if (abortSignal?.aborted) {
+          throw new WllamaAbortError();
+        }
+        completed = !chunk.has_more;
+        if (chunk.data_json) {
+          const data = this.jsonDecode(chunk.data_json);
+          if (chunk.is_error) {
+            throw new WllamaError(
+              data.message || 'Unknown speech error',
+              'inference_error'
+            );
+          }
+          yield {
+            audio: chunk.data_raw.slice().buffer as ArrayBuffer,
+            sample_rate: data.sample_rate,
+            final: data.final,
+          };
+        }
+        if (completed) {
+          return;
+        }
+      }
+    } finally {
+      // covers a consumer that stops reading too
+      abortSignal?.removeEventListener('abort', onAbort);
+      if (!completed) {
+        await cancel();
+      }
+    }
+  }
+
+  private async getSingleResult<T>(reqId: number, task: string): Promise<T> {
     let completed = false;
     try {
       while (true) {
@@ -1043,7 +1486,7 @@ export class Wllama {
           if (chunk.is_error) {
             const jsonData = this.jsonDecode(jsonString);
             throw new WllamaError(
-              jsonData.message || 'Unknown reranking error',
+              jsonData.message || `Unknown ${task} error`,
               'inference_error'
             );
           }
@@ -1057,7 +1500,7 @@ export class Wllama {
         }
       }
 
-      throw new WllamaError('No reranking result received', 'inference_error');
+      throw new WllamaError(`No ${task} result received`, 'inference_error');
     } finally {
       if (!completed) {
         await this.cancelRequest(reqId);
@@ -1134,6 +1577,24 @@ export class Wllama {
     }
 
     return finalResult;
+  }
+
+  private async checkWasmVersion(wasmVersion?: string) {
+    // compare the commit only, the build number is wrong in a shallow clone
+    const getCommit = (version?: string) => version?.split('-').pop();
+    if (getCommit(wasmVersion) === getCommit(LIBLLAMA_VERSION)) {
+      return;
+    }
+    const message = `wasm file version (${wasmVersion ?? 'unknown'}) does not match the expected version (${LIBLLAMA_VERSION})`;
+    if (this.config.skipVersionCheck) {
+      this.logger().warn(message);
+      return;
+    }
+    await this.exit();
+    throw new WllamaError(
+      `${message}. Use the wasm file from the same release, or set skipVersionCheck to ignore this error`,
+      'version_mismatch'
+    );
   }
 
   getWorkerResources(): WllamaWorkerResources {

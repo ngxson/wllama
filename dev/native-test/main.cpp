@@ -28,6 +28,18 @@ extern "C" struct ggml_cplan __real_ggml_graph_plan(
     const struct ggml_cgraph *cgraph, int n_threads, struct ggml_threadpool *tp) {
   return ggml_graph_plan(cgraph, n_threads, tp);
 }
+extern "C" struct ggml_threadpool *__real_ggml_threadpool_new(struct ggml_threadpool_params *params) {
+  return ggml_threadpool_new(params);
+}
+extern "C" void __real_ggml_threadpool_free(struct ggml_threadpool *tp) {
+  ggml_threadpool_free(tp);
+}
+
+// the wasm link wraps this too (see the root CMakeLists.txt), here the wrap is not hooked and the real function is called directly
+#include "mtmd.h"
+extern "C" mtmd_context *__real_mtmd_init_from_file(const char *mmproj_fname, const struct llama_model *text_model, const struct mtmd_context_params ctx_params) {
+  return mtmd_init_from_file(mmproj_fname, text_model, ctx_params);
+}
 
 #include "wllama-context.h"
 

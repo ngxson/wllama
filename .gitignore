@@ -25,3 +25,6 @@ a.out.wasm
 
 /compat/wasm/*.wasm
 /src/wasm/*.wasm
+
+# vitest browser screenshots of failed tests
+__screenshots__/

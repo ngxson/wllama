@@ -70,6 +70,14 @@ export interface LoadModelParams {
   spec_draft_p_min?: number;
   spec_draft_threads?: number;
   spec_draft_threads_batch?: number;
+  /** Comma-separated list, for example "ngram-simple" or "ngram-mod" */
+  spec_type?: string;
+  spec_ngram_simple_size_n?: number;
+  spec_ngram_simple_size_m?: number;
+  spec_ngram_simple_min_hits?: number;
+  spec_ngram_mod_n_min?: number;
+  spec_ngram_mod_n_max?: number;
+  spec_ngram_mod_n_match?: number;
   kv_overrides?: Record<string, string>;
   reasoning_budget_tokens?: number;
   reasoning_budget_message?: string;
@@ -99,6 +107,14 @@ export interface LoadedContextInfo {
   add_eos_token: boolean;
   has_image_input: boolean;
   has_audio_input: boolean;
+  has_video_input: boolean;
+  has_audio_output: boolean;
+  has_chat: boolean; // false for a TTS-only or a realtime transcription model
+  has_audio_stream: boolean; // realtime sessions are available
+  has_live_asr: boolean; // text comes out while the audio goes in, with intent: 'transcription'
+  audio_input_rate: number; // in Hz, 0 if there is no audio input
+  audio_output_rate: number; // in Hz, 0 if there is no audio output
+  audio_voices: string[]; // predefined voices of createSpeech()
 }
 
 // Note: snake_case is used to match llama.cpp's naming convention

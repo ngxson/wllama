@@ -552,6 +552,13 @@ struct glue_msg_load_req
   GLUE_FIELD_NULLABLE(float, spec_draft_p_min)
   GLUE_FIELD_NULLABLE(int, spec_draft_threads)
   GLUE_FIELD_NULLABLE(int, spec_draft_threads_batch)
+  GLUE_FIELD_NULLABLE(str, spec_type)
+  GLUE_FIELD_NULLABLE(int, spec_ngram_simple_size_n)
+  GLUE_FIELD_NULLABLE(int, spec_ngram_simple_size_m)
+  GLUE_FIELD_NULLABLE(int, spec_ngram_simple_min_hits)
+  GLUE_FIELD_NULLABLE(int, spec_ngram_mod_n_min)
+  GLUE_FIELD_NULLABLE(int, spec_ngram_mod_n_max)
+  GLUE_FIELD_NULLABLE(int, spec_ngram_mod_n_match)
   GLUE_FIELD_NULLABLE(arr_str, kv_overrides_keys)
   GLUE_FIELD_NULLABLE(arr_str, kv_overrides_vals)
   GLUE_FIELD_NULLABLE(int, reasoning_budget_tokens)
@@ -585,6 +592,14 @@ struct glue_msg_load_res
   GLUE_FIELD(str, media_marker)
   GLUE_FIELD(bool, has_image_input)
   GLUE_FIELD(bool, has_audio_input)
+  GLUE_FIELD(bool, has_video_input)
+  GLUE_FIELD(bool, has_audio_output)
+  GLUE_FIELD(bool, has_chat)
+  GLUE_FIELD(bool, has_audio_stream)
+  GLUE_FIELD(bool, has_live_asr)
+  GLUE_FIELD(int, audio_input_rate)
+  GLUE_FIELD(int, audio_output_rate)
+  GLUE_FIELD(arr_str, audio_voices)
 };
 
 /////////
@@ -593,6 +608,7 @@ struct glue_msg_completion_req
 {
   GLUE_HANDLER("cmpl_req")
   GLUE_FIELD(bool, is_chat)
+  GLUE_FIELD(bool, is_asr)
   GLUE_FIELD(str, data_json)
   GLUE_FIELD(arr_raw, files)
 };
@@ -617,6 +633,7 @@ struct glue_msg_embedding_res
 {
   GLUE_HANDLER("embd_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
   GLUE_FIELD(int, req_id)
 };
 
@@ -637,6 +654,67 @@ struct glue_msg_rerank_res
 
 /////////
 
+struct glue_msg_systemone_req
+{
+  GLUE_HANDLER("sys1_req")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_systemone_res
+{
+  GLUE_HANDLER("sys1_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(int, req_id)
+};
+
+/////////
+
+struct glue_msg_tts_req
+{
+  GLUE_HANDLER("tts__req")
+  GLUE_FIELD(str, data_json)
+  GLUE_FIELD(arr_raw, files)
+};
+
+struct glue_msg_tts_res
+{
+  GLUE_HANDLER("tts__res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
+  GLUE_FIELD(int, req_id)
+};
+
+/////////
+
+struct glue_msg_realtime_start_req
+{
+  GLUE_HANDLER("rtst_req")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_realtime_start_res
+{
+  GLUE_HANDLER("rtst_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
+  GLUE_FIELD(int, req_id)
+};
+
+struct glue_msg_realtime_send_req
+{
+  GLUE_HANDLER("rtsd_req")
+  GLUE_FIELD(int, req_id)
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_realtime_send_res
+{
+  GLUE_HANDLER("rtsd_res")
+  GLUE_FIELD(bool, success)
+};
+
+/////////
+
 struct glue_msg_get_result_req
 {
   GLUE_HANDLER("gres_req")
@@ -650,6 +728,7 @@ struct glue_msg_get_result_res
   GLUE_FIELD(bool, has_more)
   GLUE_FIELD(bool, is_error)
   GLUE_FIELD(str, data_json)
+  GLUE_FIELD(raw, data_raw)
 };
 
 /////////

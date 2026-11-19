@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <unordered_map>
+#include <algorithm>
 
 #include "llama.h"
 #include "common.h"
@@ -19,13 +20,17 @@
 #include "wllama.h"
 
 #include "server-context.h"
+#include "server-decision.h"
 #include "server-queue.h"
 #include "server-schema.h"
+// realtime_conversation is private to this file and its run() needs a thread, so wllama includes it and calls the steps itself
+#include "server-realtime.cpp"
 
 #include "ggml-cpu.h"
 #include "ggml-backend.h"
 
 #include "glue.hpp"
+#include "wllama-video.h"
 
 #ifdef WLLAMA_TEST_BACKEND
 int main_test_backend_ops(int argc, char **argv);
@@ -65,6 +70,34 @@ extern "C" void __wrap_abort(void)
   __real_abort();
 }
 
+// graphs with no pool (clip, draft model) use this pool. A second pool needs more workers, and a new worker cannot start while the main thread waits at a barrier
+static struct ggml_threadpool *shared_threadpool = nullptr;
+
+extern "C" struct ggml_threadpool *__real_ggml_threadpool_new(struct ggml_threadpool_params *params);
+extern "C" struct ggml_threadpool *__wrap_ggml_threadpool_new(struct ggml_threadpool_params *params)
+{
+  shared_threadpool = __real_ggml_threadpool_new(params);
+  return shared_threadpool;
+}
+
+extern "C" void __real_ggml_threadpool_free(struct ggml_threadpool *threadpool);
+extern "C" void __wrap_ggml_threadpool_free(struct ggml_threadpool *threadpool)
+{
+  if (threadpool == shared_threadpool)
+    shared_threadpool = nullptr;
+  __real_ggml_threadpool_free(threadpool);
+}
+
+// the mtmd context of the server is private, TTS and realtime need it
+static mtmd_context *shared_mctx = nullptr;
+
+extern "C" mtmd_context *__real_mtmd_init_from_file(const char *mmproj_fname, const struct llama_model *text_model, const struct mtmd_context_params ctx_params);
+extern "C" mtmd_context *__wrap_mtmd_init_from_file(const char *mmproj_fname, const struct llama_model *text_model, const struct mtmd_context_params ctx_params)
+{
+  shared_mctx = __real_mtmd_init_from_file(mmproj_fname, text_model, ctx_params);
+  return shared_mctx;
+}
+
 static bool force_single_thread = false;
 extern "C" struct ggml_cplan __real_ggml_graph_plan(
     const struct ggml_cgraph *cgraph,
@@ -76,7 +109,7 @@ extern "C" struct ggml_cplan __wrap_ggml_graph_plan(
     int n_threads,
     struct ggml_threadpool *threadpool)
 {
-  return __real_ggml_graph_plan(cgraph, force_single_thread ? 1 : n_threads, threadpool);
+  return __real_ggml_graph_plan(cgraph, force_single_thread ? 1 : n_threads, threadpool ? threadpool : shared_threadpool);
 }
 
 inline std::vector<char> convert_string_to_buf(std::string &input)
@@ -251,6 +284,270 @@ enum display_type
 static bool has_more_tasks = false;
 static ggml_log_level log_level = GGML_LOG_LEVEL_INFO;
 
+// realtime code waits for its result inside next(); no server thread here, so next() must run the queue itself
+static bool run_queue_in_next = false;
+struct run_queue_scope
+{
+  run_queue_scope() { run_queue_in_next = true; }
+  ~run_queue_scope() { run_queue_in_next = false; }
+};
+
+// no socket here: client events come from action_realtime_send, server events wait in the list until the next poll
+struct realtime_conn : server_http_context::ws_conn
+{
+  std::vector<std::string> events;
+  bool open = true;
+
+  int read(std::string &) override { return 0; }
+  bool send(const std::string &msg) override
+  {
+    events.push_back(msg);
+    return true;
+  }
+  bool send_binary(const std::string &) override { return false; }
+  bool is_open() const override { return open; }
+  void close() override { open = false; }
+};
+
+struct realtime_session
+{
+  realtime_conn conn;
+
+  virtual ~realtime_session() = default;
+  virtual const std::string &get_id() const = 0;
+  virtual json session_json() const = 0;
+  virtual void handle(const std::string &msg) = 0;
+  virtual void on_result(server_task_result &result) = 0;
+
+  void send_event(json ev)
+  {
+    ev["event_id"] = "event_" + random_string();
+    conn.send(safe_json_to_str(ev));
+  }
+
+  void send_error(const std::string &message, const std::string &type)
+  {
+    send_event({
+        {"type", "error"},
+        {"error", {{"type", type}, {"code", nullptr}, {"message", message}, {"param", nullptr}}},
+    });
+  }
+
+  // as a json array, empty string if there is no event
+  std::string take_events()
+  {
+    if (conn.events.empty())
+    {
+      return "";
+    }
+    std::string out = "[";
+    for (size_t i = 0; i < conn.events.size(); i++)
+    {
+      out += (i > 0 ? "," : "") + conn.events[i];
+    }
+    conn.events.clear();
+    return out + "]";
+  }
+};
+
+// deps.params is a full common_params upstream, so keep our own copy with the sampling of the request
+static common_params make_realtime_params(const common_params & base, const common_params_sampling & sampling) {
+  common_params res = base;
+  res.sampling = sampling;
+  return res;
+}
+
+// models that answer after the audio, see server_realtime_conversation()
+struct realtime_session_conversation : realtime_session
+{
+  common_params params;
+  mtmd_helper_cap cap;
+  server_realtime_deps deps;
+  realtime_conversation conversation;
+
+  realtime_session_conversation(server_response_reader &rd, const server_context_meta &meta, const common_params &parent_params, const common_params_sampling &sampling, const mtmd_helper_cap &cap, const llama_vocab *vocab)
+      : params(make_realtime_params(parent_params, sampling)), cap(cap), deps{rd.queue_tasks, rd.queue_results, meta, this->params, shared_mctx, this->cap, vocab}, conversation(deps, conn)
+  {
+    conversation.input_rate = mtmd_get_audio_sample_rate(shared_mctx);
+    if (cap.audio_gen)
+    {
+      conversation.output_rate = mtmd_gen_audio_get_info(shared_mctx).sample_rate;
+    }
+  }
+
+  const std::string &get_id() const override { return conversation.id; }
+  json session_json() const override { return conversation.session_json(); }
+  void handle(const std::string &msg) override { conversation.handle(msg); }
+  void on_result(server_task_result &result) override
+  {
+    if (auto *res = dynamic_cast<server_task_result_realtime *>(&result))
+    {
+      conversation.on_result(*res);
+    }
+  }
+};
+
+// models that write the text while they listen, same events as the /v1/realtime route of llama-server
+struct realtime_session_live : realtime_session
+{
+  server_queue &queue_tasks;
+  server_response &queue_results;
+  std::string id = "sess_" + random_string();
+  std::string model_name;
+  int sample_rate;
+
+  // one item per committed audio buffer, deltas go to the current item
+  std::string item_id = "item_" + random_string();
+  std::string item_prev;
+  std::string item_text;
+  bool input_ended = false;
+
+  realtime_session_live(server_response_reader &rd, const std::string &model_name, int sample_rate)
+      : queue_tasks(rd.queue_tasks), queue_results(rd.queue_results), model_name(model_name), sample_rate(sample_rate) {}
+
+  const std::string &get_id() const override { return id; }
+
+  json session_json() const override
+  {
+    return {
+        {"id", id},
+        {"object", "realtime.transcription_session"},
+        {"type", "transcription"},
+        {"audio", {{"input", {
+                                 {"format", {{"type", "audio/pcm"}, {"rate", sample_rate}}},
+                                 {"transcription", {{"model", model_name}}},
+                                 {"turn_detection", nullptr},
+                                 {"noise_reduction", nullptr},
+                             }}}},
+    };
+  }
+
+  bool control(server_control_action action, std::vector<float> &&audio = {})
+  {
+    server_response_reader ctl(queue_tasks, queue_results, 1);
+    server_task task(SERVER_TASK_TYPE_CONTROL);
+    task.id = ctl.get_new_id();
+    task.params.control_action = action;
+    task.params.control_cmpl_id = id;
+    task.params.control_audio = std::move(audio);
+    ctl.post_task(std::move(task));
+    auto result = ctl.next([]()
+                           { return false; });
+    auto *res = result ? dynamic_cast<server_task_result_control *>(result.get()) : nullptr;
+    return res && res->success;
+  }
+
+  void send_completed()
+  {
+    send_event({
+        {"type", "conversation.item.input_audio_transcription.completed"},
+        {"item_id", item_id},
+        {"content_index", 0},
+        {"transcript", item_text},
+    });
+    item_text.clear();
+  }
+
+  void handle(const std::string &msg) override
+  {
+    json ev;
+    try
+    {
+      ev = json::parse(msg);
+    }
+    catch (const std::exception &)
+    {
+      send_error("invalid JSON", "invalid_request_error");
+      return;
+    }
+    const std::string type = json_value(ev, "type", std::string());
+    if (type == "session.update" || type == "transcription_session.update")
+    {
+      send_event({{"type", "session.updated"}, {"session", session_json()}});
+    }
+    else if (type == "input_audio_buffer.append")
+    {
+      std::string pcm;
+      try
+      {
+        pcm = base64::decode(json_value(ev, "audio", std::string()));
+      }
+      catch (const std::exception &)
+      {
+        send_error("invalid base64 audio", "invalid_request_error");
+        return;
+      }
+      std::vector<float> samples(pcm.size() / 2);
+      for (size_t i = 0; i < samples.size(); i++)
+      {
+        int16_t v;
+        memcpy(&v, pcm.data() + 2 * i, sizeof(v));
+        samples[i] = v / 32768.0f;
+      }
+      if (!control(SERVER_CONTROL_ACTION_AUDIO_APPEND, std::move(samples)))
+      {
+        send_error("failed to append audio", "server_error");
+      }
+    }
+    else if (type == "input_audio_buffer.commit")
+    {
+      // "final": true ends the input, the last item is completed when the stream drains
+      if (json_value(ev, "final", false))
+      {
+        input_ended = true;
+        control(SERVER_CONTROL_ACTION_AUDIO_END);
+        return;
+      }
+      if (!control(SERVER_CONTROL_ACTION_AUDIO_COMMIT))
+      {
+        send_error("failed to commit audio", "server_error");
+        return;
+      }
+      send_event({
+          {"type", "input_audio_buffer.committed"},
+          {"previous_item_id", item_prev.empty() ? json(nullptr) : json(item_prev)},
+          {"item_id", item_id},
+      });
+    }
+    else if (type == "input_audio_buffer.clear")
+    {
+      send_event({{"type", "input_audio_buffer.cleared"}});
+    }
+    else
+    {
+      send_error("unknown event type: " + type, "invalid_request_error");
+    }
+  }
+
+  void on_result(server_task_result &result) override
+  {
+    if (auto *partial = dynamic_cast<server_task_result_cmpl_partial *>(&result))
+    {
+      if (partial->audio_commit_drained)
+      {
+        // complete the committed item and open the next one
+        send_completed();
+        item_prev = item_id;
+        item_id = "item_" + random_string();
+      }
+      else if (!partial->content.text.empty())
+      {
+        item_text += partial->content.text;
+        send_event({
+            {"type", "conversation.item.input_audio_transcription.delta"},
+            {"item_id", item_id},
+            {"content_index", 0},
+            {"delta", partial->content.text},
+        });
+      }
+    }
+    else if (result.is_stop())
+    {
+      send_completed();
+    }
+  }
+};
+
 struct wllama_context
 {
   server_context ctx_server;
@@ -266,6 +563,21 @@ struct wllama_context
   int next_req_id = 1;
   std::unique_ptr<const server_context_meta> meta;
 
+  // the one inside ctx_server is private, so we keep our own copy
+  server_decision_context decision;
+  struct decision_request
+  {
+    std::vector<server_decision_question> questions;
+    std::vector<std::vector<float>> scores; // indexed by task index
+    int32_t n_tokens = 0;
+  };
+  std::unordered_map<int, decision_request> decision_reqs; // keyed by req_id
+  std::unordered_map<int, std::vector<json>> embedding_reqs; // keyed by req_id
+  std::unordered_map<int, std::unique_ptr<realtime_session>> realtime_sessions; // keyed by req_id
+
+  mtmd_helper_cap mtmd_cap{};
+  llama_tokens asr_prompt; // prompt of the "asr" chat template, for live ASR
+
   struct console
   {
     struct spinner
@@ -279,20 +591,34 @@ struct wllama_context
 
   explicit wllama_context() {};
 
-  void create_completion_task(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &files, bool is_chat)
+  void create_completion_task(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &files, bool is_chat, bool is_asr)
   {
     json body = json::parse(req_raw);
     task_response_type res_type = TASK_RESPONSE_TYPE_OAI_CMPL;
+    common_chat_session chat_session;
 
-    if (is_chat)
+    if (is_asr)
+    {
+      if (files.size() != 1)
+      {
+        throw app_exception("Transcription needs exactly one audio file");
+      }
+      std::map<std::string, uploaded_file> in_files;
+      in_files["file"].data = std::move(files[0]);
+      body = convert_transcriptions_to_chatcmpl(body, meta->chat_params.tmpls.get(), in_files, files);
+    }
+
+    if (is_chat || is_asr)
     {
       std::vector<raw_buffer> dummy_files; // unused
       json body_parsed = oaicompat_chat_params_parse(
+          vocab,
           body,
           meta->chat_params,
-          dummy_files);
+          dummy_files,
+          chat_session);
       body = std::move(body_parsed);
-      res_type = TASK_RESPONSE_TYPE_OAI_CHAT;
+      res_type = is_asr ? TASK_RESPONSE_TYPE_OAI_ASR : TASK_RESPONSE_TYPE_OAI_CHAT;
     }
 
     {
@@ -308,17 +634,10 @@ struct wllama_context
           meta->logit_bias_eog,
           body);
       task.params.res_type = res_type;
-      if (is_chat && files.empty())
+      if (files.empty())
       {
-        auto inputs = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
-        if (inputs.size() != 1)
-          throw app_exception("Chat completion must produce exactly one prompt");
-        task.tokens = std::move(inputs[0]);
-
-        json delims = json_value(body, "message_delimiters", json::array());
-        auto delimiters = common_chat_msg_delimiters_parse(delims);
-        delimiters.tokenize(vocab);
-        task.params.message_spans = task.tokens.find_message_spans(delimiters);
+        // apply_chat_session() needs the tokens to find the message spans
+        task.tokens = std::move(tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default())[0]);
       }
       else
       {
@@ -326,8 +645,11 @@ struct wllama_context
         task.cli_files = files;
         task.cli = true;
       }
+      task.apply_chat_session(chat_session);
 
-      rd.post_task({std::move(task)});
+      std::vector<server_task> tasks;
+      tasks.push_back(std::move(task));
+      rd.post_tasks(std::move(tasks), chat_session);
     }
   }
 
@@ -568,6 +890,23 @@ struct wllama_context
       params.speculative.draft.cpuparams.n_threads = req.spec_draft_threads.value;
     if (req.spec_draft_threads_batch.not_null())
       params.speculative.draft.cpuparams_batch.n_threads = req.spec_draft_threads_batch.value;
+    if (req.spec_type.not_null())
+    {
+      auto types = common_speculative_types_from_names(string_split<std::string>(req.spec_type.value, ','));
+      params.speculative.types.insert(params.speculative.types.end(), types.begin(), types.end());
+    }
+    if (req.spec_ngram_simple_size_n.not_null())
+      params.speculative.ngram_simple.size_n = req.spec_ngram_simple_size_n.value;
+    if (req.spec_ngram_simple_size_m.not_null())
+      params.speculative.ngram_simple.size_m = req.spec_ngram_simple_size_m.value;
+    if (req.spec_ngram_simple_min_hits.not_null())
+      params.speculative.ngram_simple.min_hits = req.spec_ngram_simple_min_hits.value;
+    if (req.spec_ngram_mod_n_min.not_null())
+      params.speculative.ngram_mod.n_min = req.spec_ngram_mod_n_min.value;
+    if (req.spec_ngram_mod_n_max.not_null())
+      params.speculative.ngram_mod.n_max = req.spec_ngram_mod_n_max.value;
+    if (req.spec_ngram_mod_n_match.not_null())
+      params.speculative.ngram_mod.n_match = req.spec_ngram_mod_n_match.value;
 
     // kv overrides
     if (req.kv_overrides_keys.not_null() && req.kv_overrides_vals.not_null())
@@ -594,6 +933,10 @@ struct wllama_context
     if (req.prefill_assistant.not_null())
       params.prefill_assistant = req.prefill_assistant.value;
 
+    // video frames are already sampled by JS, do not resample them
+    params.video_fps = 0.0f;
+    ctx_server.set_video_decoder(&wllama_video_decoder);
+
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);
 
@@ -613,6 +956,9 @@ struct wllama_context
     model = llama_get_model(ctx);
     vocab = llama_model_get_vocab(model);
     meta = std::make_unique<server_context_meta>(ctx_server.get_meta());
+    decision.init(model);
+    mtmd_cap = mtmd_helper_get_capabilities(model, shared_mctx);
+    asr_prompt = server_chat_get_asr_prompt(model);
     auto metadata = dump_metadata();
 
     // get EOG tokens
@@ -653,6 +999,14 @@ struct wllama_context
     res.media_marker.value = get_media_marker();
     res.has_image_input.value = server_meta.chat_params.allow_image;
     res.has_audio_input.value = server_meta.chat_params.allow_audio;
+    res.has_video_input.value = server_meta.chat_params.allow_video;
+    res.has_audio_output.value = server_meta.has_cap_tts;
+    res.has_chat.value = server_meta.has_cap_chat;
+    res.has_audio_stream.value = server_meta.has_audio_stream;
+    res.has_live_asr.value = server_meta.has_audio_stream && (!mtmd_cap.chat || !asr_prompt.empty());
+    res.audio_input_rate.value = server_meta.has_inp_audio ? mtmd_get_audio_sample_rate(shared_mctx) : 0;
+    res.audio_output_rate.value = server_meta.has_cap_tts ? mtmd_gen_audio_get_info(shared_mctx).sample_rate : 0;
+    res.audio_voices.arr = server_meta.tts_voices;
     return res;
   }
 
@@ -670,14 +1024,14 @@ struct wllama_context
     }
 
     // create completion task and post to the queue
-    create_completion_task(*rd, req.data_json.value, input_files, req.is_chat.value);
+    create_completion_task(*rd, req.data_json.value, input_files, req.is_chat.value, req.is_asr.value);
 
     res.success.value = true;
     res.req_id.value = register_reader(std::move(rd));
     return res;
   }
 
-  void create_embedding_tasks(server_response_reader &rd, std::string &req_raw)
+  void create_embedding_tasks(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &input_files)
   {
     json body = json::parse(req_raw);
 
@@ -701,25 +1055,77 @@ struct wllama_context
       embd_normalize = body.at("embd_normalize").get<int>();
     }
 
-    auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
-    for (const auto &tokens : tokenized_prompts)
+    std::vector<server_task> tasks;
+
+    auto new_task = [&]() {
+      server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
+      task.id = rd.get_new_id();
+      task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
+      task.params.embd_normalize = embd_normalize;
+      return task;
+    };
+
+    if (input_files.empty())
     {
-      if (tokens.empty())
+      auto tokenized_prompts = tokenize_input_prompts(vocab, nullptr, prompt, true, true, mtmd_helper_init_opt_default());
+      for (auto &tokens : tokenized_prompts)
       {
-        throw app_exception("Input content cannot be empty");
+        if (tokens.empty())
+        {
+          throw app_exception("Input content cannot be empty");
+        }
+        server_task task = new_task();
+        task.tokens = std::move(tokens);
+        tasks.push_back(std::move(task));
+      }
+    }
+    else
+    {
+      llama_context *lctx = ctx_server.get_llama_context();
+      const bool has_memory = llama_get_memory(lctx) != nullptr;
+      const bool is_last_pooling = llama_pooling_type(lctx) == LLAMA_POOLING_TYPE_LAST;
+
+      // server decodes image in its own batch here, so pooled output has only the text tokens
+      if (has_memory && !is_last_pooling && llama_get_causal_attn(lctx))
+      {
+        throw app_exception("Image embedding on a causal model requires pooling_type = last");
+      }
+
+      // cli mode lets the server tokenize with the mtmd context
+      const std::string media_marker = get_media_marker();
+      auto texts = prompt.is_array() ? prompt.get<std::vector<std::string>>() : std::vector<std::string>{prompt.get<std::string>()};
+      size_t i_file = 0;
+      for (auto &text : texts)
+      {
+        server_task task = new_task();
+        for (size_t pos = text.find(media_marker); pos != std::string::npos; pos = text.find(media_marker, pos + media_marker.size()))
+        {
+          if (i_file >= input_files.size())
+          {
+            throw app_exception("Not enough media files");
+          }
+          task.cli_files.push_back(std::move(input_files[i_file++]));
+        }
+        // image can not be the last token here, server needs a text token for the final batch
+        if (has_memory && is_last_pooling && string_ends_with(text, media_marker))
+        {
+          text += "\n";
+        }
+        task.cli_prompt = std::move(text);
+        task.cli = true;
+        tasks.push_back(std::move(task));
+      }
+      if (i_file != input_files.size())
+      {
+        throw app_exception("Unused media files");
       }
     }
 
-    std::vector<server_task> tasks;
-    for (size_t i = 0; i < tokenized_prompts.size(); i++)
+    if (tasks.empty())
     {
-      server_task task = server_task(SERVER_TASK_TYPE_EMBEDDING);
-      task.id = rd.get_new_id();
-      task.tokens = std::move(tokenized_prompts[i]);
-      task.params.res_type = TASK_RESPONSE_TYPE_OAI_EMBD;
-      task.params.embd_normalize = embd_normalize;
-      tasks.push_back(std::move(task));
+      throw app_exception("Input content cannot be empty");
     }
+
     rd.post_tasks(std::move(tasks));
   }
 
@@ -729,8 +1135,16 @@ struct wllama_context
     glue_msg_embedding_res res;
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
-
-    create_embedding_tasks(*rd, req.data_json.value);
+    try
+    {
+      create_embedding_tasks(*rd, req.data_json.value, req.files.arr);
+    }
+    catch (const std::exception &e)
+    {
+      res.success.value = false;
+      res.message.value = e.what();
+      return res;
+    }
 
     res.success.value = true;
     res.req_id.value = register_reader(std::move(rd));
@@ -756,7 +1170,7 @@ struct wllama_context
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
 
-    auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document, mtmd_helper_init_opt_default());
+    auto tokens = format_prompt_rerank(model, vocab, nullptr, query, document, {}, {}, mtmd_helper_init_opt_default());
     server_task task = server_task(SERVER_TASK_TYPE_RERANK);
     task.id = rd->get_new_id();
     task.index = 0;
@@ -766,6 +1180,289 @@ struct wllama_context
     res.success.value = true;
     res.req_id.value = register_reader(std::move(rd));
     return res;
+  }
+
+  glue_msg_systemone_res action_systemone(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_systemone_req);
+    glue_msg_systemone_res res;
+
+    if (decision.type == COMMON_DECISION_TYPE_NONE)
+    {
+      throw app_exception("This model is not a decision model");
+    }
+
+    json body = json::parse(req.data_json.value);
+    decision_request dreq;
+    dreq.questions = decision.parse_questions(body);
+
+    std::vector<raw_buffer> files;
+    const json state = decision.parse_state(body, files);
+    if (!files.empty())
+    {
+      throw app_exception("Image input is not supported for systemone");
+    }
+
+    auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
+
+    // one task per variant of each question
+    std::vector<server_task> tasks;
+    for (const auto &question : dreq.questions)
+    {
+      for (size_t variant = 0; variant < decision.n_variants(question); variant++)
+      {
+        server_task task = server_task(SERVER_TASK_TYPE_DECISION);
+        task.id = rd->get_new_id();
+        decision.fill_task(state, dreq.questions, question, variant, files, nullptr, mtmd_helper_init_opt_default(), task);
+        tasks.push_back(std::move(task));
+      }
+    }
+    dreq.scores.resize(tasks.size());
+    if (decision.can_share_prompt())
+    {
+      tasks = server_decision_group_tasks(std::move(tasks), params.n_parallel);
+    }
+    rd->post_tasks(std::move(tasks));
+
+    res.success.value = true;
+    res.req_id.value = register_reader(std::move(rd));
+    decision_reqs.emplace(res.req_id.value, std::move(dreq));
+    return res;
+  }
+
+  void create_tts_task(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &files)
+  {
+    if (!meta->has_cap_tts)
+    {
+      throw app_exception("This model does not support audio generation");
+    }
+    const auto info = mtmd_gen_audio_get_info(shared_mctx);
+
+    json body = json::parse(req_raw);
+    const std::string prompt = json_value(body, "input", std::string());
+    if (prompt.empty())
+    {
+      throw app_exception("\"input\" must be a non-empty string");
+    }
+
+    server_task task(SERVER_TASK_TYPE_TTS);
+    server_schema::eval_tts_schema(params, task, body);
+
+    // a model with a "tts" chat template speaks the prompt rendered from it
+    const std::string lang = json_value(body, "lang", std::string());
+    const std::string voice = json_value(body, "voice", std::string());
+    const std::string tts_prompt = common_chat_get_tts_prompt(meta->chat_params.tmpls.get(), prompt, lang, voice);
+    task.tts_inp.set_prompt(tts_prompt.empty() ? prompt : tts_prompt);
+    task.tts_inp.set_lang(lang);
+    task.tts_inp.data.stream = task.params.stream;
+    task.tts_inp.data.out_type = json_value(body, "response_format", std::string("wav")) == "pcm"
+                                     ? MTMD_HELPER_GEN_AUDIO_OUTTYPE_PCM
+                                     : MTMD_HELPER_GEN_AUDIO_OUTTYPE_WAV;
+    // note: -1 is clamped to 0 by the sampler, it will disable the penalty
+    task.params.sampling.penalty_last_n = task.params.n_predict > 0 ? task.params.n_predict : 512;
+    task.params.sampling.seed = task.tts_inp.data.seed; // same seed for the codec RNG
+    if (task.tts_inp.data.top_k > 0)
+    {
+      task.params.sampling.top_k = task.tts_inp.data.top_k;
+    }
+    if (task.tts_inp.data.top_p > 0)
+    {
+      task.params.sampling.top_p = task.tts_inp.data.top_p;
+    }
+
+    // a model with predefined voices only speaks with one of them
+    mtmd::bitmap_ptr voice_ref;
+    if (!voice.empty() && info.n_voices > 0)
+    {
+      voice_ref.reset(mtmd_gen_audio_get_voice(shared_mctx, voice.c_str()));
+      if (!voice_ref)
+      {
+        throw app_exception("Unknown voice \"" + voice + "\"");
+      }
+    }
+
+    if (!files.empty())
+    {
+      if (voice_ref)
+      {
+        throw app_exception("\"voice\" and \"speaker_ref\" cannot be used together");
+      }
+      if (!mtmd_support_audio(shared_mctx))
+      {
+        throw app_exception("This model has no voice encoder, \"speaker_ref\" cannot be used");
+      }
+      auto wrapper = mtmd_helper_bitmap_init_from_buf(shared_mctx, files[0].data(), files[0].size(), false, mtmd_helper_init_opt_default());
+      if (!wrapper.bitmap)
+      {
+        throw app_exception("Failed to decode \"speaker_ref\"");
+      }
+      task.tts_inp.set_speaker_ref(mtmd::bitmap_ptr(wrapper.bitmap));
+    }
+    else if (voice_ref)
+    {
+      task.tts_inp.set_speaker_ref(std::move(voice_ref));
+    }
+    else if (info.n_voices > 0)
+    {
+      // without a voice prompt the model produces near silence: the first voice is the default
+      task.tts_inp.set_speaker_ref(mtmd::bitmap_ptr(mtmd_gen_audio_get_voice(shared_mctx, mtmd_gen_audio_voice_name(shared_mctx, 0))));
+    }
+
+    task.id = rd.get_new_id();
+    rd.post_task(std::move(task));
+  }
+
+  glue_msg_tts_res action_tts(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_tts_req);
+    glue_msg_tts_res res;
+
+    auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
+    try
+    {
+      create_tts_task(*rd, req.data_json.value, req.files.arr);
+    }
+    catch (const std::exception &e)
+    {
+      res.success.value = false;
+      res.message.value = e.what();
+      return res;
+    }
+
+    res.success.value = true;
+    res.req_id.value = register_reader(std::move(rd));
+    return res;
+  }
+
+  glue_msg_realtime_start_res action_realtime_start(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_realtime_start_req);
+    glue_msg_realtime_start_res res;
+
+    if (!meta->has_audio_stream)
+    {
+      res.success.value = false;
+      res.message.value = "This model does not support realtime audio";
+      return res;
+    }
+
+    // do not wait for a free slot: the worker cannot run anything else meanwhile, and a session never frees its slot by itself
+    {
+      server_response_reader rd_metrics = ctx_server.get_response_reader();
+      server_task task(SERVER_TASK_TYPE_METRICS);
+      task.id = rd_metrics.get_new_id();
+      rd_metrics.post_task(std::move(task));
+      run_queue_scope scope;
+      auto result = rd_metrics.next(should_stop);
+      auto *metrics = result ? dynamic_cast<server_task_result_metrics *>(result.get()) : nullptr;
+      if (!metrics || metrics->n_processing_slots + metrics->n_tasks_deferred >= params.n_parallel)
+      {
+        res.success.value = false;
+        res.message.value = "No free slot, wait for a request to finish or close a realtime session first";
+        return res;
+      }
+    }
+
+    json body = json::parse(req.data_json.value);
+    common_params_sampling sampling = params.sampling;
+    sampling.seed = json_value(body, "seed", sampling.seed);
+
+    auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
+
+    // same choice as the /v1/realtime route of llama-server
+    const bool live_asr = !asr_prompt.empty() && json_value(body, "intent", std::string()) == "transcription";
+    const bool is_conversation = mtmd_cap.chat && !live_asr;
+    std::unique_ptr<realtime_session> session;
+    if (is_conversation)
+    {
+      auto conversation = std::make_unique<realtime_session_conversation>(*rd, *meta, params, sampling, mtmd_cap, vocab);
+      if (!conversation->conversation.configure())
+      {
+        res.success.value = false;
+        res.message.value = "The chat template does not fit the realtime turn format";
+        return res;
+      }
+      session = std::move(conversation);
+    }
+    else
+    {
+      session = std::make_unique<realtime_session_live>(*rd, meta->model_name, mtmd_get_audio_sample_rate(shared_mctx));
+    }
+
+    server_task task(is_conversation ? SERVER_TASK_TYPE_REALTIME : SERVER_TASK_TYPE_TRANSCRIBE_RT);
+    task.id = rd->get_new_id();
+    task.params.sampling = sampling;
+    task.params.stream = true;
+    task.params.oaicompat_cmpl_id = session->get_id();
+    task.params.oaicompat_model = meta->model_name;
+    rd->post_task(std::move(task));
+
+    // the slot answers once it holds the session
+    {
+      run_queue_scope scope;
+      auto result = rd->next(should_stop);
+      if (!result || result->is_error())
+      {
+        res.success.value = false;
+        res.message.value = result ? json_value(result->to_json(), "message", std::string("server error")) : "server error";
+        return res;
+      }
+    }
+    session->send_event({{"type", "session.created"}, {"session", session->session_json()}});
+
+    res.success.value = true;
+    res.req_id.value = register_reader(std::move(rd));
+    realtime_sessions.emplace(res.req_id.value, std::move(session));
+    return res;
+  }
+
+  glue_msg_realtime_send_res action_realtime_send(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_realtime_send_req);
+    glue_msg_realtime_send_res res;
+
+    auto it = realtime_sessions.find(req.req_id.value);
+    if (it == realtime_sessions.end())
+    {
+      res.success.value = false;
+      return res;
+    }
+
+    run_queue_scope scope;
+    try
+    {
+      it->second->handle(req.data_json.value);
+    }
+    catch (const std::exception &e)
+    {
+      it->second->send_error(e.what(), "server_error");
+    }
+
+    res.success.value = true;
+    return res;
+  }
+
+  json format_decision_response(const decision_request &dreq)
+  {
+    json answers = json::object();
+    size_t i_result = 0;
+    for (const auto &question : dreq.questions)
+    {
+      std::vector<std::vector<float>> scores;
+      for (size_t variant = 0; variant < decision.n_variants(question); variant++)
+      {
+        scores.push_back(dreq.scores[i_result++]);
+      }
+      answers[question.id] = decision.format_answer(question, scores);
+    }
+    return json{
+        {"model", meta->model_name},
+        {"answers", answers},
+        {"usage", {
+                      {"input_tokens", dreq.n_tokens},
+                      {"output_tokens", 0},
+                  }},
+    };
   }
 
   glue_msg_get_result_res action_get_result(const char *req_raw)
@@ -790,18 +1487,64 @@ struct wllama_context
     // the task queue can be empty while the request is still streaming, keep polling until we get the stop result
     const bool has_more = rd.has_next();
 
+    auto session = realtime_sessions.find(req.req_id.value);
+    if (session != realtime_sessions.end())
+    {
+      if (is_error)
+      {
+        session->second->send_error(json_value(result->to_json(), "message", std::string("server error")), "server_error");
+      }
+      else if (result)
+      {
+        try
+        {
+          session->second->on_result(*result);
+        }
+        catch (const std::exception &e)
+        {
+          session->second->send_error(e.what(), "server_error");
+        }
+      }
+      res.success.value = true;
+      res.has_more.value = has_more;
+      res.data_json.value = session->second->take_events();
+      res.is_error.value = false; // errors go out as events
+      if (!has_more)
+      {
+        realtime_sessions.erase(session);
+        readers.erase(it);
+      }
+      return res;
+    }
+
     json data_json;
     if (result)
     {
-      if (auto *embd = dynamic_cast<server_task_result_embd *>(result.get()))
+      if (auto *tts = dynamic_cast<server_task_result_tts *>(result.get()))
+      {
+        data_json = tts->to_json();
+        res.data_raw.buf.assign(tts->audio.begin(), tts->audio.end());
+      }
+      else if (auto *embd = dynamic_cast<server_task_result_embd *>(result.get()))
       {
         (void)embd;
-        // special handling for embeddings OAI-compat
-        json body = {{"model", meta->model_name}};
-        json responses = json::array();
-        responses.push_back(result->to_json());
-        // TODO: support base64 output
-        data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
+        // collect all embeddings of a batch and send them in one response
+        auto &responses = embedding_reqs[req.req_id.value];
+        if (responses.size() <= result->index)
+        {
+          responses.resize(result->index + 1);
+        }
+        responses[result->index] = result->to_json();
+        if (has_more)
+        {
+          result = nullptr;
+        }
+        else
+        {
+          json body = {{"model", meta->model_name}};
+          // TODO: support base64 output
+          data_json = format_embeddings_response_oaicompat(body, meta->model_name, responses, false);
+        }
       }
       else if (auto *rerank = dynamic_cast<server_task_result_rerank *>(result.get()))
       {
@@ -809,6 +1552,22 @@ struct wllama_context
             {"score", rerank->score},
             {"tokens_evaluated", rerank->n_tokens},
         };
+      }
+      else if (auto *dres = dynamic_cast<server_task_result_decision *>(result.get()))
+      {
+        // only send the answers once all the tasks are done
+        auto &dreq = decision_reqs.at(req.req_id.value);
+        GGML_ASSERT(dres->index >= 0 && (size_t)dres->index < dreq.scores.size());
+        dreq.scores[dres->index] = std::move(dres->scores);
+        dreq.n_tokens += dres->n_tokens;
+        if (has_more)
+        {
+          result = nullptr;
+        }
+        else
+        {
+          data_json = format_decision_response(dreq);
+        }
       }
       else
       {
@@ -825,6 +1584,8 @@ struct wllama_context
     if (!has_more)
     {
       readers.erase(it);
+      decision_reqs.erase(req.req_id.value);
+      embedding_reqs.erase(req.req_id.value);
     }
     return res;
   }
@@ -839,6 +1600,9 @@ struct wllama_context
     {
       // reader destructor posts cancel tasks; run one loop iteration to release the slot right away
       readers.erase(it);
+      decision_reqs.erase(req.req_id.value);
+      embedding_reqs.erase(req.req_id.value);
+      realtime_sessions.erase(req.req_id.value);
       run_loop();
     }
 
@@ -945,12 +1709,25 @@ void server_queue::cleanup_pending_task(int id_target)
 
 void server_queue::defer(server_task &&task)
 {
-  assert(false && "should not be called in wllama");
+  // cli input is already tokenized and cleared, do not tokenize it again on retry
+  task.cli = false;
+  queue_tasks_deferred.push_back(std::move(task));
 }
 
 void server_queue::pop_deferred_task(int id_slot)
 {
-  // no deferred task in wllama, so this is a no-op
+  if (queue_tasks_deferred.empty())
+  {
+    return;
+  }
+  auto it = std::find_if(queue_tasks_deferred.begin(), queue_tasks_deferred.end(), [id_slot](const server_task &task)
+                         { return task.id_slot == id_slot; });
+  if (it == queue_tasks_deferred.end())
+  {
+    it = queue_tasks_deferred.begin();
+  }
+  queue_tasks.emplace_front(std::move(*it));
+  queue_tasks_deferred.erase(it);
 }
 
 void server_queue::wait_until_no_sleep()
@@ -1066,12 +1843,12 @@ void server_response_reader::post_task(server_task &&task, bool front)
   GGML_ASSERT(!task.is_parent() && "not supported, use post_tasks() instead");
   task.index = 0;
   id_tasks.insert(task.id);
-  states.push_back(task.create_state());
+  states.push_back(task_result_state());
   queue_results.add_waiting_task_id(task.id);
   queue_tasks.post(std::move(task), front);
 }
 
-void server_response_reader::post_tasks(std::vector<server_task> &&tasks, bool front)
+void server_response_reader::post_tasks(std::vector<server_task> &&tasks, const common_chat_session &session, bool front)
 {
   LOG_DBG("%s\n", __func__);
   GGML_ASSERT(id_tasks.empty() && "post_tasks() can only be called once per reader");
@@ -1081,12 +1858,12 @@ void server_response_reader::post_tasks(std::vector<server_task> &&tasks, bool f
   for (auto &task : tasks)
   {
     task.index = index++;
-    states.push_back(task.create_state());
+    states.push_back(task_result_state(session));
     // for child tasks
     for (auto &child_task : task.child_tasks)
     {
       child_task.index = index++;
-      states.push_back(child_task.create_state());
+      states.push_back(task_result_state(session));
     }
   }
   GGML_ASSERT(states.size() == id_tasks.size());
@@ -1105,6 +1882,11 @@ server_task_result_ptr server_response_reader::next(const std::function<bool()> 
 {
   LOG_DBG("%s\n", __func__);
   auto result = queue_results.recv(id_tasks);
+  while (!result && run_queue_in_next && !should_stop())
+  {
+    queue_tasks.start_loop();
+    result = queue_results.recv(id_tasks);
+  }
   if (result && !states.empty())
   {
     // update the generation state if needed
@@ -1234,7 +2016,7 @@ void common_log_default_callback(enum ggml_log_level level, const char *text, vo
 }
 
 enum common_params_fit_status common_fit_params(
-    const char *path_model,
+    const std::vector<std::string> &paths_model,
     llama_model_params *mparams,
     llama_context_params *cparams,
     float *tensor_split,
