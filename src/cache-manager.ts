@@ -2,8 +2,12 @@ import { getHFFileSHA256 } from './huggingface';
 import type { DownloadProgressCallback } from './model-manager';
 import { COSBackend } from './storage/cos';
 import type { StorageBackend, StorageFileHint } from './storage/index';
+import { delay } from './utils';
 
 const PREFIX_METADATA = '__metadata__';
+// metadata of a partial file, stored as `${PREFIX_METADATA}${PREFIX_PARTIAL}${name}`
+const PREFIX_PARTIAL = '__partial__';
+const DEFAULT_RETRIES = 5;
 
 export type DownloadOptions = {
   /**
@@ -22,6 +26,11 @@ export type DownloadOptions = {
    * Abort signal for the request
    */
   signal?: AbortSignal;
+  /**
+   * If the connection drops, the download continues from the last byte (when the server and the storage support it).
+   * Number of tries in a row without new bytes before giving up. Default: 5, set to 0 to fail at once
+   */
+  retries?: number;
 };
 
 // To prevent breaking change, we fill etag with a pre-defined value
@@ -128,6 +137,11 @@ export class CacheManager {
     // file is already in COS (avoids opening a connection just to cancel it).
     const sha256 = await getHFFileSHA256(url, options.headers ?? {});
     const hint = sha256 ? { sha256 } : undefined;
+    const canResume = this.sb.canWriteAt?.(hint) ?? false;
+
+    // a partial file left by an interrupted download, continue it from here
+    let offset = 0;
+    let etag = '';
 
     const cachedSize = await this.sb.getSize(fileKey, hint);
     if (cachedSize !== -1) {
@@ -138,76 +152,153 @@ export class CacheManager {
       ) {
         return;
       }
-      // no metadata, file maybe partial; ask server for the real size
-      const head = await fetch(url, {
-        method: 'HEAD',
-        ...(options.headers ? { headers: options.headers } : {}),
-      });
-      const originalSize = parseInt(
-        head.headers.get('content-length') ?? '0',
-        10
-      );
-      const etag = (head.headers.get('etag') || '').replace(
-        /[^A-Za-z0-9]/g,
-        ''
-      );
-      if (originalSize > 0 && originalSize === cachedSize) {
-        await this.writeMetadata(fileKey, {
-          originalURL: url,
-          originalSize,
-          etag,
-          sha256,
-          ...(options.metadataAdditional ?? {}),
+      const partial = metadata
+        ? null
+        : await this.readMetadata(`${PREFIX_PARTIAL}${fileKey}`);
+      if (
+        canResume &&
+        partial?.originalURL === url &&
+        partial.etag &&
+        cachedSize < partial.originalSize
+      ) {
+        offset = cachedSize;
+        etag = partial.etag;
+      } else {
+        // no metadata, file maybe partial; ask server for the real size
+        const head = await fetch(url, {
+          method: 'HEAD',
+          ...(options.headers ? { headers: options.headers } : {}),
         });
-        return;
+        const originalSize = parseInt(
+          head.headers.get('content-length') ?? '0',
+          10
+        );
+        const headEtag = cleanEtag(head.headers.get('etag'));
+        if (originalSize > 0 && originalSize === cachedSize) {
+          await this.writeMetadata(fileKey, {
+            originalURL: url,
+            originalSize,
+            etag: headEtag,
+            sha256,
+            ...(options.metadataAdditional ?? {}),
+          });
+          return;
+        }
+        // size mismatch, drop the file and download it again
+        await this.sb.delete(fileKey);
+        await this.sb.delete(`${PREFIX_METADATA}${fileKey}`);
       }
-      // size mismatch, drop the file and download it again
-      await this.sb.delete(fileKey);
-      await this.sb.delete(`${PREFIX_METADATA}${fileKey}`);
     }
 
-    const response = await fetch(url, {
-      ...(options.headers ? { headers: options.headers } : {}),
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
-
-    if (!response.ok || !response.body) {
-      throw new Error(`Failed to fetch ${url}: HTTP ${response.status}`);
-    }
-
-    const contentLength = response.headers.get('content-length');
-    const etag = (response.headers.get('etag') || '').replace(
-      /[^A-Za-z0-9]/g,
-      ''
-    );
-    const total = parseInt(contentLength ?? '0', 10);
-
+    const maxRetries = options.retries ?? DEFAULT_RETRIES;
     const progressCallback = options.progressCallback;
+    let total = 0;
     let loaded = 0;
-    let lastProgressAt = 0;
+    let failures = 0; // failures in a row without new bytes
+    // true if the bytes on disk can be kept for the next try
+    let resumable = offset > 0;
 
-    const progressStream = new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        loaded += chunk.byteLength;
-        if (progressCallback) {
-          const now = Date.now();
-          if (now - lastProgressAt > 100) {
-            lastProgressAt = now;
-            progressCallback({ loaded, total });
+    while (true) {
+      try {
+        const response = await fetch(url, {
+          headers: {
+            ...(options.headers ?? {}),
+            ...(offset > 0 ? { Range: `bytes=${offset}-` } : {}),
+          },
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+
+        if (response.status === 416 && offset > 0) {
+          // the file on the server is smaller than the partial file
+          offset = 0;
+          resumable = false;
+          continue;
+        }
+        if (!response.ok || !response.body) {
+          throw new DownloadHttpError(
+            `Failed to fetch ${url}: HTTP ${response.status}`
+          );
+        }
+
+        const resEtag = cleanEtag(response.headers.get('etag'));
+        if (offset > 0) {
+          const sameFile =
+            response.status === 206 &&
+            resEtag === etag &&
+            contentRangeStart(response) === offset;
+          if (!sameFile) {
+            // the file changed on the server, or the server ignored the range
+            offset = 0;
+            resumable = false;
+            if (response.status === 206) {
+              await response.body.cancel();
+              continue;
+            }
           }
         }
-        controller.enqueue(chunk);
-      },
-      flush() {
-        progressCallback?.({ loaded, total: total || loaded });
-      },
-    });
+        etag = resEtag;
+        // on a 206, content-length is the size of the rest of the file
+        total =
+          offset + parseInt(response.headers.get('content-length') ?? '0', 10);
+        if (total === offset) total = 0; // unknown size
 
-    await this.sb.write(
-      fileKey,
-      response.body.pipeThrough(progressStream),
-      hint
-    );
+        resumable = canResume && etag !== '' && total > 0;
+        if (resumable && offset === 0) {
+          // written before the body, so a later call can resume this file
+          await this.writeMetadata(`${PREFIX_PARTIAL}${fileKey}`, {
+            originalURL: url,
+            originalSize: total,
+            etag,
+          });
+        }
+
+        loaded = offset;
+        let lastProgressAt = 0;
+        const progressStream = new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            loaded += chunk.byteLength;
+            if (progressCallback) {
+              const now = Date.now();
+              if (now - lastProgressAt > 100) {
+                lastProgressAt = now;
+                progressCallback({ loaded, total });
+              }
+            }
+            controller.enqueue(chunk);
+          },
+          flush() {
+            progressCallback?.({ loaded, total: total || loaded });
+          },
+        });
+
+        await this.sb.write(
+          fileKey,
+          response.body.pipeThrough(progressStream),
+          hint,
+          offset
+        );
+        break;
+      } catch (e: any) {
+        const fatal =
+          e instanceof DownloadHttpError ||
+          options.signal?.aborted ||
+          e?.name === 'QuotaExceededError';
+        if (fatal) throw e;
+        // keep the bytes on disk only if the next try can check that the file did not change
+        const size = resumable ? await this.sb.getSize(fileKey, hint) : 0;
+        if (size > offset) {
+          failures = 0;
+        } else {
+          failures++;
+        }
+        if (maxRetries === 0 || failures > maxRetries) throw e;
+        offset = Math.max(size, 0);
+        if (failures > 0) {
+          await delay(1000 * 2 ** (failures - 1));
+          options.signal?.throwIfAborted();
+        }
+      }
+    }
 
     const metadata: CacheEntryMetadata = {
       originalURL: url,
@@ -220,6 +311,7 @@ export class CacheManager {
       metadata.sha256 = sha256;
     }
     await this.writeMetadata(fileKey, metadata);
+    await this.sb.delete(`${PREFIX_METADATA}${PREFIX_PARTIAL}${fileKey}`);
   }
 
   /**
@@ -347,6 +439,7 @@ export class CacheManager {
       if (predicate(item)) {
         await this.sb.delete(item.name);
         await this.sb.delete(`${PREFIX_METADATA}${item.name}`);
+        await this.sb.delete(`${PREFIX_METADATA}${PREFIX_PARTIAL}${item.name}`);
       }
     }
   }
@@ -364,6 +457,20 @@ export class CacheManager {
 }
 
 export default CacheManager;
+
+class DownloadHttpError extends Error {}
+
+function cleanEtag(etag: string | null): string {
+  return (etag || '').replace(/[^A-Za-z0-9]/g, '');
+}
+
+// start of the range in a 206 response, e.g. "bytes 1024-2047/4096" -> 1024
+function contentRangeStart(response: Response): number {
+  const match = /^bytes (\d+)-/.exec(
+    response.headers.get('content-range') ?? ''
+  );
+  return match ? parseInt(match[1], 10) : -1;
+}
 
 async function urlToFileName(url: string, prefix: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest(

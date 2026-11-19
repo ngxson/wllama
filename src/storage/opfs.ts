@@ -1,6 +1,6 @@
 import { createWorker, isSafariMobile } from '../utils';
 import { OPFS_UTILS_WORKER_CODE } from '../workers-code/generated';
-import type { StorageBackend } from './index';
+import type { StorageBackend, StorageFileHint } from './index';
 
 export class OPFSBackend implements StorageBackend {
   isSupported(): boolean {
@@ -22,9 +22,13 @@ export class OPFSBackend implements StorageBackend {
     }
   }
 
-  async write(key: string, stream: ReadableStream): Promise<void> {
-    const writable = await openWritable(key);
-    await writable.truncate(0);
+  async write(
+    key: string,
+    stream: ReadableStream,
+    _hint?: StorageFileHint,
+    offset: number = 0
+  ): Promise<void> {
+    const writable = await openWritable(key, offset);
     const reader = stream.getReader();
     try {
       while (true) {
@@ -35,6 +39,10 @@ export class OPFSBackend implements StorageBackend {
     } finally {
       await writable.close();
     }
+  }
+
+  canWriteAt(): boolean {
+    return true;
   }
 
   async getSize(key: string): Promise<number> {
@@ -76,8 +84,10 @@ async function getCacheDir(): Promise<FileSystemDirectoryHandle> {
   return opfsRoot.getDirectoryHandle('cache', { create: true });
 }
 
-async function openWritable(fileName: string): Promise<{
-  truncate(offset: number): Promise<void>;
+async function openWritable(
+  fileName: string,
+  offset: number
+): Promise<{
   write(value: Uint8Array): Promise<void>;
   close(): Promise<void>;
 }> {
@@ -91,7 +101,7 @@ async function openWritable(fileName: string): Promise<{
   worker.onerror = (e) => pReject?.(e.message ?? e);
   const workerExec = (
     data:
-      | { action: 'open'; filename: string }
+      | { action: 'open'; filename: string; offset: number }
       | { action: 'write'; buf: Uint8Array }
       | { action: 'close' }
   ) =>
@@ -105,11 +115,8 @@ async function openWritable(fileName: string): Promise<{
           : { transfer: 'buf' in data && data.buf ? [data.buf.buffer] : [] }
       );
     });
-  await workerExec({ action: 'open', filename: fileName });
+  await workerExec({ action: 'open', filename: fileName, offset });
   return {
-    truncate: async () => {
-      /* worker's openFile already calls truncate(0) on open */
-    },
     write: (value) => workerExec({ action: 'write', buf: value }),
     close: async () => {
       await workerExec({ action: 'close' });

@@ -109,13 +109,19 @@ export class COSBackend implements StorageBackend {
   async write(
     key: string,
     stream: ReadableStream,
-    hint?: StorageFileHint
+    hint?: StorageFileHint,
+    offset: number = 0
   ): Promise<void> {
     if (hint?.sha256 && this.cos.isSupported()) {
+      if (offset > 0) throw new Error('COS backend cannot write at an offset');
       await this.cos.write(hint.sha256, stream);
     } else {
-      await this.priv.write(key, stream);
+      await this.priv.write(key, stream, undefined, offset);
     }
+  }
+
+  canWriteAt(hint?: StorageFileHint): boolean {
+    return !(hint?.sha256 && this.cos.isSupported());
   }
 
   async getSize(key: string, hint?: StorageFileHint): Promise<number> {
