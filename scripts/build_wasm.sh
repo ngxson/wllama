@@ -17,9 +17,7 @@ if [[ $(uname -m) == "arm64" ]]; then
   export EMSDK_IMAGE_TAG="${EMSDK_IMAGE_TAG}-arm64"
 fi
 
-# Use a unique compose project per checkout (worktree), so that running this
-# script concurrently from different worktrees does not make them fight over
-# the same container. The source dir is mounted from each checkout's own path.
+# one compose project per checkout, so parallel builds in different worktrees do not share a container
 REPO_ROOT="$(cd "$CURRENT_PATH/.." && pwd)"
 REPO_NAME="$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')"
 REPO_HASH="$(printf '%s' "$REPO_ROOT" | shasum | cut -c1-8)"
