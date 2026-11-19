@@ -48,7 +48,8 @@ export default function GuideScreen() {
             </li>
             <li>Running on smartphone maybe buggy.</li>
             <li>
-              <b>Safari is not supported</b>, due to lack of Memory64 support.
+              On Safari, compat mode is used due to lack of Memory64 support,
+              performance is lower.
             </li>
           </ul>
         </div>

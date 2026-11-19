@@ -18,6 +18,7 @@ import {
   type WllamaRealtimeSession,
 } from './wllama';
 import type { RealtimeEvent } from './types/oai-compat';
+import { isSupportJSPI } from './utils';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',
@@ -839,7 +840,7 @@ const testReadBigFile = async (compat: boolean) => {
   if (compat) {
     // hide JSPI so the wasm32 compat build is used
     delete (WebAssembly as any).Suspending;
-    wllama.setCompat({ wasm: '/compat/wasm/wllama.wasm' });
+    wllama.setCompat({ wasm: '/compat/wasm/wllama.wasm' }, 'firefox_safari');
   }
   try {
     await expect(
@@ -864,7 +865,8 @@ const testReadBigFile = async (compat: boolean) => {
   await wllama.exit();
 };
 
-test.sequential('reads a file past 2GB', async () => {
+// without JSPI, the default build copies the whole file into wasm memory
+test.skipIf(!isSupportJSPI()).sequential('reads a file past 2GB', async () => {
   await testReadBigFile(false);
 });
 
