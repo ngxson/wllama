@@ -22,6 +22,8 @@ import type {
   GlueMsgRealtimeSendRes,
   GlueMsgRealtimeStartRes,
   GlueMsgRerankRes,
+  GlueMsgSlotRestoreRes,
+  GlueMsgSlotSaveRes,
   GlueMsgSystemoneRes,
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
@@ -1194,6 +1196,63 @@ export class Wllama {
         'unknown_error'
       );
     }
+  }
+
+  /**
+   * Save the state of a slot (the processed prompt), to restore it later with `restoreSlotState()`.
+   *
+   * The state can only be restored with the same model and the same wllama version.
+   *
+   * @param idSlot ID of the slot, between 0 and `n_parallel - 1`
+   * @returns the state, you can store it (for example in OPFS)
+   */
+  async saveSlotState(idSlot: number = 0): Promise<Uint8Array> {
+    this.checkModelLoaded();
+    const result = await this.proxy.wllamaAction<GlueMsgSlotSaveRes>(
+      'slot_save',
+      {
+        _name: 'slsv_req',
+        id_slot: idSlot,
+      }
+    );
+    if (!result.success) {
+      throw new WllamaError(
+        result.message || 'Failed to save slot state',
+        'inference_error'
+      );
+    }
+    return result.data;
+  }
+
+  /**
+   * Restore the state of a slot from the output of `saveSlotState()`.
+   *
+   * The next request that starts with the same prompt reuses it.
+   *
+   * @param data The saved state
+   * @param idSlot ID of the slot, between 0 and `n_parallel - 1`
+   * @returns number of tokens in the restored prompt
+   */
+  async restoreSlotState(
+    data: Uint8Array,
+    idSlot: number = 0
+  ): Promise<number> {
+    this.checkModelLoaded();
+    const result = await this.proxy.wllamaAction<GlueMsgSlotRestoreRes>(
+      'slot_restore',
+      {
+        _name: 'slrs_req',
+        id_slot: idSlot,
+        data,
+      }
+    );
+    if (!result.success) {
+      throw new WllamaError(
+        result.message || 'Failed to restore slot state',
+        'inference_error'
+      );
+    }
+    return result.n_tokens;
   }
 
   /**

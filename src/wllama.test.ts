@@ -300,6 +300,41 @@ test.sequential('generates completion with ngram speculative', async () => {
   expect(spec.timings?.draft_n).toBeGreaterThan(0);
 });
 
+test.sequential('saves and restores slot state', async () => {
+  const load = async () => {
+    const wllama = createWllama();
+    await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 1024 });
+    return wllama;
+  };
+  const complete = (wllama: Wllama) =>
+    wllama.createCompletion({
+      prompt: 'Once upon a time, there was a little girl named Lily.',
+      max_tokens: 10,
+      temperature: 0.0,
+      seed: 42,
+    });
+
+  const first = await load();
+  const res1 = await complete(first);
+  expect(res1.timings?.cache_n).toBe(0);
+  const state = await first.saveSlotState();
+  expect(state.byteLength).toBeGreaterThan(0);
+  await first.exit();
+
+  const second = await load();
+  const nTokens = await second.restoreSlotState(state);
+  expect(nTokens).toBeGreaterThan(0);
+  const res2 = await complete(second);
+  expect(res2.timings?.cache_n).toBeGreaterThan(0);
+  expect(res2.choices[0].text).toBe(res1.choices[0].text);
+
+  // a bad state is refused, then the slot still works
+  await expect(second.restoreSlotState(new Uint8Array(64))).rejects.toThrow();
+  const res3 = await complete(second);
+  expect(res3.choices[0].text).toBe(res1.choices[0].text);
+  await second.exit();
+});
+
 test.sequential('generates completions in parallel', async () => {
   const wllama = createWllama();
 

@@ -747,6 +747,38 @@ struct glue_msg_cancel_res
 
 /////////
 
+struct glue_msg_slot_save_req
+{
+  GLUE_HANDLER("slsv_req")
+  GLUE_FIELD(int, id_slot)
+};
+
+struct glue_msg_slot_save_res
+{
+  GLUE_HANDLER("slsv_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
+  GLUE_FIELD(int, n_tokens)
+  GLUE_FIELD(raw, data)
+};
+
+struct glue_msg_slot_restore_req
+{
+  GLUE_HANDLER("slrs_req")
+  GLUE_FIELD(int, id_slot)
+  GLUE_FIELD(raw, data)
+};
+
+struct glue_msg_slot_restore_res
+{
+  GLUE_HANDLER("slrs_res")
+  GLUE_FIELD(bool, success)
+  GLUE_FIELD(str, message)
+  GLUE_FIELD(int, n_tokens)
+};
+
+/////////
+
 struct glue_msg_test_backend_ops_req
 {
   GLUE_HANDLER("tbop_req")
