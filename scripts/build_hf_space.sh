@@ -12,6 +12,8 @@ cd _tmp_hf_space
 # pre-seed the source clone so we can build the wasm (it is not committed to git), build.sh will reuse it
 git clone --recurse-submodules https://github.com/ngxson/wllama.git source
 (cd source && ./scripts/build_wasm.sh)
+# the example imports @wllama/wllama from esm/, which is not committed, build it
+(cd source && npm ci --include=dev && npm run build)
 
 ./build.sh
 
