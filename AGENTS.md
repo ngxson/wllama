@@ -18,6 +18,14 @@ These points are extremely important - failing to follow them won't necessarily 
 Common mistakes that AI agents usually make:
 - Write comments first then write code: this usually leads to extensive redundant comments. Instead, write code first, then add comments later to places that absolutely need them
 
+### Writing tests
+
+Requirements for each test case:
+
+- Do NOT download a real model, only use a dummy tiny model (GGUF less than 20MB ideally). Reuse the tiny models already used in `src/wllama.test.ts`
+- Keep memory usage under 4GB
+- Keep it fast: max 10 seconds
+
 ### Syncing llama.cpp upstream
 
 The `llama.cpp` submodule is bumped weekly by `.github/workflows/sync-upstream.yml`. To do it by hand, or when the workflow asks you to fix a broken sync:
