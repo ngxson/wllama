@@ -17,4 +17,10 @@ if [[ $(uname -m) == "arm64" ]]; then
   export EMSDK_IMAGE_TAG="${EMSDK_IMAGE_TAG}-arm64"
 fi
 
-docker compose up llamacpp-wasm-builder --exit-code-from llamacpp-wasm-builder
+# one compose project per checkout, so parallel builds in different worktrees do not share a container
+REPO_ROOT="$(cd "$CURRENT_PATH/.." && pwd)"
+REPO_NAME="$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')"
+REPO_HASH="$(printf '%s' "$REPO_ROOT" | shasum | cut -c1-8)"
+export COMPOSE_PROJECT_NAME="wllama-${REPO_NAME}-${REPO_HASH}"
+
+docker compose run --rm llamacpp-wasm-builder

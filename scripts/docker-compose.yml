@@ -1,6 +1,6 @@
 services:
   llamacpp-wasm-builder:
-    container_name: llamacpp-wasm-builder
+    image: wllama-emsdk:${EMSDK_IMAGE_TAG} # shared by all worktrees
     build:
       context: .
       dockerfile_inline: |
