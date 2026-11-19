@@ -39,7 +39,7 @@ const toSizeT = (num) => {
 };
 
 // Get module config that forwards stdout/err to main thread
-const getWModuleConfig = (_argMainScriptBlob) => {
+const getWModuleConfig = (_argMainScriptBlob, wasmModule) => {
   var pathConfig = RUN_OPTIONS.pathConfig;
   var pthreadPoolSize = RUN_OPTIONS.nbThread;
   var argMainScriptBlob = _argMainScriptBlob;
@@ -59,6 +59,13 @@ const getWModuleConfig = (_argMainScriptBlob) => {
   }
   return {
     noInitialRun: true,
+    // wasm is compiled by main thread; onSuccess needs the module to share it with pthreads
+    instantiateWasm: function (imports, onSuccess) {
+      WebAssembly.instantiate(wasmModule, imports)
+        .then((instance) => onSuccess(instance, wasmModule))
+        .catch(handleError);
+      return {};
+    },
     print: function (text) {
       if (arguments.length > 1)
         text = Array.prototype.slice.call(arguments).join(' ');
@@ -436,8 +443,9 @@ onmessage = async (e) => {
   if (verb === 'module.init') {
     const argMainScriptBlob = args[0];
     const argUseAsyncFile = args[1];
+    const argWasmModule = args[2];
     try {
-      Module = getWModuleConfig(argMainScriptBlob);
+      Module = getWModuleConfig(argMainScriptBlob, argWasmModule);
       Module.preRun = () => {
         if (argUseAsyncFile) {
           Module.ENV['USE_ASYNC_FILE'] = '1';

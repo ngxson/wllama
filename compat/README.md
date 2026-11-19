@@ -57,7 +57,7 @@ wllama.setCompat(null);
 npm install @wllama/wllama-compat
 ```
 
-Then copy the assets from `node_modules/@wllama/wllama-compat/wasm/` to your public directory and call `setCompat()` with the URLs pointing to those files:
+Then copy `node_modules/@wllama/wllama-compat/wasm/wllama.wasm` to your public directory and call `setCompat()` with the URL pointing to that file:
 
 ```ts
 import { Wllama } from '@wllama/wllama';
@@ -66,23 +66,16 @@ const wllama = new Wllama({ default: '/wasm/wllama.wasm' });
 
 wllama.setCompat({
   wasm: '/wllama-compat/wasm/wllama.wasm',
-  worker: '/wllama-compat/wasm/wllama.js',
 });
 ```
 
-**IMPORTANT**: for Vite, you will need to import the JS as `?raw`
+The JS code of the build is embedded inside `wllama.wasm`, so there is only one file to host. For Vite:
 
 ```ts
 import compatWasm from '@wllama/wllama-compat/wasm/wllama.wasm?url';
-import compatWorker from '@wllama/wllama-compat/wasm/wllama.js?raw'; // IMPORTANT: ?raw, NOT ?url
-
-export const WLLAMA_COMPAT_CONFIG = {
-  wasm: compatWasm,
-  worker: {
-    code: compatWorker,
-  },
-};
 
 const instance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
-instance.setCompat(WLLAMA_COMPAT_CONFIG);
+instance.setCompat({ wasm: compatWasm });
 ```
+
+> **Note:** in older versions, `setCompat()` also needed a `worker` (the `wllama.js` file). It is no longer needed and can be removed. `wllama.js` is kept as a placeholder, so old setups still work (with a warning). A `worker` with real emscripten code still overrides the embedded JS code, for example for custom builds.

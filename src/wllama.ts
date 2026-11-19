@@ -185,8 +185,9 @@ export class WllamaRuntimeError extends Error {
  * By default, these are set to URL of the latest builds on CDN, which requires internet to download. If you want to use local assets or have your own CDN, follow the instruction from @wllama/wllama-compat package.
  */
 export interface WllamaCompat {
-  worker: string | { code: string };
   wasm: string;
+  /** Optional, override the JS code embedded inside the wasm file */
+  worker?: string | { code: string } | undefined;
 }
 
 /**
@@ -1609,9 +1610,7 @@ export class Wllama {
               : '')
         );
       } else {
-        const isUsingDefault =
-          this.compat.worker === WasmCompatFromCDN.worker &&
-          this.compat.wasm === WasmCompatFromCDN.wasm;
+        const isUsingDefault = this.compat.wasm === WasmCompatFromCDN.wasm;
         if (isUsingDefault) {
           this.logger().warn(
             'Compatibility mode is activated, using resources from CDN. To use local resources, please refer to @wllama/wllama-compat package.'

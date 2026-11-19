@@ -45,10 +45,9 @@ services:
         # go back to root
         cd ..
 
-        # copy output files
+        # pack output files (wasm + JS glue in one file)
         mkdir -p src/wasm
-        cp build/wllama.js   src/wasm
-        node scripts/add_wasm_names.js build/wllama.wasm src/wasm/wllama.wasm
+        node scripts/pack_wasm.js build/wllama.wasm src/wasm/wllama.wasm
 
         # build compat package (skip if SKIP_COMPAT=1)
         if [ -z "${SKIP_COMPAT}" ]; then
@@ -60,10 +59,9 @@ services:
           # go back to root
           cd ..
 
-          # copy output files (compat build)
+          # pack output files (compat build)
           mkdir -p compat/wasm
-          cp build-compat/wllama.js   compat/wasm
-          node scripts/add_wasm_names.js build-compat/wllama.wasm compat/wasm/wllama.wasm
+          node scripts/pack_wasm.js build-compat/wllama.wasm compat/wasm/wllama.wasm
         fi
 
         # list files (optional, for verification)

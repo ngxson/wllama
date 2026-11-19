@@ -19,10 +19,7 @@ import {
   isSafariMobile,
   isString,
 } from './utils';
-import {
-  LLAMA_CPP_WORKER_CODE,
-  WLLAMA_EMSCRIPTEN_CODE,
-} from './workers-code/generated';
+import { LLAMA_CPP_WORKER_CODE } from './workers-code/generated';
 import { WllamaError, WllamaRuntimeError } from './wllama';
 
 interface Logger {
@@ -33,6 +30,9 @@ interface Logger {
 }
 
 const FILE_READ_REQ_EVENT = 'fs.read_req';
+
+// wasm custom section with the emscripten JS glue, see scripts/pack_wasm.js
+const WASM_JS_SECTION_NAME = 'wllama_js';
 
 interface TaskParam {
   verb:
@@ -78,7 +78,7 @@ if (!WebAssembly.Suspending) {
 
 export interface WllamaWorkerResources {
   wasmPath: string;
-  // if jsPath is not provided, use WLLAMA_EMSCRIPTEN_CODE
+  // if jsPath is not provided, use the JS code embedded inside the wasm file
   jsPath?: string | { code: string } | undefined;
   // in compat mode, mem64 must be disabled
   compat: boolean;
@@ -95,6 +95,7 @@ export class ProxyToWorker {
   resultQueue: Task[] = [];
   busy = false; // is the work loop is running?
   private exited = false;
+  private exitCtrl = new AbortController(); // cancel fetches of moduleInit on exit
   worker?: Worker | undefined;
   multiThread: boolean;
   nbThread: number;
@@ -115,31 +116,89 @@ export class ProxyToWorker {
     this.useAsyncFile = canUseAsyncFileRead(resources.compat);
   }
 
-  async getModuleCode(): Promise<string> {
-    if (!this.resources.jsPath) {
-      if (this.resources.compat) {
-        throw new Error(
-          'compat mode is enabled but no jsPath was provided. Pass a worker JS via setCompat() or install @wllama/wllama-compat.'
+  // the compiled module is sent to the worker, emscripten uses it via Module.instantiateWasm
+  async compileWasm(): Promise<WebAssembly.Module> {
+    const url = this.resources.wasmPath;
+    const fetchWasm = () =>
+      fetch(url, { credentials: 'same-origin', signal: this.exitCtrl.signal });
+    if (typeof WebAssembly.compileStreaming === 'function') {
+      try {
+        return await WebAssembly.compileStreaming(fetchWasm());
+      } catch (e) {
+        this.throwIfExited();
+        // streaming requires the server to send "Content-Type: application/wasm"
+        this.logger.warn(
+          `wasm streaming compile failed: ${e}; falling back to ArrayBuffer instantiation`
         );
       }
-      return WLLAMA_EMSCRIPTEN_CODE;
+    }
+    const response = await fetchWasm();
+    if (!response.ok) {
+      throw new Error(`Failed to fetch wasm from ${url}`);
+    }
+    return await WebAssembly.compile(await response.arrayBuffer());
+  }
+
+  async getModuleCode(wasmModule: WebAssembly.Module): Promise<string> {
+    let code: string;
+    if (!this.resources.jsPath) {
+      return this.getEmbeddedModuleCode(wasmModule);
     } else if ((this.resources.jsPath as { code: string }).code) {
-      return (this.resources.jsPath as { code: string }).code;
+      code = (this.resources.jsPath as { code: string }).code;
     } else if (isString(this.resources.jsPath)) {
-      const response = await fetch(this.resources.jsPath as string);
+      const response = await fetch(this.resources.jsPath as string, {
+        signal: this.exitCtrl.signal,
+      });
       if (!response.ok) {
         throw new Error(
           `Failed to fetch worker code from ${this.resources.jsPath}`
         );
       }
-      return await response.text();
+      code = await response.text();
     } else {
       throw new Error('No JS code provided for worker');
+    }
+    // new wllama.js is only a placeholder comment, see https://github.com/ngxson/wllama/pull/327
+    if (!code.includes('var Module')) {
+      this.logger.warn(
+        'The worker JS has no emscripten code, using the JS embedded in the wasm file. The "worker" option of setCompat() is no longer needed.'
+      );
+      return this.getEmbeddedModuleCode(wasmModule);
+    }
+    return code;
+  }
+
+  getEmbeddedModuleCode(wasmModule: WebAssembly.Module): string {
+    const sections = WebAssembly.Module.customSections(
+      wasmModule,
+      WASM_JS_SECTION_NAME
+    );
+    if (sections.length === 0) {
+      throw new Error(
+        `The wasm file "${this.resources.wasmPath}" does not contain the JS code ("${WASM_JS_SECTION_NAME}" section). ` +
+          'Make sure the wasm file comes from the same version of wllama.'
+      );
+    }
+    return new TextDecoder().decode(sections[0]);
+  }
+
+  private throwIfExited() {
+    if (this.exited) {
+      throw new WllamaError('The model was unloaded', 'model_not_loaded');
     }
   }
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
-    let moduleCode = JSPI_STUB + (await this.getModuleCode());
+    let wasmModule: WebAssembly.Module;
+    let moduleCode: string;
+    try {
+      wasmModule = await this.compileWasm();
+      moduleCode = JSPI_STUB + (await this.getModuleCode(wasmModule));
+    } catch (e) {
+      this.throwIfExited(); // fetch was aborted by exit
+      throw e;
+    }
+    this.throwIfExited(); // exit while compiling, do not create the worker
     if (this.resources.noWebGPU) {
       // make requestAdapter() resolve to null so ggml-webgpu skips device registration
       moduleCode =
@@ -168,6 +227,7 @@ export class ProxyToWorker {
       args: [
         new Blob([moduleCode], { type: 'text/javascript' }),
         this.useAsyncFile,
+        wasmModule,
       ],
       callbackId: this.taskId++,
     });
@@ -238,6 +298,7 @@ export class ProxyToWorker {
     }
     // nothing answers anymore, so fail the actions that wait and the next ones
     this.exited = true;
+    this.exitCtrl.abort();
     this.rejectAll(
       new WllamaError('The model was unloaded', 'model_not_loaded')
     );
