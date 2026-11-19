@@ -137,20 +137,11 @@ export class ProxyToWorker {
   }
 
   async getModuleCode(wasmModule: WebAssembly.Module): Promise<string> {
+    let code: string;
     if (!this.resources.jsPath) {
-      const sections = WebAssembly.Module.customSections(
-        wasmModule,
-        WASM_JS_SECTION_NAME
-      );
-      if (sections.length === 0) {
-        throw new Error(
-          `The wasm file "${this.resources.wasmPath}" does not contain the JS code ("${WASM_JS_SECTION_NAME}" section). ` +
-            'Make sure the wasm file comes from the same version of wllama.'
-        );
-      }
-      return new TextDecoder().decode(sections[0]);
+      return this.getEmbeddedModuleCode(wasmModule);
     } else if ((this.resources.jsPath as { code: string }).code) {
-      return (this.resources.jsPath as { code: string }).code;
+      code = (this.resources.jsPath as { code: string }).code;
     } else if (isString(this.resources.jsPath)) {
       const response = await fetch(this.resources.jsPath as string);
       if (!response.ok) {
@@ -158,10 +149,32 @@ export class ProxyToWorker {
           `Failed to fetch worker code from ${this.resources.jsPath}`
         );
       }
-      return await response.text();
+      code = await response.text();
     } else {
       throw new Error('No JS code provided for worker');
     }
+    // new wllama.js is only a placeholder comment, see https://github.com/ngxson/wllama/pull/327
+    if (!code.includes('var Module')) {
+      this.logger.warn(
+        'The worker JS has no emscripten code, using the JS embedded in the wasm file. The "worker" option of setCompat() is no longer needed.'
+      );
+      return this.getEmbeddedModuleCode(wasmModule);
+    }
+    return code;
+  }
+
+  getEmbeddedModuleCode(wasmModule: WebAssembly.Module): string {
+    const sections = WebAssembly.Module.customSections(
+      wasmModule,
+      WASM_JS_SECTION_NAME
+    );
+    if (sections.length === 0) {
+      throw new Error(
+        `The wasm file "${this.resources.wasmPath}" does not contain the JS code ("${WASM_JS_SECTION_NAME}" section). ` +
+          'Make sure the wasm file comes from the same version of wllama.'
+      );
+    }
+    return new TextDecoder().decode(sections[0]);
   }
 
   async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {

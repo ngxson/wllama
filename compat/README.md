@@ -78,4 +78,4 @@ const instance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
 instance.setCompat({ wasm: compatWasm });
 ```
 
-> **Note:** in older versions, `setCompat()` also needed a `worker` (the `wllama.js` file). It is no longer needed and can be removed. It can still be passed to override the embedded JS code, for example for custom builds.
+> **Note:** in older versions, `setCompat()` also needed a `worker` (the `wllama.js` file). It is no longer needed and can be removed. `wllama.js` is kept as a placeholder, so old setups still work (with a warning). A `worker` with real emscripten code still overrides the embedded JS code, for example for custom builds.
