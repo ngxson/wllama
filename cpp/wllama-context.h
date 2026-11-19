@@ -70,21 +70,40 @@ extern "C" void __wrap_abort(void)
   __real_abort();
 }
 
-// graphs with no pool (clip, draft model) use this pool. A second pool needs more workers, and a new worker cannot start while the main thread waits at a barrier
+// only one pool for everything (llama, mtmd, graphs with no pool). A second pool needs more workers, and a new worker cannot start while the main thread waits at a barrier
 static struct ggml_threadpool *shared_threadpool = nullptr;
+static int shared_threadpool_n_threads = 0;
+static int shared_threadpool_refs = 0;
 
 extern "C" struct ggml_threadpool *__real_ggml_threadpool_new(struct ggml_threadpool_params *params);
 extern "C" struct ggml_threadpool *__wrap_ggml_threadpool_new(struct ggml_threadpool_params *params)
 {
-  shared_threadpool = __real_ggml_threadpool_new(params);
-  return shared_threadpool;
+  // reuse the pool if it is big enough; a paused pool is a pair with another pool, do not share it
+  if (shared_threadpool && !params->paused && params->n_threads <= shared_threadpool_n_threads)
+  {
+    shared_threadpool_refs++;
+    return shared_threadpool;
+  }
+  struct ggml_threadpool *threadpool = __real_ggml_threadpool_new(params);
+  if (!shared_threadpool && threadpool)
+  {
+    shared_threadpool = threadpool;
+    shared_threadpool_n_threads = params->n_threads;
+    shared_threadpool_refs = 1;
+  }
+  return threadpool;
 }
 
 extern "C" void __real_ggml_threadpool_free(struct ggml_threadpool *threadpool);
 extern "C" void __wrap_ggml_threadpool_free(struct ggml_threadpool *threadpool)
 {
-  if (threadpool == shared_threadpool)
+  if (threadpool && threadpool == shared_threadpool)
+  {
+    if (--shared_threadpool_refs > 0)
+      return;
     shared_threadpool = nullptr;
+    shared_threadpool_n_threads = 0;
+  }
   __real_ggml_threadpool_free(threadpool);
 }
 
@@ -1033,6 +1052,12 @@ struct wllama_context
 
   void create_embedding_tasks(server_response_reader &rd, std::string &req_raw, std::vector<raw_buffer> &input_files)
   {
+    // with no pooling, the OAI response only keeps the first token (BOS), so every input gets the same embedding
+    if (llama_pooling_type(ctx_server.get_llama_context()) == LLAMA_POOLING_TYPE_NONE)
+    {
+      throw app_exception("Pooling type 'none' cannot be used for embeddings, please load the model with pooling_type (for example 'mean')");
+    }
+
     json body = json::parse(req_raw);
 
     json prompt;

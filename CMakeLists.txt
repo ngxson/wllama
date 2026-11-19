@@ -63,7 +63,6 @@ if (WLLAMA_COMPAT)
     )
 else()
     list(APPEND WLLAMA_COMPILE_OPTIONS
-        -mrelaxed-simd
         -sMEMORY64=1
         -fwasm-exceptions
         -include ${CMAKE_CURRENT_SOURCE_DIR}/cpp/wasm64-stdint.h
@@ -80,6 +79,13 @@ add_compile_options(${WLLAMA_COMPILE_OPTIONS})
 add_link_options(${WLLAMA_LINK_OPTIONS})
 
 add_subdirectory(llama.cpp)
+
+if (NOT WLLAMA_COMPAT)
+    # relaxed SIMD only for the hand-written ggml kernels; on the whole build, clang also emits relaxed madd/min/max, which give different results on x86 and ARM
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/ggml/src/ggml-cpu/arch/wasm/quants.c
+        TARGET_DIRECTORY ggml-cpu
+        PROPERTIES COMPILE_OPTIONS -mrelaxed-simd)
+endif()
 
 set(LLAMA_INSTALL_VERSION 0.0.${LLAMA_BUILD_NUMBER})
 add_subdirectory(llama.cpp/tools/mtmd)
