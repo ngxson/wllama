@@ -279,7 +279,11 @@ export const isSupportMem64 = (): boolean => {
       address: 'i64',
       initial: 1n, // 1 page (64 KiB)
     } as any);
-    return true;
+    // Safari 27 accepts the Memory above but cannot compile memory64, so ask the compiler too
+    // (module (memory i64 1))
+    return WebAssembly.validate(
+      new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 4, 1])
+    );
   } catch {
     return false;
   }

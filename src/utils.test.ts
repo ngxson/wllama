@@ -1,4 +1,4 @@
-import { expect, test, describe } from 'vitest';
+import { expect, test, describe, vi } from 'vitest';
 import {
   joinBuffers,
   bufToText,
@@ -11,6 +11,7 @@ import {
   parseModelUrl,
   sortFileByShard,
   isValidGgufFile,
+  isSupportMem64,
 } from './utils';
 
 describe('joinBuffers', () => {
@@ -227,5 +228,16 @@ describe('GGUF file validation', () => {
 
     // Case sensitivity
     expect(isValidGgufFile('model.GGUF?param=value')).toBe(false);
+  });
+});
+
+describe('isSupportMem64', () => {
+  test('is false if the compiler rejects memory64', () => {
+    expect(isSupportMem64()).toBe(true);
+
+    // Safari 27: the Memory constructor accepts i64, the compiler does not
+    const spy = vi.spyOn(WebAssembly, 'validate').mockReturnValue(false);
+    expect(isSupportMem64()).toBe(false);
+    spy.mockRestore();
   });
 });
