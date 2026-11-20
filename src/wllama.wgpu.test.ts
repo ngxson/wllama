@@ -104,3 +104,24 @@ test.sequential('generates completion with WebGPU', async () => {
 
   await wllama.exit();
 });
+
+// skipped queue waits (cpp/wllama-patch.cpp) must not read stale logits
+// few tokens only: CPU and GPU results differ a bit, so long outputs can diverge
+test.sequential('WebGPU completion matches CPU', async () => {
+  const complete = async (n_gpu_layers: number) => {
+    const wllama = createWllama();
+    await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 1024, n_gpu_layers });
+    const res = await wllama.createCompletion({
+      prompt: 'Once upon a time',
+      max_tokens: 8,
+      temperature: 0.0,
+      seed: 42,
+    });
+    await wllama.exit();
+    return res.choices[0].text;
+  };
+
+  const gpuText = await complete(99999);
+  expect(gpuText.length).toBeGreaterThan(0);
+  expect(gpuText).toBe(await complete(0));
+});

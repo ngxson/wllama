@@ -158,3 +158,20 @@ execute_process(COMMAND git rev-parse --short=7 HEAD
 set_source_files_properties(cpp/wllama.cpp PROPERTIES
     COMPILE_DEFINITIONS "LIBLLAMA_VERSION=\"b${LIBLLAMA_BUILD_NUMBER}-${LIBLLAMA_COMMIT}\"")
 target_link_libraries(wllama PRIVATE ggml llama mtmd ${CMAKE_THREAD_LIBS_INIT})
+
+if (GGML_WEBGPU)
+    # patches for ggml-webgpu, see "Patches" in README-dev.md
+    if (EMDAWNWEBGPU_DIR)
+        set(WLLAMA_EMDAWN_PORT ${EMDAWNWEBGPU_DIR}/emdawnwebgpu.port.py)
+    else()
+        set(WLLAMA_EMDAWN_PORT emdawnwebgpu)
+    endif()
+    target_sources(wllama PRIVATE cpp/wllama-patch.cpp)
+    set_source_files_properties(cpp/wllama-patch.cpp PROPERTIES COMPILE_OPTIONS "--use-port=${WLLAMA_EMDAWN_PORT}")
+    target_link_options(wllama PRIVATE
+        -Wl,--wrap,wgpuQueueSubmit
+        -Wl,--wrap,wgpuQueueOnSubmittedWorkDone
+        -Wl,--wrap,wgpuBufferMapAsync
+        -Wl,--wrap,wgpuInstanceWaitAny
+    )
+endif()

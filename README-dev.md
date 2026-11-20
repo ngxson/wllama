@@ -148,6 +148,38 @@ Only the commit is compared, because the build number is wrong in a shallow clon
 
 `scripts/check_wasm_version.js` does the same check on the wasm files without running them. CI runs it before `npm run build`, and `scripts/check_package_size.js` runs it before publish. Publish also requires the compat wasm, so a build with `SKIP_COMPAT=1` cannot be published.
 
+## Patches
+
+We do not edit `llama.cpp/`. When upstream code is slow or broken on the web, we patch it from our side:
+- `cpp/wllama-patch.cpp`: C++ patches. They replace upstream calls at link time with `-Wl,--wrap` (see `CMakeLists.txt`). `--wrap` only changes calls between object files, so wrap a function that the upstream code calls from another file (for example the emdawnwebgpu C API), not a function in the same file as its callers.
+- `src/patch/`: JS patches. `scripts/build_worker.sh` embeds them in `src/workers-code/generated.ts`, and `src/worker.ts` runs them in the worker before the wasm module starts.
+
+Remove a patch when upstream fixes the problem.
+
+### WebGPU queue waits
+
+ggml-webgpu waits for the GPU queue in `ggml_backend_synchronize()`. llama.cpp calls it about 15 times per decoded token: before each graph input upload, before the logits read back, after decode and several times in the sampler. Only the logits read back (one `mapAsync`) is necessary. Each wait goes through emdawnwebgpu to a JS promise, so it is slow on the web, and very slow on Firefox (see below).
+
+`cpp/wllama-patch.cpp` wraps 4 emdawnwebgpu functions:
+- `wgpuQueueSubmit` counts the submits
+- `wgpuQueueOnSubmittedWorkDone` and `wgpuBufferMapAsync` wrap the callback, to record which submits are complete. A completed map counts too, because ggml maps a staging buffer right after it submits the copy to it
+- If all submits are complete, `wgpuQueueOnSubmittedWorkDone` calls the callback at once and returns a special future. `wgpuInstanceWaitAny` returns at once for this future (emdawnwebgpu rejects unknown futures)
+
+`WriteBuffer()` is not counted: WebGPU copies the data at call time and the queue keeps the order.
+
+### Firefox WebGPU poll
+
+Firefox resolves WebGPU promises only when it polls the device, and it polls on a 100 ms timer ([bug 1870699](https://bugzilla.mozilla.org/show_bug.cgi?id=1870699)). So each wait costs about 100 ms, and a model decodes at less than 1 token/s.
+
+Firefox also polls the device (and waits for it) when script reads back a WebGPU canvas (`GetFrontBufferSnapshot` in `dom/webgpu/ipc/WebGPUParent.cpp`). The poll runs all completed callbacks, ours too. `src/patch/webgpu-poll.js` uses this: on Firefox, after each `onSubmittedWorkDone()` and `mapAsync()`, it clears a 1x1 WebGPU canvas on the same device and draws it into a 2D canvas. The canvas needs new work for each read back, otherwise Firefox gives the last frame without a poll. If the patch fails, it disables itself and the waits use the 100 ms timer again.
+
+Decode speed (64 tokens) on Apple M-series, Firefox 160 and Chrome, with and without the 2 patches:
+
+| Model | Firefox before | Firefox after | Chrome before | Chrome after |
+|---|---:|---:|---:|---:|
+| Qwen3-1.7B Q4_K_M | 0.83 t/s | 59.2 t/s (71x, +7030%) | 118.6 t/s | 133.4 t/s (+12%) |
+| Qwen3.5-2B Q4_K_M | 0.67 t/s | 53.8 t/s (80x, +7930%) | 105.6 t/s | 119.5 t/s (+13%) |
+
 ## Debugging backend ops
 
 > [!IMPORTANT]

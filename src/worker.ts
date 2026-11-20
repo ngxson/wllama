@@ -19,7 +19,10 @@ import {
   isSafariMobile,
   isString,
 } from './utils';
-import { LLAMA_CPP_WORKER_CODE } from './workers-code/generated';
+import {
+  LLAMA_CPP_WORKER_CODE,
+  WEBGPU_POLL_PATCH_CODE,
+} from './workers-code/generated';
 import { WllamaError, WllamaRuntimeError } from './wllama';
 
 interface Logger {
@@ -215,6 +218,7 @@ export class ProxyToWorker {
     };
     const completeCode: string = [
       `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,
+      WEBGPU_POLL_PATCH_CODE,
       `function wModuleInit() { ${mainModuleCode}; return Module; }`,
       LLAMA_CPP_WORKER_CODE,
     ].join(';\n\n');
