@@ -348,6 +348,10 @@ test.sequential('saves and restores slot state', async () => {
   await first.exit();
 
   const second = await load();
+  // a bigger message first leaves non-zero bytes after the next one in the input buffer
+  await expect(
+    second.restoreSlotState(new Uint8Array(state.byteLength + 1024).fill(255))
+  ).rejects.toThrow();
   const nTokens = await second.restoreSlotState(state);
   expect(nTokens).toBeGreaterThan(0);
   const res2 = await complete(second);
