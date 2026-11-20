@@ -124,6 +124,7 @@ set(LLAMA_SERVER_SRC llama.cpp/tools/server/server-context.cpp
 
 set(WLLAMA_SRC ${LLAMA_COMMON_SRC} ${LLAMA_SERVER_SRC}
     cpp/wllama.cpp
+    cpp/wllama-patch.cpp
     cpp/glue.hpp
     llama.cpp/include/llama.h)
 
@@ -166,8 +167,9 @@ if (GGML_WEBGPU)
     else()
         set(WLLAMA_EMDAWN_PORT emdawnwebgpu)
     endif()
-    target_sources(wllama PRIVATE cpp/wllama-patch.cpp)
-    set_source_files_properties(cpp/wllama-patch.cpp PROPERTIES COMPILE_OPTIONS "--use-port=${WLLAMA_EMDAWN_PORT}")
+    set_source_files_properties(cpp/wllama-patch.cpp PROPERTIES
+        COMPILE_OPTIONS "--use-port=${WLLAMA_EMDAWN_PORT}"
+        COMPILE_DEFINITIONS WLLAMA_PATCH_WEBGPU)
     target_link_options(wllama PRIVATE
         -Wl,--wrap,wgpuQueueSubmit
         -Wl,--wrap,wgpuQueueOnSubmittedWorkDone

@@ -51,7 +51,7 @@ The thread pool size is passed to emscripten via `-sPTHREAD_POOL_SIZE=Module["pt
 
 This logic lives in `wllama.ts` (`isSupportMultiThread()` from `utils.ts` performs the feature detection).
 
-**The maximum number of threads is fixed by the number of threads of the ggml threadpool (`n_threads`). Do NOT increase `pthreadPoolSize` above it, in any case.** If some code needs more threads than that, a new worker cannot start while the wasm thread waits, so it hangs. Fix that code instead: make it use the ggml threadpool (see `shared_threadpool` in `wllama-context.h`) or no extra threads. Growing the pool (for example `+ 4` or `* 2`) is not an accepted fix.
+**The maximum number of threads is fixed by the number of threads of the ggml threadpool (`n_threads`). Do NOT increase `pthreadPoolSize` above it, in any case.** If some code needs more threads than that, a new worker cannot start while the wasm thread waits, so it hangs. Fix that code instead: make it use the ggml threadpool (see `shared_threadpool` in `cpp/wllama-patch.cpp`) or no extra threads. Growing the pool (for example `+ 4` or `* 2`) is not an accepted fix.
 
 ### Realtime audio
 
@@ -150,9 +150,16 @@ Only the commit is compared, because the build number is wrong in a shallow clon
 
 ## Patches
 
-We do not edit `llama.cpp/`. When upstream code is slow or broken on the web, we patch it from our side:
-- `cpp/wllama-patch.cpp`: C++ patches. They replace upstream calls at link time with `-Wl,--wrap` (see `CMakeLists.txt`). `--wrap` only changes calls between object files, so wrap a function that the upstream code calls from another file (for example the emdawnwebgpu C API), not a function in the same file as its callers.
+We do not edit `llama.cpp/`. When upstream code does not fit the web, we patch it from our side:
+- `cpp/wllama-patch.cpp`: C++ patches. They replace upstream calls at link time with `-Wl,--wrap` (see `CMakeLists.txt`). `--wrap` only changes calls between object files, so wrap a function that the upstream code calls from another file (for example the emdawnwebgpu C API), not a function in the same file as its callers. `cpp/wllama-patch.h` declares the state that the rest of the glue uses.
 - `src/patch/`: JS patches. `scripts/build_worker.sh` embeds them in `src/workers-code/generated.ts`, and `src/worker.ts` runs them in the worker before the wasm module starts.
+
+The C++ patches:
+- `abort`: print the stack trace before abort
+- `ggml_threadpool_new`, `ggml_threadpool_free`, `ggml_graph_plan`: one shared ggml threadpool, see "Threading model"
+- `mtmd_init_from_file`: record the mtmd context of the server (`shared_mctx`), TTS and realtime need it
+- `fopen`, `fclose`, `fread`, `fseek`, `ftell`: read model files from JS, see "Async file read"
+- `wgpuQueueSubmit`, `wgpuQueueOnSubmittedWorkDone`, `wgpuBufferMapAsync`, `wgpuInstanceWaitAny`: see "WebGPU queue waits" below
 
 Remove a patch when upstream fixes the problem.
 
