@@ -653,6 +653,14 @@ export class Wllama {
     if (params.n_gpu_layers === 0) {
       // skip WebGPU device initialization when the user asks for CPU-only
       workerResources.noWebGPU = true;
+    } else if (
+      isFirefox() &&
+      isSupportWebGPU() &&
+      (workerResources.compat || isSupportJSPI())
+    ) {
+      this.logger().warn(
+        'WebGPU on Firefox is slower than on other browsers, due to a Firefox bug (https://bugzilla.mozilla.org/show_bug.cgi?id=1870699). wllama works around most of it, see https://github.com/ngxson/wllama/issues/296'
+      );
     }
     this.proxy = new ProxyToWorker(
       workerResources,

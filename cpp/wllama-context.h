@@ -31,6 +31,7 @@
 
 #include "glue.hpp"
 #include "wllama-video.h"
+#include "wllama-patch.h"
 
 #ifdef WLLAMA_TEST_BACKEND
 int main_test_backend_ops(int argc, char **argv);
@@ -55,20 +56,6 @@ enum TEST_STACK_TRACE
   TEST_STACK_TRACE_OOB = 2,
 };
 static TEST_STACK_TRACE test_stack_trace = TEST_STACK_TRACE_NONE;
-extern "C" void __real_abort(void);
-extern "C" void __wrap_abort(void)
-{
-  char buf[4096];
-  emscripten_get_callstack(EM_LOG_JS_STACK | EM_LOG_NO_PATHS, buf, sizeof(buf));
-  for (size_t i = 0; i < sizeof(buf); i++)
-  {
-    if (buf[i] == '\n')
-      buf[i] = '|';
-  }
-  fprintf(stderr, "@@STACK@@%s\n", buf);
-  fflush(stderr);
-  __real_abort();
-}
 
 // for testing reads past 2GB: read at an offset above 2^31 and log the bytes, the test compares them
 static bool test_read_big_file = false;
@@ -92,67 +79,6 @@ static void run_test_read_big_file(const std::string &path)
   }
   fclose(f);
   fprintf(stderr, "@@WARN@@%s\n", out.c_str());
-}
-
-// only one pool for everything (llama, mtmd, graphs with no pool). A second pool needs more workers, and a new worker cannot start while the main thread waits at a barrier
-static struct ggml_threadpool *shared_threadpool = nullptr;
-static int shared_threadpool_n_threads = 0;
-static int shared_threadpool_refs = 0;
-
-extern "C" struct ggml_threadpool *__real_ggml_threadpool_new(struct ggml_threadpool_params *params);
-extern "C" struct ggml_threadpool *__wrap_ggml_threadpool_new(struct ggml_threadpool_params *params)
-{
-  // reuse the pool if it is big enough; a paused pool is a pair with another pool, do not share it
-  if (shared_threadpool && !params->paused && params->n_threads <= shared_threadpool_n_threads)
-  {
-    shared_threadpool_refs++;
-    return shared_threadpool;
-  }
-  struct ggml_threadpool *threadpool = __real_ggml_threadpool_new(params);
-  if (!shared_threadpool && threadpool)
-  {
-    shared_threadpool = threadpool;
-    shared_threadpool_n_threads = params->n_threads;
-    shared_threadpool_refs = 1;
-  }
-  return threadpool;
-}
-
-extern "C" void __real_ggml_threadpool_free(struct ggml_threadpool *threadpool);
-extern "C" void __wrap_ggml_threadpool_free(struct ggml_threadpool *threadpool)
-{
-  if (threadpool && threadpool == shared_threadpool)
-  {
-    if (--shared_threadpool_refs > 0)
-      return;
-    shared_threadpool = nullptr;
-    shared_threadpool_n_threads = 0;
-  }
-  __real_ggml_threadpool_free(threadpool);
-}
-
-// the mtmd context of the server is private, TTS and realtime need it
-static mtmd_context *shared_mctx = nullptr;
-
-extern "C" mtmd_context *__real_mtmd_init_from_file(const char *mmproj_fname, const struct llama_model *text_model, const struct mtmd_context_params ctx_params);
-extern "C" mtmd_context *__wrap_mtmd_init_from_file(const char *mmproj_fname, const struct llama_model *text_model, const struct mtmd_context_params ctx_params)
-{
-  shared_mctx = __real_mtmd_init_from_file(mmproj_fname, text_model, ctx_params);
-  return shared_mctx;
-}
-
-static bool force_single_thread = false;
-extern "C" struct ggml_cplan __real_ggml_graph_plan(
-    const struct ggml_cgraph *cgraph,
-    int n_threads,
-    struct ggml_threadpool *threadpool);
-
-extern "C" struct ggml_cplan __wrap_ggml_graph_plan(
-    const struct ggml_cgraph *cgraph,
-    int n_threads,
-    struct ggml_threadpool *threadpool)
-{
-  return __real_ggml_graph_plan(cgraph, force_single_thread ? 1 : n_threads, threadpool ? threadpool : shared_threadpool);
 }
 
 inline std::vector<char> convert_string_to_buf(std::string &input)

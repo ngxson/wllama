@@ -283,7 +283,7 @@ const _stripModelsPrefix = (path) => path.replace(/^\/?models\//, '');
 // postMessage cannot send an ArrayBuffer bigger than 2GB, so big reads are split
 const MAX_READ_CHUNK = 256 * 1024 * 1024;
 
-// Called from EM_ASYNC_JS stub in wllama-fs.h (path is already a JS string)
+// Called from EM_ASYNC_JS stub in cpp/wllama-patch.cpp (path is already a JS string)
 const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
   const name = _stripModelsPrefix(path);
   let total = 0;

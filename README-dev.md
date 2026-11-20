@@ -51,7 +51,7 @@ The thread pool size is passed to emscripten via `-sPTHREAD_POOL_SIZE=Module["pt
 
 This logic lives in `wllama.ts` (`isSupportMultiThread()` from `utils.ts` performs the feature detection).
 
-**The maximum number of threads is fixed by the number of threads of the ggml threadpool (`n_threads`). Do NOT increase `pthreadPoolSize` above it, in any case.** If some code needs more threads than that, a new worker cannot start while the wasm thread waits, so it hangs. Fix that code instead: make it use the ggml threadpool (see `shared_threadpool` in `wllama-context.h`) or no extra threads. Growing the pool (for example `+ 4` or `* 2`) is not an accepted fix.
+**The maximum number of threads is fixed by the number of threads of the ggml threadpool (`n_threads`). Do NOT increase `pthreadPoolSize` above it, in any case.** If some code needs more threads than that, a new worker cannot start while the wasm thread waits, so it hangs. Fix that code instead: make it use the ggml threadpool (see `shared_threadpool` in `cpp/wllama-patch.cpp`) or no extra threads. Growing the pool (for example `+ 4` or `* 2`) is not an accepted fix.
 
 ### Realtime audio
 
@@ -147,6 +147,40 @@ Raw demangled names can be hundreds of characters. The following rules are appli
 Only the commit is compared, because the build number is wrong in a shallow clone.
 
 `scripts/check_wasm_version.js` does the same check on the wasm files without running them. CI runs it before `npm run build`, and `scripts/check_package_size.js` runs it before publish. Publish also requires the compat wasm, so a build with `SKIP_COMPAT=1` cannot be published.
+
+## Patches
+
+We do not edit `llama.cpp/`. When upstream code does not fit the web, we patch it from our side:
+- `cpp/wllama-patch.cpp`: C++ patches. They replace upstream calls at link time with `-Wl,--wrap` (see `CMakeLists.txt`). `--wrap` only changes calls between object files, so wrap a function that the upstream code calls from another file (for example the emdawnwebgpu C API), not a function in the same file as its callers. `cpp/wllama-patch.h` declares the state that the rest of the glue uses.
+- `src/patch/`: JS patches. `scripts/build_worker.sh` embeds them in `src/workers-code/generated.ts`, and `src/worker.ts` runs them in the worker before the wasm module starts.
+
+The C++ patches:
+- `abort`: print the stack trace before abort
+- `ggml_threadpool_new`, `ggml_threadpool_free`, `ggml_graph_plan`: one shared ggml threadpool, see "Threading model"
+- `mtmd_init_from_file`: record the mtmd context of the server (`shared_mctx`), TTS and realtime need it
+- `fopen`, `fclose`, `fread`, `fseek`, `ftell`: read model files from JS, see "Async file read"
+- `wgpuQueueSubmit`, `wgpuQueueOnSubmittedWorkDone`, `wgpuBufferMapAsync`, `wgpuInstanceWaitAny`: see "WebGPU queue waits" below
+
+Remove a patch when upstream fixes the problem.
+
+### WebGPU queue waits
+
+ggml-webgpu waits for the GPU queue in `ggml_backend_synchronize()`. llama.cpp calls it about 15 times per decoded token: before each graph input upload, before the logits read back, after decode and several times in the sampler. Only the logits read back (one `mapAsync`) is necessary. Each wait goes through emdawnwebgpu to a JS promise, so it is slow on the web, and very slow on Firefox (see below).
+
+`cpp/wllama-patch.cpp` wraps 4 emdawnwebgpu functions:
+- `wgpuQueueSubmit` counts the submits
+- `wgpuQueueOnSubmittedWorkDone` and `wgpuBufferMapAsync` wrap the callback, to record which submits are complete. A completed map counts too, because ggml maps a staging buffer right after it submits the copy to it
+- If all submits are complete, `wgpuQueueOnSubmittedWorkDone` calls the callback at once and returns a special future. `wgpuInstanceWaitAny` returns at once for this future (emdawnwebgpu rejects unknown futures)
+
+`WriteBuffer()` is not counted: WebGPU copies the data at call time and the queue keeps the order.
+
+### Firefox WebGPU poll
+
+Firefox resolves WebGPU promises only when it polls the device, and it polls on a 100 ms timer ([bug 1870699](https://bugzilla.mozilla.org/show_bug.cgi?id=1870699)). So each wait costs about 100 ms, and a model decodes at less than 1 token/s.
+
+Firefox also polls the device (and waits for it) when script reads back a WebGPU canvas (`GetFrontBufferSnapshot` in `dom/webgpu/ipc/WebGPUParent.cpp`). The poll runs all completed callbacks, ours too. `src/patch/webgpu-poll.js` uses this: on Firefox, after each `onSubmittedWorkDone()` and `mapAsync()`, it clears a 1x1 WebGPU canvas on the same device and draws it into a 2D canvas. The canvas needs new work for each read back, otherwise Firefox gives the last frame without a poll. If the patch fails, it disables itself and the waits use the 100 ms timer again.
+
+Performance numbers of the 2 patches: https://github.com/ngxson/wllama/pull/341
 
 ## Debugging backend ops
 

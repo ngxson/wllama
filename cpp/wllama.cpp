@@ -16,7 +16,6 @@
 
 #include "llama.h"
 #include "wllama-context.h"
-#include "wllama-fs.h"
 #include "wllama.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -82,8 +81,7 @@ extern "C" const char *wllama_start()
     llama_log_set(llama_log_callback_logTee, nullptr);
     wllama_malloc(1024, 0);
 
-    wllama_fs::make_sure_ready();
-    if (wllama_fs::use_async)
+    if (wllama_fs_use_async())
     {
       printStr(GGML_LOG_LEVEL_INFO, "Using async file read");
     }
