@@ -455,6 +455,7 @@ void glue_handler::deserialize(glue_inbuf &input)
       break;
     case GLUE_DTYPE_RAW:
       ((glue_raw *)field)->parse(input);
+      break;
     case GLUE_DTYPE_ARRAY_BOOL:
       ((glue_arr_bool *)field)->parse(input);
       break;
