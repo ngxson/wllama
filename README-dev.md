@@ -173,12 +173,7 @@ Firefox resolves WebGPU promises only when it polls the device, and it polls on 
 
 Firefox also polls the device (and waits for it) when script reads back a WebGPU canvas (`GetFrontBufferSnapshot` in `dom/webgpu/ipc/WebGPUParent.cpp`). The poll runs all completed callbacks, ours too. `src/patch/webgpu-poll.js` uses this: on Firefox, after each `onSubmittedWorkDone()` and `mapAsync()`, it clears a 1x1 WebGPU canvas on the same device and draws it into a 2D canvas. The canvas needs new work for each read back, otherwise Firefox gives the last frame without a poll. If the patch fails, it disables itself and the waits use the 100 ms timer again.
 
-Decode speed (64 tokens) on Apple M-series, Firefox 160 and Chrome, with and without the 2 patches:
-
-| Model | Firefox before | Firefox after | Chrome before | Chrome after |
-|---|---:|---:|---:|---:|
-| Qwen3-1.7B Q4_K_M | 0.83 t/s | 59.2 t/s (71x, +7030%) | 118.6 t/s | 133.4 t/s (+12%) |
-| Qwen3.5-2B Q4_K_M | 0.67 t/s | 53.8 t/s (80x, +7930%) | 105.6 t/s | 119.5 t/s (+13%) |
+Performance numbers of the 2 patches: https://github.com/ngxson/wllama/pull/341
 
 ## Debugging backend ops
 
