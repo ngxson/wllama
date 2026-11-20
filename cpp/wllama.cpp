@@ -136,7 +136,20 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
   catch (std::exception &e)
   {
     printStr(GGML_LOG_LEVEL_ERROR, e.what());
-    return nullptr;
+    // send the error to JS, the caller throws it
+    try
+    {
+      glue_msg_error err;
+      err.message.value = e.what();
+      err.handler.serialize(output_buffer);
+      uint32_t *output_len = (uint32_t *)req_raw;
+      output_len[0] = output_buffer.data.size();
+      return output_buffer.data.data();
+    }
+    catch (std::exception &)
+    {
+      return nullptr;
+    }
   }
 }
 
