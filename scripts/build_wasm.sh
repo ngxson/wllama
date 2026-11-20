@@ -27,6 +27,10 @@ else
   export IMAGE_SUFFIX=""
 fi
 
+# the patched wasm-opt is also kept in .binaryen-cache (CI caches it), the name has the image tag so an old one is not used
+mkdir -p .binaryen-cache
+export WASM_OPT_CACHE="wasm-opt-${EMSDK_IMAGE_TAG}${IMAGE_SUFFIX}"
+
 # one compose project per checkout, so parallel builds in different worktrees do not share a container
 REPO_ROOT="$(cd "$CURRENT_PATH/.." && pwd)"
 REPO_NAME="$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')"

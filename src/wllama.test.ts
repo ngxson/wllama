@@ -1,6 +1,7 @@
 import { test, expect, beforeEach, vi } from 'vitest';
 
 declare const __GITHUB_CI__: boolean;
+declare const __COMPAT__: boolean;
 
 // Add a small delay before each test on GitHub CI to avoid HuggingFace rate limits.
 // typeof guard handles the case where vitest define is not configured.
@@ -24,10 +25,12 @@ const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',
 };
 
-// TODO: enable compat mode in tests once test infrastructure supports Safari/asyncify
+// COMPAT=1 runs the tests on the local compat build (see vitest.setup.ts)
 const createWllama = (config = CONFIG_PATHS, options: WllamaConfig = {}) => {
   const w = new Wllama(config, options);
-  w.setCompat(null);
+  const compatWasm =
+    config === CONFIG_PATHS ? '/compat/wasm/wllama.wasm' : config.default;
+  w.setCompat(__COMPAT__ ? { wasm: compatWasm } : null, 'firefox_safari');
   return w;
 };
 

@@ -196,6 +196,10 @@ The patch adds `try` support to asyncify:
 
 The docker image builds `wasm-opt` with the patch, at the binaryen commit of the emsdk version, then puts it in place of the emsdk `wasm-opt` (see `scripts/docker-compose.yml`). The image tag has the hash of the patch, so a new patch makes a new image. The patch does not change the JSPI build, so with `SKIP_COMPAT=1` (CI and the upstream sync) the image does not build binaryen, which saves several minutes.
 
+The patched `wasm-opt` is also copied to `scripts/.binaryen-cache` (git-ignored), named by the image tag. The next image build uses it instead of building binaryen again. CI caches this folder.
+
+To test the compat build: build it (without `SKIP_COMPAT`), then `npm run test:compat`. It runs `src/wllama.test.ts` on `compat/wasm/wllama.wasm`, with JSPI hidden on the page. Use `SKIP_MAIN=1` to build only compat. CI runs it in the `test-compat` job, in parallel with the main tests.
+
 ## Debugging backend ops
 
 > [!IMPORTANT]

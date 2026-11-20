@@ -7,12 +7,16 @@ services:
         ARG EMSDK_IMAGE_TAG=none  # modify it in build_wasm.sh
         FROM emscripten/emsdk:$${EMSDK_IMAGE_TAG}
         ARG BINARYEN_PATCH=1
-        RUN apt update && apt install -y git
+        ARG WASM_OPT_CACHE=none
+        RUN apt update && apt install -y git ccache
         # upstream asyncify does not support wasm exceptions (try), rebuild wasm-opt of this emsdk with our patch
-        # only the compat build (asyncify) needs it
+        # only the compat build (asyncify) needs it; use the one in .binaryen-cache if there is one
         COPY binaryen-asyncify-try.patch /tmp/
+        COPY .binaryen-cache /tmp/binaryen-cache
         RUN set -e; \
-          if [ "$$BINARYEN_PATCH" = "1" ]; then \
+          if [ "$$BINARYEN_PATCH" = "1" ] && [ -f "/tmp/binaryen-cache/$$WASM_OPT_CACHE" ]; then \
+            cp "/tmp/binaryen-cache/$$WASM_OPT_CACHE" /emsdk/upstream/bin/wasm-opt; \
+          elif [ "$$BINARYEN_PATCH" = "1" ]; then \
             BINARYEN_COMMIT=$$(/emsdk/upstream/bin/wasm-opt --version | sed -E 's/.*-g([0-9a-f]+).*/\1/'); \
             git clone --filter=blob:none https://github.com/WebAssembly/binaryen.git /tmp/binaryen; \
             cd /tmp/binaryen; \
@@ -25,14 +29,16 @@ services:
             cd /; \
             rm -rf /tmp/binaryen; \
           fi; \
-          rm -f /tmp/binaryen-asyncify-try.patch
+          rm -rf /tmp/binaryen-asyncify-try.patch /tmp/binaryen-cache
       args:
         EMSDK_IMAGE_TAG: ${EMSDK_IMAGE_TAG}
         BINARYEN_PATCH: ${BINARYEN_PATCH}
+        WASM_OPT_CACHE: ${WASM_OPT_CACHE}
     user: "${D_UID}:${D_GID}"
     environment:
       - WLLAMA_TEST_BACKEND=${WLLAMA_TEST_BACKEND:-}
       - SKIP_COMPAT=${SKIP_COMPAT:-}
+      - SKIP_MAIN=${SKIP_MAIN:-}
     volumes:
       - ..:/source:Z
     entrypoint: /bin/bash
@@ -41,6 +47,17 @@ services:
       - |
         set -e
         cd /source
+
+        # compile cache, CI keeps .ccache between runs (an old image may not have ccache)
+        if command -v ccache > /dev/null; then
+          export EM_COMPILER_WRAPPER=ccache CCACHE_DIR=/source/.ccache CCACHE_MAXSIZE=2G
+          ccache -z > /dev/null
+        fi
+
+        # keep the patched wasm-opt for the next image build (see build_wasm.sh)
+        if [ "${BINARYEN_PATCH}" = "1" ]; then
+          cp /emsdk/upstream/bin/wasm-opt "scripts/.binaryen-cache/${WASM_OPT_CACHE}"
+        fi
 
         mkdir -p build
         cd build
@@ -59,15 +76,20 @@ services:
           CMAKE_EXTRA_FLAGS="-DWLLAMA_TEST_BACKEND=ON";
         fi
 
-        emcmake cmake .. -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
-        emmake make wllama -j$$(nproc)
+        # build main package (skip if SKIP_MAIN=1, the compat CI job only needs compat)
+        if [ -z "${SKIP_MAIN}" ]; then
+          emcmake cmake .. -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
+          emmake make wllama -j$$(nproc)
 
-        # go back to root
-        cd ..
+          # go back to root
+          cd ..
 
-        # pack output files (wasm + JS glue in one file)
-        mkdir -p src/wasm
-        node scripts/pack_wasm.js build/wllama.wasm src/wasm/wllama.wasm
+          # pack output files (wasm + JS glue in one file)
+          mkdir -p src/wasm
+          node scripts/pack_wasm.js build/wllama.wasm src/wasm/wllama.wasm
+        else
+          cd ..
+        fi
 
         # build compat package (skip if SKIP_COMPAT=1)
         if [ -z "${SKIP_COMPAT}" ]; then
@@ -88,4 +110,7 @@ services:
         ls -lh build
         if [ -d build-compat ]; then
           ls -lh build-compat
+        fi
+        if command -v ccache > /dev/null; then
+          ccache -s
         fi
