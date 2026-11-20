@@ -128,7 +128,8 @@ const getWModuleConfig = (_argMainScriptBlob, wasmModule) => {
 //      https://github.com/godotengine/godot/issues/70621
 const getWasmMemory = () => {
   let minBytes = 128 * 1024 * 1024;
-  let maxBytes = 4096 * 1024 * 1024;
+  // wasm32 is limited to 4GB, Memory64 to 16GB (V8 limit)
+  let maxBytes = (isCompat ? 4 : 16) * 1024 * 1024 * 1024;
   let stepBytes = 128 * 1024 * 1024;
   while (maxBytes > minBytes) {
     try {
@@ -279,10 +280,28 @@ let pendingReadReject = null;
 
 const _stripModelsPrefix = (path) => path.replace(/^\/?models\//, '');
 
+// postMessage cannot send an ArrayBuffer bigger than 2GB, so big reads are split
+const MAX_READ_CHUNK = 256 * 1024 * 1024;
+
 // Called from EM_ASYNC_JS stub in wllama-fs.h (path is already a JS string)
 const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
   const name = _stripModelsPrefix(path);
+  let total = 0;
+  while (total < req_size) {
+    const size = Math.min(MAX_READ_CHUNK, req_size - total);
+    const got = await readFileChunk(
+      name,
+      offset + total,
+      size,
+      out_ptr + total
+    );
+    total += got;
+    if (got < size) break; // end of file
+  }
+  return toSizeT(total);
+};
 
+const readFileChunk = async (name, offset, req_size, out_ptr) => {
   pendingReadPromise = new Promise((res, rej) => {
     pendingReadResolve = res;
     pendingReadReject = rej;
@@ -303,7 +322,7 @@ const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
 
   const bytes = new Uint8Array(data);
   getHeapU8().set(bytes, out_ptr);
-  return toSizeT(bytes.length);
+  return bytes.length;
 };
 
 //////////////////////////////////////////////////////////////
