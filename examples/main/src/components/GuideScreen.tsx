@@ -32,8 +32,8 @@ export default function GuideScreen() {
               from 25% to 50%.
             </li>
             <li>
-              Due to memory constraint of WebAssembly and emscripten, models
-              larger than 2GB will need to be split.{' '}
+              On Safari and older browsers (compat mode), a single GGUF file
+              must be smaller than 4GB, bigger models need to be split.{' '}
               <a
                 href="https://github.com/ngxson/wllama?tab=readme-ov-file#split-model"
                 target="_blank"
@@ -48,7 +48,8 @@ export default function GuideScreen() {
             </li>
             <li>Running on smartphone maybe buggy.</li>
             <li>
-              <b>Safari is not supported</b>, due to lack of Memory64 support.
+              On Safari, compat mode is used due to lack of Memory64 support,
+              performance is lower.
             </li>
           </ul>
         </div>
