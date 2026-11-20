@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 const SAFARI = process.env.BROWSER === 'safari';
 const WEBGPU = process.env.WEBGPU === '1';
 const AUTO = process.env.AUTO === '1';
+const HEADED = process.env.HEADED === '1';
 
 const chromeArgsCI = ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'];
 const chromeArgsWebGPU = [
@@ -32,9 +33,17 @@ export default defineConfig({
       enabled: true,
       name: process.env.BROWSER ?? 'chromium',
       provider: SAFARI ? 'webdriverio' : 'playwright',
+      // safaridriver has no headless mode
+      headless: !SAFARI && !HEADED,
       // https://playwright.dev
       providerOptions: WEBGPU
-        ? { launch: { args: chromeArgsWebGPU.map((a) => `--${a}`) } }
+        ? {
+            launch: {
+              // full chromium in new headless mode, the default headless shell has no WebGPU
+              channel: 'chromium',
+              args: chromeArgsWebGPU.map((a) => `--${a}`),
+            },
+          }
         : process.env.GITHUB_ACTIONS
           ? {
               capabilities: {
