@@ -12,6 +12,9 @@ import {
   sortFileByShard,
   isValidGgufFile,
   isSupportMem64,
+  isSupportRelaxedSIMD,
+  isSupportJSPI,
+  needCompat,
 } from './utils';
 
 describe('joinBuffers', () => {
@@ -245,6 +248,29 @@ describe('isSupportMem64', () => {
       expect(isSupportMem64()).toBe(false);
     } finally {
       memory.mockRestore();
+      validate.mockRestore();
+    }
+  });
+});
+
+describe('needCompat', () => {
+  test('uses compat when relaxed SIMD is missing', () => {
+    // the test browsers have JSPI, Memory64 and relaxed SIMD
+    expect(isSupportRelaxedSIMD()).toBe(true);
+    if (!isSupportJSPI() || !isSupportMem64()) return;
+    expect(needCompat()).toBe(false);
+    const realValidate = WebAssembly.validate;
+    // reject only the relaxed SIMD probe (i8x16.relaxed_swizzle = fd 80 02)
+    const validate = vi
+      .spyOn(WebAssembly, 'validate')
+      .mockImplementation((buf: any) => {
+        const b = Array.from(buf as Uint8Array).join(',');
+        return b.includes('253,128,2') ? false : realValidate(buf);
+      });
+    try {
+      expect(isSupportRelaxedSIMD()).toBe(false);
+      expect(needCompat()).toBe(true);
+    } finally {
       validate.mockRestore();
     }
   });

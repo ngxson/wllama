@@ -1,14 +1,34 @@
 services:
   llamacpp-wasm-builder:
-    image: wllama-emsdk:${EMSDK_IMAGE_TAG} # shared by all worktrees
+    image: wllama-emsdk:${EMSDK_IMAGE_TAG}${IMAGE_SUFFIX} # shared by all worktrees
     build:
       context: .
       dockerfile_inline: |
         ARG EMSDK_IMAGE_TAG=none  # modify it in build_wasm.sh
         FROM emscripten/emsdk:$${EMSDK_IMAGE_TAG}
+        ARG BINARYEN_PATCH=1
         RUN apt update && apt install -y git
+        # upstream asyncify does not support wasm exceptions (try), rebuild wasm-opt of this emsdk with our patch
+        # only the compat build (asyncify) needs it
+        COPY binaryen-asyncify-try.patch /tmp/
+        RUN set -e; \
+          if [ "$$BINARYEN_PATCH" = "1" ]; then \
+            BINARYEN_COMMIT=$$(/emsdk/upstream/bin/wasm-opt --version | sed -E 's/.*-g([0-9a-f]+).*/\1/'); \
+            git clone --filter=blob:none https://github.com/WebAssembly/binaryen.git /tmp/binaryen; \
+            cd /tmp/binaryen; \
+            git checkout $$BINARYEN_COMMIT; \
+            git submodule update --init --depth 1; \
+            git apply /tmp/binaryen-asyncify-try.patch; \
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_STATIC_LIB=ON -DENABLE_WERROR=OFF; \
+            cmake --build build --target wasm-opt -j$$(nproc); \
+            cp build/bin/wasm-opt /emsdk/upstream/bin/wasm-opt; \
+            cd /; \
+            rm -rf /tmp/binaryen; \
+          fi; \
+          rm -f /tmp/binaryen-asyncify-try.patch
       args:
         EMSDK_IMAGE_TAG: ${EMSDK_IMAGE_TAG}
+        BINARYEN_PATCH: ${BINARYEN_PATCH}
     user: "${D_UID}:${D_GID}"
     environment:
       - WLLAMA_TEST_BACKEND=${WLLAMA_TEST_BACKEND:-}
