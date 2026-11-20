@@ -70,6 +70,30 @@ extern "C" void __wrap_abort(void)
   __real_abort();
 }
 
+// for testing reads past 2GB: read at an offset above 2^31 and log the bytes, the test compares them
+static bool test_read_big_file = false;
+static void run_test_read_big_file(const std::string &path)
+{
+  FILE *f = fopen(path.c_str(), "rb");
+  if (!f)
+  {
+    fprintf(stderr, "@@ERROR@@test_read_big_file: cannot open %s\n", path.c_str());
+    return;
+  }
+  const off_t offset = 2147483648LL + 12345;
+  std::string out = "test_read_big_file:";
+  // a small read goes through the read-ahead cache, a big one is copied directly
+  for (size_t n : {(size_t)16, (size_t)(2 * 1024 * 1024)})
+  {
+    std::vector<uint8_t> buf(n, 0);
+    fseeko(f, offset, SEEK_SET);
+    size_t got = fread(buf.data(), 1, n, f);
+    out += " " + std::to_string(got) + " " + std::to_string(buf[0]) + "," + std::to_string(buf[1]) + "," + std::to_string(buf[n - 1]) + ";";
+  }
+  fclose(f);
+  fprintf(stderr, "@@WARN@@%s\n", out.c_str());
+}
+
 // only one pool for everything (llama, mtmd, graphs with no pool). A second pool needs more workers, and a new worker cannot start while the main thread waits at a barrier
 static struct ggml_threadpool *shared_threadpool = nullptr;
 static int shared_threadpool_n_threads = 0;
@@ -191,6 +215,11 @@ inline static enum llama_pooling_type pooling_type_from_str(const std::string &s
   if (s == "test_stack_trace_oob")
   {
     test_stack_trace = TEST_STACK_TRACE_OOB;
+    return LLAMA_POOLING_TYPE_NONE;
+  }
+  if (s == "test_read_big_file")
+  {
+    test_read_big_file = true;
     return LLAMA_POOLING_TYPE_NONE;
   }
   throw std::runtime_error("Invalid pooling type: " + s);
@@ -958,6 +987,15 @@ struct wllama_context
 
     // init threadpool
     ggml_threadpool_params_default(params.cpuparams.n_threads);
+
+    if (test_read_big_file)
+    {
+      test_read_big_file = false;
+      run_test_read_big_file(params.model.path);
+      glue_msg_load_res res;
+      res.success.value = false;
+      return res;
+    }
 
     // load model
     llama_backend_init();

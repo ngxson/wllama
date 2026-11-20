@@ -166,10 +166,6 @@ const getWasmMemory = () => {
  *
  * Ref: https://github.com/ngxson/wllama/pull/39
  * Ref: https://github.com/emscripten-core/emscripten/blob/main/src/library_memfs.js
- *
- * Note 29/05/2024 @ngxson
- * Due to ftell() being limited to MAX_LONG, we cannot load files bigger than 2^31 bytes (or 2GB)
- * Ref: https://github.com/emscripten-core/emscripten/blob/main/system/lib/libc/musl/src/stdio/ftell.c
  */
 
 const fsNameToFile = {}; // map Name => File

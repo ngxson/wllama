@@ -19,7 +19,7 @@ namespace wllama_fs
   static const size_t CACHE_SIZE = 1024 * 1024; // 1 MB read-ahead
 
   std::vector<uint8_t> cache_data;
-  size_t cache_start = 0;
+  off_t cache_start = 0;
   FILE *cache_file = nullptr;
 
   void make_sure_ready()
@@ -30,11 +30,11 @@ namespace wllama_fs
     ready = true;
   }
 
-  size_t try_cache(FILE *f, char *ptr, size_t req_bytes, size_t fpos)
+  size_t try_cache(FILE *f, char *ptr, size_t req_bytes, off_t fpos)
   {
     if (f != cache_file || cache_data.empty())
       return 0;
-    if (fpos >= cache_start && fpos + req_bytes <= cache_start + cache_data.size())
+    if (fpos >= cache_start && fpos + (off_t)req_bytes <= cache_start + (off_t)cache_data.size())
     {
       memcpy(ptr, cache_data.data() + (fpos - cache_start), req_bytes);
       return req_bytes;
@@ -46,9 +46,15 @@ namespace wllama_fs
 // Thin stub — real implementation lives in llama-cpp.js to avoid
 // C++ formatter mangling the JS syntax inside EM_ASYNC_JS macros.
 
-EM_ASYNC_JS(size_t, js_file_read, (const char *path_ptr, size_t offset, size_t req_size, void *out_ptr), {
-  return await _wllama_js_file_read(UTF8ToString(Number(path_ptr)), Number(offset), Number(req_size), Number(out_ptr));
+// offset and out_ptr are passed as double: on wasm32, an i32 above 2GB would arrive in JS as a negative number
+EM_ASYNC_JS(size_t, js_file_read_impl, (const char *path_ptr, double offset, size_t req_size, double out_ptr), {
+  return await _wllama_js_file_read(UTF8ToString(Number(path_ptr)), offset, Number(req_size), out_ptr);
 });
+
+static size_t js_file_read(const char *path, off_t offset, size_t req_size, void *out_ptr)
+{
+  return js_file_read_impl(path, (double)offset, req_size, (double)(uintptr_t)out_ptr);
+}
 
 extern "C"
 {
@@ -105,7 +111,10 @@ extern "C"
     if (req_bytes == 0)
       return 0;
 
-    size_t fpos = (size_t)__real_ftell(f);
+    // ftello and fseeko use 64-bit off_t; ftell and fseek use long, which is 32-bit on wasm32 and fails past 2GB
+    off_t fpos = ftello(f);
+    if (fpos < 0)
+      return 0;
 
     // Large reads (>= 1 MB): write directly into ptr, skip cache entirely.
     if (req_bytes >= wllama_fs::CACHE_SIZE)
@@ -115,7 +124,7 @@ extern "C"
       if (actual == 0)
         return 0;
       size_t copy_bytes = std::min(req_bytes, actual);
-      __real_fseek(f, fpos + copy_bytes, SEEK_SET);
+      fseeko(f, fpos + (off_t)copy_bytes, SEEK_SET);
       return copy_bytes / size;
     }
 
@@ -123,7 +132,7 @@ extern "C"
     size_t cached = wllama_fs::try_cache(f, (char *)ptr, req_bytes, fpos);
     if (cached == req_bytes)
     {
-      __real_fseek(f, fpos + req_bytes, SEEK_SET);
+      fseeko(f, fpos + (off_t)req_bytes, SEEK_SET);
       return nmemb;
     }
 
@@ -142,7 +151,7 @@ extern "C"
 
     size_t copy_bytes = std::min(req_bytes, actual);
     memcpy(ptr, wllama_fs::cache_data.data(), copy_bytes);
-    __real_fseek(f, fpos + copy_bytes, SEEK_SET);
+    fseeko(f, fpos + (off_t)copy_bytes, SEEK_SET);
 
     return copy_bytes / size;
   }
