@@ -1,0 +1,69 @@
+diff --git a/src/passes/Asyncify.cpp b/src/passes/Asyncify.cpp
+index 3ea9ca6b..a0c0480b 100644
+--- a/src/passes/Asyncify.cpp
++++ b/src/passes/Asyncify.cpp
+@@ -1133,6 +1133,25 @@ private:
+         results.pop_back();
+         results.push_back(loop);
+         continue;
++      } else if (auto* tryy = curr->dynCast<Try>()) {
++        // Rewinding re-enters the try body, which also re-installs the
++        // handlers. Catch bodies never run while rewinding (nothing throws),
++        // so they are not instrumented; unwinding from them traps.
++        if (item.phase == Work::Scan) {
++          work.push_back(Work{curr, Work::Finish});
++          work.push_back(Work{tryy->body, Work::Scan});
++          continue;
++        }
++        tryy->body = results.back();
++        results.pop_back();
++        for (auto*& catchBody : tryy->catchBodies) {
++          if (analyzer->canChangeState(catchBody, func)) {
++            addTrapOnUnwind(catchBody);
++          }
++        }
++        tryy->finalize();
++        results.push_back(tryy);
++        continue;
+       } else if (doesCall(curr)) {
+         // We reach here only in Scan phase, but we in effect "Finish" calls
+         // here as well.
+@@ -1149,6 +1168,38 @@ private:
+     return results.back();
+   }
+ 
++  // After each call in |body| that may change the state, trap if unwinding.
++  void addTrapOnUnwind(Expression* body) {
++    struct Adder : public PostWalker<Adder> {
++      AsyncifyFlow* parent;
++      void visitBlock(Block* block) {
++        for (auto*& item : block->list) {
++          wrap(item);
++        }
++      }
++      void visitIf(If* iff) {
++        wrap(iff->ifTrue);
++        if (iff->ifFalse) {
++          wrap(iff->ifFalse);
++        }
++      }
++      void visitLoop(Loop* loop) { wrap(loop->body); }
++      void wrap(Expression*& item) {
++        if (item->type != Type::none || !doesCall(item) ||
++            !parent->analyzer->canChangeState(item, parent->func)) {
++          return;
++        }
++        auto& builder = *parent->builder;
++        item = builder.makeSequence(
++          item,
++          builder.makeIf(builder.makeStateCheck(State::Unwinding),
++                         builder.makeUnreachable()));
++      }
++    } adder;
++    adder.parent = this;
++    adder.walk(body);
++  }
++
+   // Possibly skip some code, if rewinding.
+   Expression* makeMaybeSkip(Expression* curr) {
+     return builder->makeIf(builder->makeStateCheck(State::Normal), curr);

@@ -153,6 +153,7 @@ Only the commit is compared, because the build number is wrong in a shallow clon
 We do not edit `llama.cpp/`. When upstream code does not fit the web, we patch it from our side:
 - `cpp/wllama-patch.cpp`: C++ patches. They replace upstream calls at link time with `-Wl,--wrap` (see `CMakeLists.txt`). `--wrap` only changes calls between object files, so wrap a function that the upstream code calls from another file (for example the emdawnwebgpu C API), not a function in the same file as its callers. `cpp/wllama-patch.h` declares the state that the rest of the glue uses.
 - `src/patch/`: JS patches. `scripts/build_worker.sh` embeds them in `src/workers-code/generated.ts`, and `src/worker.ts` runs them in the worker before the wasm module starts.
+- `scripts/binaryen-asyncify-try.patch`: a binaryen patch, see "Asyncify with wasm exceptions" below.
 
 The C++ patches:
 - `abort`: print the stack trace before abort
@@ -181,6 +182,17 @@ Firefox resolves WebGPU promises only when it polls the device, and it polls on 
 Firefox also polls the device (and waits for it) when script reads back a WebGPU canvas (`GetFrontBufferSnapshot` in `dom/webgpu/ipc/WebGPUParent.cpp`). The poll runs all completed callbacks, ours too. `src/patch/webgpu-poll.js` uses this: on Firefox, after each `onSubmittedWorkDone()` and `mapAsync()`, it clears a 1x1 WebGPU canvas on the same device and draws it into a 2D canvas. The canvas needs new work for each read back, otherwise Firefox gives the last frame without a poll. If the patch fails, it disables itself and the waits use the 100 ms timer again.
 
 Performance numbers of the 2 patches: https://github.com/ngxson/wllama/pull/341
+
+### Asyncify with wasm exceptions
+
+The compat build uses asyncify and wasm exceptions (`-fwasm-exceptions`). Upstream asyncify stops with `UNREACHABLE` when a call that can suspend is inside a `try` ([binaryen#4470](https://github.com/WebAssembly/binaryen/issues/4470)). C++ puts most calls inside a `try` (to run the destructors), so without the patch, the compat build must use JS exceptions (`-fexceptions`), which are slower and bigger.
+
+The patch adds `try` support to asyncify:
+- Rewind goes into the `try` body again, so the exception handlers are back in place
+- A rewind never throws, so it never goes into a `catch` body. If code tries to suspend inside a `catch` body, it traps
+- Only the legacy exception format is supported, not exnref (`try_table`)
+
+The docker image builds `wasm-opt` with the patch, at the binaryen commit of the emsdk version, then puts it in place of the emsdk `wasm-opt` (see `scripts/docker-compose.yml`). The image tag has the hash of the patch, so a new patch makes a new image. The patch does not change the JSPI build.
 
 ## Debugging backend ops
 

@@ -49,14 +49,14 @@ set(WLLAMA_LINK_OPTIONS
 )
 
 if (WLLAMA_COMPAT)
-    # no wasm exception (not compatible with asyncify - asyncify is needed for firefox and safari)
+    # wasm exception + asyncify needs a patched binaryen (asyncify support for try)
     # no mem64 (not compatible with safari)
     list(APPEND WLLAMA_COMPILE_OPTIONS
-        -fexceptions
+        -fwasm-exceptions
         -pthread
     )
     list(APPEND WLLAMA_LINK_OPTIONS
-        -fexceptions
+        -fwasm-exceptions
         -sMAXIMUM_MEMORY=4096MB
         -sASYNCIFY=1
         -sASYNCIFY_ADD=['wllama_start','wllama_action']
