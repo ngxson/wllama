@@ -8,7 +8,7 @@ services:
         FROM emscripten/emsdk:$${EMSDK_IMAGE_TAG}
         ARG BINARYEN_PATCH=1
         ARG WASM_OPT_CACHE=none
-        RUN apt update && apt install -y git
+        RUN apt update && apt install -y git ccache
         # upstream asyncify does not support wasm exceptions (try), rebuild wasm-opt of this emsdk with our patch
         # only the compat build (asyncify) needs it; use the one in .binaryen-cache if there is one
         COPY binaryen-asyncify-try.patch /tmp/
@@ -47,6 +47,12 @@ services:
       - |
         set -e
         cd /source
+
+        # compile cache, CI keeps .ccache between runs (an old image may not have ccache)
+        if command -v ccache > /dev/null; then
+          export EM_COMPILER_WRAPPER=ccache CCACHE_DIR=/source/.ccache CCACHE_MAXSIZE=2G
+          ccache -z > /dev/null
+        fi
 
         # keep the patched wasm-opt for the next image build (see build_wasm.sh)
         if [ "${BINARYEN_PATCH}" = "1" ]; then
@@ -104,4 +110,7 @@ services:
         ls -lh build
         if [ -d build-compat ]; then
           ls -lh build-compat
+        fi
+        if command -v ccache > /dev/null; then
+          ccache -s
         fi

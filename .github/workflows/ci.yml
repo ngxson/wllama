@@ -57,6 +57,15 @@ jobs:
           restore-keys: |
             wasm-build-${{ runner.os }}-
 
+      # a fresh checkout makes all sources newer than the cached objects, so make rebuilds all; ccache makes it fast
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
       - name: Build wasm
         run: SKIP_COMPAT=1 ./scripts/build_wasm.sh
 
@@ -118,6 +127,14 @@ jobs:
         with:
           path: scripts/.binaryen-cache
           key: binaryen-${{ runner.os }}-${{ hashFiles('scripts/binaryen-asyncify-try.patch', 'scripts/build_wasm.sh') }}
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-compat-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ccache-compat-${{ runner.os }}-
 
       - name: Build wasm (compat only)
         run: SKIP_MAIN=1 ./scripts/build_wasm.sh
