@@ -4,6 +4,8 @@ const SAFARI = process.env.BROWSER === 'safari';
 const WEBGPU = process.env.WEBGPU === '1';
 const AUTO = process.env.AUTO === '1';
 const HEADED = process.env.HEADED === '1';
+// run src/wllama.test.ts on the compat build (asyncify), see vitest.setup.ts
+const COMPAT = process.env.COMPAT === '1';
 
 const chromeArgsCI = ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'];
 const chromeArgsWebGPU = [
@@ -17,6 +19,7 @@ export default defineConfig({
   define: {
     __GITHUB_CI__: JSON.stringify(!!process.env.GITHUB_ACTIONS),
     __HF_TOKEN__: JSON.stringify(process.env.HF_TOKEN ?? ''),
+    __COMPAT__: JSON.stringify(COMPAT),
   },
   test: {
     setupFiles: ['./vitest.setup.ts'],
@@ -28,7 +31,11 @@ export default defineConfig({
       '**/examples/**',
       ...(!WEBGPU ? ['**/src/*.wgpu.test.*'] : []),
     ],
-    include: WEBGPU ? ['**/src/*.wgpu.test.*'] : ['**/src/**/*.test.*'],
+    include: WEBGPU
+      ? ['**/src/*.wgpu.test.*']
+      : COMPAT
+        ? ['**/src/wllama.test.*']
+        : ['**/src/**/*.test.*'],
     browser: {
       enabled: true,
       name: process.env.BROWSER ?? 'chromium',

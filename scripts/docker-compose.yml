@@ -33,6 +33,7 @@ services:
     environment:
       - WLLAMA_TEST_BACKEND=${WLLAMA_TEST_BACKEND:-}
       - SKIP_COMPAT=${SKIP_COMPAT:-}
+      - SKIP_MAIN=${SKIP_MAIN:-}
     volumes:
       - ..:/source:Z
     entrypoint: /bin/bash
@@ -59,15 +60,20 @@ services:
           CMAKE_EXTRA_FLAGS="-DWLLAMA_TEST_BACKEND=ON";
         fi
 
-        emcmake cmake .. -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
-        emmake make wllama -j$$(nproc)
+        # build main package (skip if SKIP_MAIN=1, the compat CI job only needs compat)
+        if [ -z "${SKIP_MAIN}" ]; then
+          emcmake cmake .. -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm -DGGML_WEBGPU=ON -DGGML_WEBGPU_JSPI=ON -DEMDAWNWEBGPU_DIR="$${EMDAWNWEBGPU_DIR}" $${CMAKE_EXTRA_FLAGS}
+          emmake make wllama -j$$(nproc)
 
-        # go back to root
-        cd ..
+          # go back to root
+          cd ..
 
-        # pack output files (wasm + JS glue in one file)
-        mkdir -p src/wasm
-        node scripts/pack_wasm.js build/wllama.wasm src/wasm/wllama.wasm
+          # pack output files (wasm + JS glue in one file)
+          mkdir -p src/wasm
+          node scripts/pack_wasm.js build/wllama.wasm src/wasm/wllama.wasm
+        else
+          cd ..
+        fi
 
         # build compat package (skip if SKIP_COMPAT=1)
         if [ -z "${SKIP_COMPAT}" ]; then

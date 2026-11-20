@@ -88,6 +88,48 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN_READONLY }}
 
+  # compat build (asyncify, mem32): only src/wllama.test.ts on Chrome, runs in parallel with "test"
+  test-compat:
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          persist-credentials: false
+
+      - name: Get llama.cpp commit
+        id: llamacpp
+        run: echo "sha=$(git rev-parse HEAD:llama.cpp)" >> $GITHUB_OUTPUT
+
+      - name: Cache wasm build directory
+        uses: actions/cache@v4
+        with:
+          path: build-compat
+          key: wasm-build-compat-${{ runner.os }}-${{ steps.llamacpp.outputs.sha }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            wasm-build-compat-${{ runner.os }}-
+
+      - name: Build wasm (compat only)
+        run: SKIP_MAIN=1 ./scripts/build_wasm.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm ci --include=dev
+
+      - name: Install Playwright Dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Test (Chrome, compat)
+        run: npm run test:compat
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN_READONLY }}
+
   # TODO: add test for WebGPU on github hosted runner ; current missing ShaderF16 support
 
   lint:
