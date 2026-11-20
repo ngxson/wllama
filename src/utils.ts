@@ -290,6 +290,18 @@ export const isSupportMem64 = (): boolean => {
 };
 
 /**
+ * @returns true if browser support wasm relaxed SIMD (used by the default build, not by compat)
+ */
+export const isSupportRelaxedSIMD = (): boolean =>
+  // (func (result v128) (i8x16.relaxed_swizzle (i8x16.splat (i32.const 0)) (i8x16.splat (i32.const 0))))
+  WebAssembly.validate(
+    new Uint8Array([
+      0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 15,
+      1, 13, 0, 65, 0, 253, 15, 65, 0, 253, 15, 253, 128, 2, 11,
+    ])
+  );
+
+/**
  * Throws an error if the environment is not compatible
  */
 export const checkEnvironmentCompatible = async (): Promise<void> => {
@@ -406,4 +418,5 @@ export const cbToAsyncIter =
 export const canUseAsyncFileRead = (compat: boolean) =>
   isSupportJSPI() || compat;
 
-export const needCompat = () => !isSupportJSPI() || !isSupportMem64();
+export const needCompat = () =>
+  !isSupportJSPI() || !isSupportMem64() || !isSupportRelaxedSIMD();
