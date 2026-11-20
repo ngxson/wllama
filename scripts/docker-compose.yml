@@ -7,12 +7,16 @@ services:
         ARG EMSDK_IMAGE_TAG=none  # modify it in build_wasm.sh
         FROM emscripten/emsdk:$${EMSDK_IMAGE_TAG}
         ARG BINARYEN_PATCH=1
+        ARG WASM_OPT_CACHE=none
         RUN apt update && apt install -y git
         # upstream asyncify does not support wasm exceptions (try), rebuild wasm-opt of this emsdk with our patch
-        # only the compat build (asyncify) needs it
+        # only the compat build (asyncify) needs it; use the one in .binaryen-cache if there is one
         COPY binaryen-asyncify-try.patch /tmp/
+        COPY .binaryen-cache /tmp/binaryen-cache
         RUN set -e; \
-          if [ "$$BINARYEN_PATCH" = "1" ]; then \
+          if [ "$$BINARYEN_PATCH" = "1" ] && [ -f "/tmp/binaryen-cache/$$WASM_OPT_CACHE" ]; then \
+            cp "/tmp/binaryen-cache/$$WASM_OPT_CACHE" /emsdk/upstream/bin/wasm-opt; \
+          elif [ "$$BINARYEN_PATCH" = "1" ]; then \
             BINARYEN_COMMIT=$$(/emsdk/upstream/bin/wasm-opt --version | sed -E 's/.*-g([0-9a-f]+).*/\1/'); \
             git clone --filter=blob:none https://github.com/WebAssembly/binaryen.git /tmp/binaryen; \
             cd /tmp/binaryen; \
@@ -25,10 +29,11 @@ services:
             cd /; \
             rm -rf /tmp/binaryen; \
           fi; \
-          rm -f /tmp/binaryen-asyncify-try.patch
+          rm -rf /tmp/binaryen-asyncify-try.patch /tmp/binaryen-cache
       args:
         EMSDK_IMAGE_TAG: ${EMSDK_IMAGE_TAG}
         BINARYEN_PATCH: ${BINARYEN_PATCH}
+        WASM_OPT_CACHE: ${WASM_OPT_CACHE}
     user: "${D_UID}:${D_GID}"
     environment:
       - WLLAMA_TEST_BACKEND=${WLLAMA_TEST_BACKEND:-}
@@ -42,6 +47,11 @@ services:
       - |
         set -e
         cd /source
+
+        # keep the patched wasm-opt for the next image build (see build_wasm.sh)
+        if [ "${BINARYEN_PATCH}" = "1" ]; then
+          cp /emsdk/upstream/bin/wasm-opt "scripts/.binaryen-cache/${WASM_OPT_CACHE}"
+        fi
 
         mkdir -p build
         cd build

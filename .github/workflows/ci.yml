@@ -112,6 +112,13 @@ jobs:
           restore-keys: |
             wasm-build-compat-${{ runner.os }}-
 
+      # the patched wasm-opt takes ~7 min to build (see scripts/build_wasm.sh)
+      - name: Cache patched wasm-opt
+        uses: actions/cache@v4
+        with:
+          path: scripts/.binaryen-cache
+          key: binaryen-${{ runner.os }}-${{ hashFiles('scripts/binaryen-asyncify-try.patch', 'scripts/build_wasm.sh') }}
+
       - name: Build wasm (compat only)
         run: SKIP_MAIN=1 ./scripts/build_wasm.sh
 
