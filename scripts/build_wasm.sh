@@ -17,8 +17,15 @@ if [[ $(uname -m) == "arm64" ]]; then
   export EMSDK_IMAGE_TAG="${EMSDK_IMAGE_TAG}-arm64"
 fi
 
+# only the compat build needs the patched binaryen, skip it (slow to build) with SKIP_COMPAT
 # a new patch gives a new image tag, so the image is rebuilt
-export BINARYEN_PATCH_HASH="$(shasum binaryen-asyncify-try.patch | cut -c1-8)"
+if [ -z "${SKIP_COMPAT}" ]; then
+  export BINARYEN_PATCH=1
+  export IMAGE_SUFFIX="-$(shasum binaryen-asyncify-try.patch | cut -c1-8)"
+else
+  export BINARYEN_PATCH=0
+  export IMAGE_SUFFIX=""
+fi
 
 # one compose project per checkout, so parallel builds in different worktrees do not share a container
 REPO_ROOT="$(cd "$CURRENT_PATH/.." && pwd)"

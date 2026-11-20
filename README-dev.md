@@ -192,7 +192,7 @@ The patch adds `try` support to asyncify:
 - A rewind never throws, so it never goes into a `catch` body. If code tries to suspend inside a `catch` body, it traps
 - Only the legacy exception format is supported, not exnref (`try_table`)
 
-The docker image builds `wasm-opt` with the patch, at the binaryen commit of the emsdk version, then puts it in place of the emsdk `wasm-opt` (see `scripts/docker-compose.yml`). The image tag has the hash of the patch, so a new patch makes a new image. The patch does not change the JSPI build.
+The docker image builds `wasm-opt` with the patch, at the binaryen commit of the emsdk version, then puts it in place of the emsdk `wasm-opt` (see `scripts/docker-compose.yml`). The image tag has the hash of the patch, so a new patch makes a new image. The patch does not change the JSPI build, so with `SKIP_COMPAT=1` (CI and the upstream sync) the image does not build binaryen, which saves several minutes.
 
 ## Debugging backend ops
 
