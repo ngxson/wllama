@@ -260,6 +260,23 @@ test.sequential('throws if the wasm file is not valid', async () => {
   expect(wllama.isModelLoaded()).toBe(false);
 });
 
+test.sequential('throws the native error when an action fails', async () => {
+  const wllama = createWllama();
+  await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 1024 });
+
+  // a message of the wrong type makes the C++ action throw
+  const err: unknown = await (wllama as any).proxy
+    .wllamaAction('tts', { _name: 'cncl_req', req_id: 1 })
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WllamaError);
+  expect((err as WllamaError).message).toMatch(/Prototype ID mismatch/);
+
+  // the model still works after the error
+  const res = await wllama.createCompletion({ prompt: 'Once', max_tokens: 2 });
+  expect(res.choices[0].text.length).toBeGreaterThan(0);
+  await wllama.exit();
+});
+
 test.sequential('generates completion', async () => {
   const wllama = createWllama();
 

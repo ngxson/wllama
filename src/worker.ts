@@ -285,6 +285,9 @@ export class ProxyToWorker {
       callbackId: this.taskId++,
     });
     const parsedResult = glueDeserialize(result);
+    if (parsedResult._name === 'erro_evt') {
+      throw new WllamaError(parsedResult.message, 'inference_error');
+    }
     return parsedResult as T;
   }
 

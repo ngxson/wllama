@@ -396,6 +396,13 @@ const runAction = async (data) => {
     );
     inputBuffer.set(argEncodedMsg, 0);
     const outputPtr = await wllamaAction(argAction, inputPtr);
+    if (!Number(outputPtr)) {
+      msg({
+        callbackId,
+        err: `Action "${argAction}" failed, see the native log`,
+      });
+      return;
+    }
     // length of output buffer is written at the first 4 bytes of input buffer
     const outputLen = new Uint32Array(
       getHeapU8().buffer,
