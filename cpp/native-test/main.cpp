@@ -1,5 +1,5 @@
 // Native harness for wllama's C++ glue (wllama-context.h), driven like the JS worker: single thread, one run_loop per get_result poll, per-request readers.
-// See README.md in this directory for why and how to use this.
+// See "Debugging the C++ glue natively" in README-dev.md for why and how to use this.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -33,6 +33,8 @@ void common_memory_breakdown_print(const llama_context *) {}
 server_response_reader::batch_response server_response_reader::wait_for_all(const std::function<bool()> &) {
   return {};
 }
+// only used by the HTTP routes of server-context.cpp, the wasm link drops them (the macOS linker does not)
+void server_queue::release_inflight() {}
 
 static wllama_context app;
 
