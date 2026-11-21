@@ -17,6 +17,7 @@
 #include "llama.h"
 #include "wllama-context.h"
 #include "wllama.h"
+#include "ggml-rpc.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
@@ -151,6 +152,14 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
       return nullptr;
     }
   }
+}
+
+// rpc worker: serve the CPU backend to the main wasm in another worker, never returns
+extern "C" void wllama_rpc_serve(int port, int n_threads)
+{
+  ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+  std::string endpoint = "127.0.0.1:" + std::to_string(port);
+  ggml_backend_rpc_start_server(endpoint.c_str(), nullptr, n_threads, 1, &dev);
 }
 
 extern "C" const char *wllama_exit()

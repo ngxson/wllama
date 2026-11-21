@@ -18,6 +18,7 @@
 #include "log.h"
 #include "download.h"
 #include "wllama.h"
+#include "ggml-rpc.h"
 
 #include "server-context.h"
 #include "server-decision.h"
@@ -987,6 +988,15 @@ struct wllama_context
 
     // lazy read needs mmap; also its 4GiB threshold is a size_t, which is 0 on wasm32
     params.lazy_mode = LLAMA_LAZY_MODE_OFF;
+
+    // rpc workers hold a part of the model in their own memory, same as --rpc in llama.cpp
+    if (const char *servers = getenv("WLLAMA_RPC_SERVERS"))
+    {
+      for (const auto &endpoint : string_split<std::string>(servers, ','))
+      {
+        ggml_backend_register(ggml_backend_rpc_add_server(endpoint.c_str()));
+      }
+    }
 
     // load model
     llama_backend_init();

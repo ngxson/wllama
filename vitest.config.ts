@@ -6,6 +6,8 @@ const AUTO = process.env.AUTO === '1';
 const HEADED = process.env.HEADED === '1';
 // run src/testing/wllama.test.ts on the compat build (asyncify), see vitest.setup.ts
 const COMPAT = process.env.COMPAT === '1';
+// run src/testing/big-model.test.ts only (6GB model made on the fly, needs WebGPU and RAM)
+const BIG_MODEL = process.env.BIG_MODEL === '1';
 
 const chromeArgsCI = ['disable-gpu', 'no-sandbox', 'disable-setuid-sandbox'];
 const chromeArgsWebGPU = [
@@ -30,12 +32,15 @@ export default defineConfig({
       '**/docs/**',
       '**/examples/**',
       ...(!WEBGPU ? ['**/src/testing/*.wgpu.test.*'] : []),
+      ...(!BIG_MODEL ? ['**/src/testing/big-model.test.*'] : []),
     ],
-    include: WEBGPU
-      ? ['**/src/testing/*.wgpu.test.*']
-      : COMPAT
-        ? ['**/src/testing/wllama.test.*']
-        : ['**/src/testing/*.test.*'],
+    include: BIG_MODEL
+      ? ['**/src/testing/big-model.test.*']
+      : WEBGPU
+        ? ['**/src/testing/*.wgpu.test.*']
+        : COMPAT
+          ? ['**/src/testing/wllama.test.*', '**/src/testing/rpc.test.*']
+          : ['**/src/testing/*.test.*'],
     browser: {
       enabled: true,
       name: process.env.BROWSER ?? 'chromium',
@@ -43,31 +48,32 @@ export default defineConfig({
       // safaridriver has no headless mode
       headless: !SAFARI && !HEADED,
       // https://playwright.dev
-      providerOptions: WEBGPU
-        ? {
-            launch: {
-              // full chromium in new headless mode, the default headless shell has no WebGPU
-              channel: 'chromium',
-              args: chromeArgsWebGPU.map((a) => `--${a}`),
-            },
-          }
-        : process.env.GITHUB_ACTIONS
+      providerOptions:
+        WEBGPU || BIG_MODEL
           ? {
-              capabilities: {
-                'goog:chromeOptions': {
-                  args: chromeArgsCI,
-                },
+              launch: {
+                // full chromium in new headless mode, the default headless shell has no WebGPU
+                channel: 'chromium',
+                args: chromeArgsWebGPU.map((a) => `--${a}`),
               },
             }
-          : SAFARI
+          : process.env.GITHUB_ACTIONS
             ? {
                 capabilities: {
-                  alwaysMatch: { browserName: 'safari' },
-                  firstMatch: [{}],
-                  browserName: 'safari',
+                  'goog:chromeOptions': {
+                    args: chromeArgsCI,
+                  },
                 },
               }
-            : {},
+            : SAFARI
+              ? {
+                  capabilities: {
+                    alwaysMatch: { browserName: 'safari' },
+                    firstMatch: [{}],
+                    browserName: 'safari',
+                  },
+                }
+              : {},
     },
   },
   server: {

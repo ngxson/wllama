@@ -13,6 +13,7 @@ const KEY_ALIGNMENT = 'general.alignment';
 const KEY_SPLIT_NO = 'split.no';
 const KEY_SPLIT_COUNT = 'split.count';
 const KEY_SPLIT_TENSORS_COUNT = 'split.tensors.count';
+const KEY_TOKENS = 'tokenizer.ggml.tokens';
 
 enum GgufType {
   UINT8 = 0,
@@ -50,6 +51,7 @@ interface GgufKv {
 }
 
 interface GgufTensorInfo {
+  name: string;
   raw: Uint8Array; // name, n_dims, dims and type, without the offset
   offset: number; // relative to the data section
 }
@@ -57,6 +59,7 @@ interface GgufTensorInfo {
 interface GgufHeader {
   version: number;
   splitCount: number; // 0 if the key is missing
+  nVocab: number; // 0 if the key is missing
   kvs: GgufKv[];
   tensors: GgufTensorInfo[];
   alignment: number;
@@ -141,6 +144,7 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
   const kvs: GgufKv[] = [];
   let alignment = 32;
   let splitCount = 0;
+  let nVocab = 0;
   for (let i = 0; i < nKv; i++) {
     const start = r.pos;
     const key = r.str();
@@ -149,6 +153,12 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
       alignment = r.u32();
     } else if (key === KEY_SPLIT_COUNT && type === GgufType.UINT16) {
       splitCount = r.u16();
+    } else if (key === KEY_TOKENS && type === GgufType.ARRAY) {
+      const pos = r.pos;
+      r.u32(); // item type
+      nVocab = r.u64();
+      r.pos = pos;
+      r.skipValue(type);
     } else {
       r.skipValue(type);
     }
@@ -157,14 +167,14 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
   const tensors: GgufTensorInfo[] = [];
   for (let i = 0; i < nTensors; i++) {
     const start = r.pos;
-    r.str(); // name
+    const name = r.str();
     const nDims = r.u32();
     r.skip(nDims * 8 + 4); // dims and type
     const raw = r.slice(start);
-    tensors.push({ raw, offset: r.u64() });
+    tensors.push({ name, raw, offset: r.u64() });
   }
   const dataStart = Math.ceil(r.pos / alignment) * alignment;
-  return { version, splitCount, kvs, tensors, alignment, dataStart };
+  return { version, splitCount, nVocab, kvs, tensors, alignment, dataStart };
 };
 
 const readHeader = async (blob: Blob): Promise<GgufHeader> => {
@@ -294,4 +304,58 @@ export const splitBigGguf = async (blob: Blob): Promise<Blob[]> => {
       `${baseName}-${pad(k + 1)}-of-${pad(groups.length)}.gguf`
     );
   });
+};
+
+/**
+ * Size in bytes of each tensor of a GGUF file (with its padding), and the vocab size (0 if the file has no tokenizer)
+ */
+export const readGgufTensorSizes = async (
+  blob: Blob
+): Promise<{ nVocab: number; tensors: { name: string; size: number }[] }> => {
+  const { nVocab, tensors, dataStart } = await readHeader(blob);
+  const dataSize = blob.size - dataStart;
+  return {
+    nVocab,
+    tensors: tensors.map((t, i) => ({
+      name: t.name,
+      size:
+        (i + 1 < tensors.length ? tensors[i + 1].offset : dataSize) - t.offset,
+    })),
+  };
+};
+
+// a wasm instance has 4GB of memory, the budgets leave room for the KV cache and the compute buffers
+export const RPC_BUDGET = {
+  single: 3.5 * 1024 * 1024 * 1024,
+  worker: 2.5 * 1024 * 1024 * 1024,
+};
+const MAX_RPC_WORKERS = 16; // GGML_RPC_MAX_SERVERS
+
+/**
+ * Number of rpc workers needed so that each wasm instance fits in its memory, 0 if one instance is enough.
+ * The main instance keeps the input embeddings, the rpc workers get the layers and the output.
+ * token_embd goes with the layers, same as with token_embd_on_gpu (the default).
+ */
+export const countRpcWorkers = (
+  tensors: { name: string; size: number }[],
+  nVocab: number,
+  nUbatch: number
+): number => {
+  const isInput = (name: string) =>
+    /^(per_layer_token_embd|position_embd|token_types)\./.test(name);
+  let input = 0;
+  let rest = 0;
+  for (const t of tensors) {
+    if (isInput(t.name)) input += t.size;
+    else rest += t.size;
+  }
+  // rough size of the compute buffer of the output layer, it grows with the vocab
+  const output = nVocab * nUbatch * 4 * 3;
+  if (input + rest + output < RPC_BUDGET.single) return 0;
+  // without output.weight, llama.cpp copies token_embd to the device of the output layer
+  if (!tensors.some((t) => t.name === 'output.weight')) {
+    rest += tensors.find((t) => t.name === 'token_embd.weight')?.size ?? 0;
+  }
+  const n = Math.ceil((rest + output) / RPC_BUDGET.worker);
+  return Math.min(n, MAX_RPC_WORKERS);
 };

@@ -1,5 +1,10 @@
 import { test, expect, afterEach } from 'vitest';
-import { GGUF_SPLIT_CONFIG, splitBigGguf } from '../gguf-split';
+import {
+  GGUF_SPLIT_CONFIG,
+  countRpcWorkers,
+  readGgufTensorSizes,
+  splitBigGguf,
+} from '../gguf-split';
 import { Wllama } from '../wllama';
 
 const TINY_MODEL =
@@ -104,4 +109,36 @@ test('a failed split does not break the next load', async () => {
   });
   expect(wllama.isModelLoaded()).toBe(true);
   await wllama.exit();
+});
+
+test('reads the tensor sizes of a GGUF', async () => {
+  const file = await getTinyModel();
+  const info = await readGgufTensorSizes(file);
+  expect(info.nVocab).toBe(32000);
+  const total = info.tensors.reduce((acc, t) => acc + t.size, 0);
+  expect(total).toBeGreaterThan(file.size * 0.9);
+  expect(total).toBeLessThan(file.size);
+  expect(countRpcWorkers(info.tensors, info.nVocab, 512)).toBe(0);
+});
+
+test('counts the rpc workers from the tensor sizes', () => {
+  // small model: one wasm instance is enough
+  const small = [
+    { name: 'token_embd.weight', size: 0.1e9 },
+    { name: 'blk.0.ffn_up.weight', size: 1e9 },
+  ];
+  expect(countRpcWorkers(small, 32000, 512)).toBe(0);
+  // like gemma-4-E4B: per_layer_token_embd stays in the main instance, the rest and the tied output need 2 workers
+  const gemma = [
+    { name: 'per_layer_token_embd.weight', size: 2.31e9 },
+    { name: 'token_embd.weight', size: 0.55e9 },
+    { name: 'blk.0.ffn_up.weight', size: 2.28e9 },
+  ];
+  expect(countRpcWorkers(gemma, 262144, 512)).toBe(2);
+  // like Qwen3.5-4B BF16
+  const qwen = [
+    { name: 'token_embd.weight', size: 1.27e9 },
+    { name: 'blk.0.ffn_up.weight', size: 7.14e9 },
+  ];
+  expect(countRpcWorkers(qwen, 248320, 512)).toBe(5);
 });

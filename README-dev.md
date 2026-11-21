@@ -117,6 +117,16 @@ These steps are performed:
 
 The main downside of this approach is that on WebGPU, even though some tensors can be offloaded to the GPU, we still need to allocate the full model in main memory. For example, a 4GB model will still occupy 4GB of main memory, even if half of the layers (~2GB) are offloaded to the GPU.
 
+## RPC workers
+
+Both builds use 32-bit memory, so one wasm instance has 4GB at most. Without WebGPU, a bigger model is split across several wasm instances: the main one, plus `rpc_workers` workers that each run the same wasm as a ggml-rpc server (`wllama_rpc_serve`). llama.cpp sees each worker as an RPC device (same as `--rpc`) and puts layers on it.
+
+- By default, `pickRpcWorkers()` in `src/wllama.ts` uses workers only when WebGPU is not used and the model does not fit in one instance. `countRpcWorkers()` in `src/gguf-split.ts` estimates the number from the GGUF header: the main instance keeps the input embeddings, the workers get the layers and the output. `token_embd` goes to the first worker, as `keep_tok_embd_on_gpu()` picks the first GPU-type device, and rpc devices are GPU-type. Set `rpc_workers` to force a number, or 0 to disable.
+- `cpp/wllama-rpc-transport.cpp` replaces `transport.cpp` of ggml-rpc (see `CMakeLists.txt`). The bytes go through 2 SharedArrayBuffer rings per worker, and the reader waits with `Atomics.wait`. The JS side is `src/workers-code/rpc-transport.js`.
+- On the main wasm, ggml-rpc does its I/O in its own thread (one per worker), so the transport also runs in the pthread workers: `worker.ts` adds it to their script, and the channels are posted to each pthread worker before emscripten starts it. The pthread pool gets one more thread per worker.
+- Multi-thread is required.
+- ggml-rpc has 2 bugs on 32-bit hosts (#340), the transport works around them on the wire: message sizes are widened from `size_t` to `uint64_t`, and the high half of the node ids of `GRAPH_COMPUTE` is cleared.
+
 ## Packing the wasm
 
 After each build, `scripts/pack_wasm.js` packs the emscripten output into a single `wllama.wasm`. It adds 2 custom sections:
@@ -209,6 +219,8 @@ The docker image builds `wasm-opt` with the patch, at the binaryen commit of the
 The patched `wasm-opt` is also copied to `scripts/.binaryen-cache` (git-ignored), named by the image tag. The next image build uses it instead of building binaryen again. CI caches this folder.
 
 To test the compat build: build it (without `SKIP_COMPAT`), then `npm run test:compat`. It runs `src/testing/wllama.test.ts` on `compat/wasm/wllama.wasm`, with JSPI hidden on the page. Use `SKIP_MAIN=1` to build only compat. CI runs it in the `test-compat` job, in parallel with the main tests.
+
+To test a model bigger than 4GB: `npm run test:big`. It loads a 6GB model made on the fly (`src/testing/fake-gguf.ts`, no download) as CPU only (rpc workers), GPU only, and about 5GB on CPU with the rest on GPU, which is expected to fail for now. It needs WebGPU and about 12GB of free RAM, so CI does not run it.
 
 ## Debugging backend ops
 

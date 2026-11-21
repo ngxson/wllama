@@ -1,4 +1,9 @@
-import { ProxyToWorker, type WllamaWorkerResources } from './worker';
+import { countRpcWorkers, readGgufTensorSizes } from './gguf-split';
+import {
+  ProxyToWorker,
+  type RpcInitOptions,
+  type WllamaWorkerResources,
+} from './worker';
 import {
   absoluteUrl,
   canUseAsyncFileRead,
@@ -334,6 +339,7 @@ export class Wllama {
   private compat: WllamaCompat | null = null;
 
   private proxy: ProxyToWorker = null as any;
+  private rpcWorkers: ProxyToWorker[] = [];
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
@@ -665,6 +671,15 @@ export class Wllama {
         'WebGPU on Firefox is slower than on other browsers, due to a Firefox bug (https://bugzilla.mozilla.org/show_bug.cgi?id=1870699). wllama works around most of it, see https://github.com/ngxson/wllama/issues/296'
       );
     }
+    const nRpcWorkers = await this.pickRpcWorkers(
+      params,
+      modelFiles.llm,
+      workerResources
+    );
+    if (nRpcWorkers > 0) {
+      // the layers go to the rpc workers, not to WebGPU
+      workerResources.noWebGPU = true;
+    }
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
@@ -676,7 +691,8 @@ export class Wllama {
       logLevel = 9999 as any;
     }
 
-    await this.proxy.moduleInit(modelFiles.all);
+    const rpc = await this.startRpcWorkers(nRpcWorkers, workerResources);
+    await this.proxy.moduleInit(modelFiles.all, rpc);
 
     // run it
     this.logger().debug('Calling wllamaStart...');
@@ -696,7 +712,8 @@ export class Wllama {
       // if async read is not supported, use mmap; refer to README-dev.md for more details
       use_mmap: !canUseAsyncFileRead(workerResources.compat),
       use_mlock: false,
-      n_gpu_layers: params.n_gpu_layers ?? 99999,
+      // rpc devices only get layers when they are offloaded
+      n_gpu_layers: nRpcWorkers > 0 ? 99999 : (params.n_gpu_layers ?? 99999),
       token_embd_on_gpu: params.token_embd_on_gpu ?? true,
       n_ctx: params.n_ctx ?? 1024,
       n_threads: this.useMultiThread ? nbThreads : 1,
@@ -1274,6 +1291,83 @@ export class Wllama {
   async exit(): Promise<void> {
     await this.proxy?.wllamaExit();
     this.proxy = null as any;
+    // rpc workers are blocked in the wasm, terminate them
+    for (const w of this.rpcWorkers) await w.wllamaExit();
+    this.rpcWorkers = [];
+  }
+
+  // by default, rpc workers are used only when the model does not fit in one wasm instance and WebGPU does not take the layers
+  private async pickRpcWorkers(
+    params: LoadModelParams,
+    files: { blob: Blob }[],
+    resources: WllamaWorkerResources
+  ): Promise<number> {
+    if (params.rpc_workers !== undefined) {
+      if (params.rpc_workers > 0 && !this.useMultiThread) {
+        throw new WllamaError(
+          'rpc_workers needs multi-thread, see the Cross-Origin headers in README',
+          'load_error'
+        );
+      }
+      return params.rpc_workers;
+    }
+    // the main wasm does the rpc I/O in its own threads
+    if (!this.useMultiThread) return 0;
+    if (
+      !resources.noWebGPU &&
+      (await (navigator as any).gpu?.requestAdapter?.().catch(() => null))
+    ) {
+      return 0;
+    }
+    let nVocab = 0;
+    const tensors: { name: string; size: number }[] = [];
+    try {
+      for (const f of files) {
+        const info = await readGgufTensorSizes(f.blob);
+        nVocab = Math.max(nVocab, info.nVocab);
+        tensors.push(...info.tensors);
+      }
+    } catch {
+      return 0; // not a valid GGUF, the native load reports the error
+    }
+    const n = countRpcWorkers(tensors, nVocab, params.n_ubatch ?? 512);
+    if (n > 0) {
+      this.logger().debug(
+        `The model does not fit in one wasm instance, using ${n} rpc workers`
+      );
+    }
+    return n;
+  }
+
+  // spawn wasm instances that each hold a part of the model in their own 4GB memory
+  private async startRpcWorkers(
+    n: number,
+    resources: WllamaWorkerResources
+  ): Promise<RpcInitOptions | undefined> {
+    if (n <= 0) return undefined;
+    const RING_BYTES = 16 * 1024 * 1024; // power of 2
+    const HEADER_BYTES = 64; // same as RPC_HEADER_BYTES in rpc-transport.js
+    const nThreads = this.useMultiThread ? this.nbThreads : 0;
+    const channels: RpcInitOptions['channels'] = [];
+    for (let i = 0; i < n; i++) {
+      const port = 5001 + i;
+      const sab = new SharedArrayBuffer(HEADER_BYTES + 2 * RING_BYTES);
+      const server = new ProxyToWorker(
+        { ...resources, noWebGPU: true },
+        nThreads,
+        this.config.suppressNativeLog ?? false,
+        this.logger()
+      );
+      this.rpcWorkers.push(server);
+      await server.moduleInit([], {
+        env: {},
+        channels: [{ port, sab, role: 'server' }],
+      });
+      await server.rpcServe(port, Math.max(nThreads, 1));
+      channels.push({ port, sab, role: 'client' });
+    }
+    const servers = channels.map((c) => `127.0.0.1:${c.port}`).join(',');
+    return { env: { WLLAMA_RPC_SERVERS: servers }, channels };
   }
 
   /**
