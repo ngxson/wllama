@@ -2,6 +2,11 @@ import { createWorker, isSafariMobile } from '../utils';
 import { OPFS_UTILS_WORKER_CODE } from '../workers-code/generated';
 import type { StorageBackend, StorageFileHint } from './index';
 
+// the OPFS path of each File read from the cache: the worker opens it with a sync access handle, see "Async file read" in README-dev.md
+// (a path, not the FileSystemFileHandle: Safari cannot send a handle to a worker)
+const filePaths = new WeakMap<Blob, string[]>();
+export const getOPFSPath = (blob: Blob) => filePaths.get(blob);
+
 export class OPFSBackend implements StorageBackend {
   isSupported(): boolean {
     return (
@@ -15,7 +20,9 @@ export class OPFSBackend implements StorageBackend {
     try {
       const cacheDir = await getCacheDir();
       const fileHandle = await cacheDir.getFileHandle(key);
-      return await fileHandle.getFile();
+      const file = await fileHandle.getFile();
+      filePaths.set(file, [CACHE_DIR_NAME, key]);
+      return file;
     } catch (e) {
       // NotFoundError or similar
       return null;
@@ -79,9 +86,11 @@ export class OPFSBackend implements StorageBackend {
   }
 }
 
+const CACHE_DIR_NAME = 'cache';
+
 async function getCacheDir(): Promise<FileSystemDirectoryHandle> {
   const opfsRoot = await navigator.storage.getDirectory();
-  return opfsRoot.getDirectoryHandle('cache', { create: true });
+  return opfsRoot.getDirectoryHandle(CACHE_DIR_NAME, { create: true });
 }
 
 async function openWritable(

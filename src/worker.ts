@@ -25,6 +25,7 @@ import {
   RPC_TRANSPORT_WORKER_CODE,
 } from './workers-code/generated';
 import { WllamaError, WllamaRuntimeError } from './wllama';
+import { getOPFSPath } from './storage/opfs';
 
 interface Logger {
   debug: typeof console.debug;
@@ -262,7 +263,8 @@ export class ProxyToWorker {
       const id = await this.fileAlloc(
         file.name,
         file.blob.size,
-        needAllocBuffer
+        needAllocBuffer,
+        this.useAsyncFile ? getOPFSPath(file.blob) : undefined
       );
       nativeFiles.push({ id, ...file });
       if (this.useAsyncFile) {
@@ -357,11 +359,12 @@ export class ProxyToWorker {
   private async fileAlloc(
     fileName: string,
     size: number,
-    allocBuffer: boolean
+    allocBuffer: boolean,
+    opfsPath?: string[]
   ): Promise<number> {
     const result = await this.pushTask({
       verb: 'fs.alloc',
-      args: [fileName, size, allocBuffer],
+      args: [fileName, size, allocBuffer, opfsPath],
       callbackId: this.taskId++,
     });
     return result.fileId;

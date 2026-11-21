@@ -39,7 +39,11 @@ export default defineConfig({
       : WEBGPU
         ? ['**/src/testing/*.wgpu.test.*']
         : COMPAT
-          ? ['**/src/testing/wllama.test.*', '**/src/testing/rpc.test.*']
+          ? [
+              '**/src/testing/wllama.test.*',
+              '**/src/testing/rpc.test.*',
+              '**/src/testing/opfs-read.test.*',
+            ]
           : ['**/src/testing/*.test.*'],
     browser: {
       enabled: true,
