@@ -53,6 +53,8 @@ This logic lives in `wllama.ts` (`isSupportMultiThread()` from `utils.ts` perfor
 
 **The maximum number of threads is fixed by the number of threads of the ggml threadpool (`n_threads`). Do NOT increase `pthreadPoolSize` above it, in any case.** If some code needs more threads than that, a new worker cannot start while the wasm thread waits, so it hangs. Fix that code instead: make it use the ggml threadpool (see `shared_threadpool` in `cpp/wllama-patch.cpp`) or no extra threads. Growing the pool (for example `+ 4` or `* 2`) is not an accepted fix.
 
+The only exception is the rpc workers (see "RPC workers" below): ggml-rpc does the I/O of each rpc server in its own thread, which cannot use the ggml threadpool, so the pool of the main wasm has `n_threads` plus one thread per rpc worker. This number is fixed when the module starts, it is not a workaround for unexpected threads.
+
 ### Realtime audio
 
 The realtime session of llama-server needs a thread and blocking reads, but wllama has one thread and polls. So `wllama-context.h` includes `server-realtime.cpp` directly (it is not in the CMake source list) and calls the `handle()` and `on_result()` steps of `realtime_conversation` itself, without `run()`:

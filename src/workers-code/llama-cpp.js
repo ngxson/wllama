@@ -469,7 +469,7 @@ onmessage = async (e) => {
       Module = getWModuleConfig(argMainScriptBlob, argWasmModule);
       if (argRpc) {
         rpcSetChannels(argRpc.channels);
-        // ggml-rpc does its I/O in a thread per server: send the channels to the pthread workers, and add one thread per server
+        // ggml-rpc does its I/O in a thread per server: send the channels to the pthread workers, and add one thread per server (the exception to the pool size rule, see README-dev.md)
         const BaseWorker = self.Worker;
         self.Worker = class extends BaseWorker {
           constructor(...a) {
