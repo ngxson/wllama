@@ -53,7 +53,13 @@ const id = (() => {
     v = `${kind}-${Math.random().toString(36).slice(2, 6)}`;
     try { localStorage.setItem('wllamaDeviceId', v); } catch {}
   }
-  return v;
+  // several tabs of the same browser are different devices for the server
+  let tab = null;
+  try {
+    tab = sessionStorage.getItem('wllamaTab');
+    if (!tab) sessionStorage.setItem('wllamaTab', (tab = Math.random().toString(36).slice(2, 5)));
+  } catch {}
+  return tab ? `${v}-${tab}` : v;
 })();
 $('name').textContent = id;
 $('iso').textContent = self.crossOriginIsolated ? 'yes' : 'no (no multi-thread)';
@@ -166,8 +172,11 @@ $('start').onclick = async () => {
   await acquireWakeLock();
   if (!wakeLock || wakeLock.released) await startVideo();
 };
+const postState = () =>
+  fetch('/api/state', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, visible: document.visibilityState === 'visible' }) }).catch(() => {});
 document.addEventListener('visibilitychange', () => {
   send('info', `page ${document.visibilityState}`);
+  postState();
   if (document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) acquireWakeLock();
 });
 setInterval(() => {
@@ -244,6 +253,7 @@ const connect = () => {
     $('conn').textContent = '● connected';
     $('conn').className = 'ok';
     fetch('/api/hello', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, info: await deviceInfo() }) });
+    postState();
   };
   es.onerror = () => { $('conn').textContent = '● offline'; $('conn').className = 'bad'; };
   es.onmessage = async (e) => {

@@ -35,22 +35,28 @@ const command = positional[0] || 'serve';
 // CLI (agent side): talks to the running server on localhost
 //////////////////////////////////////////////////////////////
 
-const api = async (method, url, body) => {
-  const res = await fetch(`http://127.0.0.1:${PORT}${url}`, {
-    method,
-    headers: body ? { 'content-type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  }).catch((e) => {
-    console.error(`cannot reach the dev server on port ${PORT} (${e.cause?.code || e.message}), start it with: npm run dev:device`);
-    process.exit(2);
+// node:http, not fetch: fetch gives up waiting for the response headers after 300s
+const api = (method, url, body) =>
+  new Promise((resolve) => {
+    const data = body ? JSON.stringify(body) : undefined;
+    const req = http.request({ host: '127.0.0.1', port: PORT, path: url, method, headers: data ? { 'content-type': 'application/json' } : {} }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (res.statusCode >= 400 || json.ok === false) {
+          console.log(JSON.stringify(json, null, 2));
+          process.exit(1);
+        }
+        resolve(json);
+      });
+    });
+    req.on('error', (e) => {
+      console.error(`cannot reach the dev server on port ${PORT} (${e.code || e.message}), start it with: npm run dev:device`);
+      process.exit(2);
+    });
+    req.end(data);
   });
-  const json = await res.json();
-  if (!res.ok || json.ok === false) {
-    console.log(JSON.stringify(json, null, 2));
-    process.exit(1);
-  }
-  return json;
-};
 
 const sendCmd = async (cmd) => {
   const timeout = Number(opt('--timeout', 120)) * 1000;
@@ -147,8 +153,8 @@ const sendEvent = (dev, msg) => dev.res.write(`data: ${JSON.stringify(msg)}\n\n`
 
 const pickDevice = (id) => {
   if (id) return devices.get(id);
-  // the device that connected last
-  return [...devices.values()].sort((a, b) => b.connectedAt - a.connectedAt)[0];
+  // a visible page first (the browser throttles hidden tabs), then the device that connected last
+  return [...devices.values()].sort((a, b) => (b.visible ? 1 : 0) - (a.visible ? 1 : 0) || b.connectedAt - a.connectedAt)[0];
 };
 
 const json = (res, code, body) => {
@@ -259,6 +265,12 @@ const handler = async (req, res) => {
       addLog(id, 'server', `info: ${JSON.stringify(info)}`);
       return json(res, 200, { ok: true });
     }
+    if (p === '/api/state' && req.method === 'POST') {
+      const { id, visible } = await readBody(req);
+      const dev = devices.get(id);
+      if (dev) dev.visible = visible;
+      return json(res, 200, { ok: true });
+    }
     if (p === '/api/log' && req.method === 'POST') {
       const { id, entries } = await readBody(req);
       for (const e of entries || []) addLog(id, e.level, e.text);
@@ -283,7 +295,7 @@ const handler = async (req, res) => {
       if (p === '/api/status') {
         return json(res, 200, {
           ok: true,
-          devices: [...devices.values()].map((d) => ({ id: d.id, info: d.info, connectedAt: new Date(d.connectedAt).toISOString() })),
+          devices: [...devices.values()].map((d) => ({ id: d.id, visible: !!d.visible, info: d.info, connectedAt: new Date(d.connectedAt).toISOString() })),
         });
       }
       if (p === '/api/logs') {
