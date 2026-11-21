@@ -29,7 +29,7 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 - 🔥 Tool calling support
 - Can run inference directly on browser (using [WebAssembly SIMD](https://emscripten.org/docs/porting/simd.html)), no backend or GPU is needed!
 - No runtime dependency (see [package.json](./package.json))
-- Ability to split the model into smaller files and load them in parallel (same as `split` and `cat`)
+- Load a GGUF file as-is, even bigger than 4GB, no need to split it (models already split with `llama-gguf-split` work too)
 - Auto switch between single-thread and multi-thread build based on browser support
 - Inference is done inside a worker, does not block UI render
 - Pre-built npm package [@wllama/wllama](https://www.npmjs.com/package/@wllama/wllama)
@@ -149,7 +149,7 @@ await wllama.loadModel(files, {
 
 ### Prepare your model
 
-- It is recommended to split the model into **chunks of maximum 512MB**. This will result in slightly faster download speed (because multiple splits can be downloaded in parallel), and also prevent some out-of-memory issues. **See the "Split model" section below for more details.**
+- It is recommended to use the GGUF file **as-is**, there is no need to split it anymore. A file of 4GB or more is split in memory by wllama, and a model that does not fit in one wasm instance is spread across workers (see Limitations above). **See the "Split model" section below if your model is already split.**
 - It is recommended to use quantized Q4, Q5 or Q6 for balance among performance, file size and quality. Using IQ (with imatrix) is **not** recommended, may result in slow inference and low quality.
 
 ### Simple usage with ES6 module
@@ -200,19 +200,9 @@ const wllama = new Wllama(WasmFromCDN);
 
 ### Split model
 
-Cases where we want to split the model:
-- Even with a small model, splitting into chunks allows the browser to download multiple chunks in parallel, thus making the download process a bit faster.
+Splitting the model is not needed anymore: wllama loads a single GGUF file, even bigger than 4GB, so we recommend using the file as-is. Models that are already split with `llama-gguf-split` (files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`, and so on) are still supported.
 
-We use `llama-gguf-split` to split a big gguf file into smaller files. You can download the pre-built binary via [llama.cpp release page](https://github.com/ggerganov/llama.cpp/releases):
-
-```bash
-# Split the model into chunks of 512 Megabytes
-./llama-gguf-split --split-max-size 512M ./my_model.gguf ./my_model
-```
-
-This will output files ending with `-00001-of-00003.gguf`, `-00002-of-00003.gguf`, and so on.
-
-You can then pass to `loadModelFromUrl` or `loadModelFromHF` the URL of the first file and it will automatically load all the chunks:
+To load a split model, pass to `loadModelFromUrl` or `loadModelFromHF` the URL of the first file and it will automatically load all the chunks:
 
 ```js
 const wllama = new Wllama(CONFIG_PATHS, {
