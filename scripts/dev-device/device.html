@@ -148,6 +148,8 @@ const acquireWakeLock = async () => {
     });
   } catch (e) {
     send('warn', `wake lock: ${e.message}${self.isSecureContext ? '' : ' (not a secure context, use adb reverse or https)'}`);
+    // Safari only gives it after a tap on the page; a muted video can play without one
+    if (!videoAwake) startVideo();
   }
   showAwake();
 };
@@ -180,7 +182,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) acquireWakeLock();
 });
 setInterval(() => {
-  if ('wakeLock' in navigator && document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) acquireWakeLock();
+  // not while the video keeps the screen on: Safari refuses the wake lock without a tap
+  if ('wakeLock' in navigator && !videoAwake && document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) acquireWakeLock();
 }, 10000);
 acquireWakeLock();
 
