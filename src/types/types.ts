@@ -7,6 +7,9 @@ export interface LoadModelParams {
   n_ubatch?: number;
   // by default, all layers are offloaded if WebGPU is available
   n_gpu_layers?: number;
+  // keep the token embedding on the GPU only, not also on the CPU, when all layers are on the GPU (default: true)
+  // this saves its size in page memory; on a model with a separate output layer, it uses this size more GPU memory
+  token_embd_on_gpu?: boolean;
   // by default, on multi-thread build, we take half number of available threads (hardwareConcurrency / 2)
   n_threads?: number;
   embeddings?: boolean;

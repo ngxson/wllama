@@ -12,7 +12,9 @@
 #include <vector>
 
 #include "ggml.h"
+#include "ggml-backend.h"
 #include "ggml-cpu.h"
+#include "llama.h"
 #include "mtmd.h"
 
 #include "wllama-patch.h"
@@ -261,6 +263,64 @@ extern "C"
 
     return copy_bytes / size;
   }
+}
+
+//
+// model load: upload GPU weights in small chunks
+//
+// Without mmap, llama.cpp copies each GPU tensor through a CPU buffer as big as the tensor (417 MB for the token embedding of a 2B model).
+// The wasm heap never shrinks, so this peak stays as page memory after the load.
+// The loader has a path with 4 small buffers, but it needs the async, events and host buffer caps, which ggml-webgpu does not report although it implements them.
+// So we report them while a model loads, and only then: llama_context reads the same caps to turn on pipeline parallelism.
+//
+
+static bool loading_model = false;
+
+static bool is_webgpu(ggml_backend_dev_t dev)
+{
+  return dev && strcmp(ggml_backend_dev_name(dev), "WebGPU") == 0;
+}
+
+extern "C" struct llama_model *__real_llama_model_load_from_file(const char *path_model, struct llama_model_params params);
+extern "C" struct llama_model *__wrap_llama_model_load_from_file(const char *path_model, struct llama_model_params params)
+{
+  loading_model = true;
+  struct llama_model *model = __real_llama_model_load_from_file(path_model, params);
+  loading_model = false;
+  return model;
+}
+
+extern "C" struct llama_model *__real_llama_model_load_from_splits(const char **paths, size_t n_paths, struct llama_model_params params);
+extern "C" struct llama_model *__wrap_llama_model_load_from_splits(const char **paths, size_t n_paths, struct llama_model_params params)
+{
+  loading_model = true;
+  struct llama_model *model = __real_llama_model_load_from_splits(paths, n_paths, params);
+  loading_model = false;
+  return model;
+}
+
+extern "C" void __real_ggml_backend_dev_get_props(ggml_backend_dev_t device, struct ggml_backend_dev_props *props);
+extern "C" void __wrap_ggml_backend_dev_get_props(ggml_backend_dev_t device, struct ggml_backend_dev_props *props)
+{
+  __real_ggml_backend_dev_get_props(device, props);
+  if (loading_model && is_webgpu(device))
+  {
+    props->caps.async = true;
+    props->caps.events = true;
+    props->caps.host_buffer = true;
+  }
+}
+
+extern "C" ggml_backend_buffer_type_t __real_ggml_backend_dev_host_buffer_type(ggml_backend_dev_t device);
+extern "C" ggml_backend_buffer_type_t __wrap_ggml_backend_dev_host_buffer_type(ggml_backend_dev_t device)
+{
+  ggml_backend_buffer_type_t buft = __real_ggml_backend_dev_host_buffer_type(device);
+  if (!buft && loading_model && is_webgpu(device))
+  {
+    // WriteBuffer() copies the data at call time, so plain CPU memory works as a staging buffer
+    return ggml_backend_cpu_buffer_type();
+  }
+  return buft;
 }
 
 //

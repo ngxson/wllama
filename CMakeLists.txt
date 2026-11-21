@@ -46,6 +46,10 @@ set(WLLAMA_LINK_OPTIONS
     -Wl,--wrap,ggml_threadpool_new
     -Wl,--wrap,ggml_threadpool_free
     -Wl,--wrap,mtmd_init_from_file
+    -Wl,--wrap,llama_model_load_from_file
+    -Wl,--wrap,llama_model_load_from_splits
+    -Wl,--wrap,ggml_backend_dev_get_props
+    -Wl,--wrap,ggml_backend_dev_host_buffer_type
 )
 
 if (WLLAMA_COMPAT)

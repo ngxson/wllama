@@ -54,6 +54,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "bool",
+        "name": "token_embd_on_gpu",
+        "isNullable": true
+      },
+      {
         "type": "int",
         "name": "n_ctx",
         "isNullable": false
@@ -962,6 +967,7 @@ export interface GlueMsgLoadReq {
   use_mmap: boolean;
   use_mlock: boolean;
   n_gpu_layers: number;
+  token_embd_on_gpu?: boolean | undefined;
   n_ctx: number;
   n_threads: number;
   model_alias?: string | undefined;

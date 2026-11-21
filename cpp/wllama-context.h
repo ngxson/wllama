@@ -28,6 +28,7 @@
 
 #include "ggml-cpu.h"
 #include "ggml-backend.h"
+#include "gguf.h"
 
 #include "glue.hpp"
 #include "wllama-video.h"
@@ -693,6 +694,46 @@ struct wllama_context
   //////////////////////////////////////////
   //////////////////////////////////////////
 
+  // llama.cpp keeps the token embedding on the CPU for the input lookup, even if the output layer is on the GPU
+  // put it on the GPU instead, if the GPU can do the lookup: this saves its size in page memory
+  void keep_tok_embd_on_gpu()
+  {
+    ggml_backend_dev_t gpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+    if (!gpu)
+      return;
+    ggml_context *meta = nullptr;
+    gguf_context *gguf = gguf_init_from_file(params.model.path.c_str(), {/*.no_alloc =*/true, /*.ctx =*/&meta});
+    if (!gguf)
+      return;
+    bool on_gpu = false;
+    const int64_t i_arch = gguf_find_key(gguf, "general.architecture");
+    const ggml_tensor *tok_embd = ggml_get_tensor(meta, "token_embd.weight");
+    // on unexpected metadata, skip it and let the loader report the error
+    if (i_arch >= 0 && gguf_get_kv_type(gguf, i_arch) == GGUF_TYPE_STRING && tok_embd)
+    {
+      // only if the output layer is on the GPU too
+      const int64_t i_layers = gguf_find_key(gguf, (std::string(gguf_get_val_str(gguf, i_arch)) + ".block_count").c_str());
+      const bool has_n_layer = i_layers >= 0 && gguf_get_kv_type(gguf, i_layers) == GGUF_TYPE_UINT32;
+      const int64_t n_layer = has_n_layer ? gguf_get_val_u32(gguf, i_layers) : 0;
+      if (has_n_layer && (params.n_gpu_layers < 0 || params.n_gpu_layers > n_layer))
+      {
+        ggml_init_params ip = {/*.mem_size =*/3 * ggml_tensor_overhead(), /*.mem_buffer =*/nullptr, /*.no_alloc =*/true};
+        ggml_context *ctx = ggml_init(ip);
+        ggml_tensor *src = ggml_new_tensor_2d(ctx, tok_embd->type, tok_embd->ne[0], tok_embd->ne[1]);
+        ggml_tensor *ids = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, 1);
+        on_gpu = ggml_backend_dev_supports_op(gpu, ggml_get_rows(ctx, src, ids));
+        ggml_free(ctx);
+      }
+    }
+    gguf_free(gguf);
+    ggml_free(meta);
+    if (on_gpu)
+    {
+      params.tensor_buft_overrides.push_back({"^token_embd\\.weight$", ggml_backend_dev_buffer_type(gpu)});
+      params.tensor_buft_overrides.push_back({nullptr, nullptr});
+    }
+  }
+
   glue_msg_load_res action_load(const char *req_raw)
   {
     PARSE_REQ(glue_msg_load_req);
@@ -926,6 +967,8 @@ struct wllama_context
     // load model
     llama_backend_init();
     llama_numa_init(params.numa);
+    if (!req.token_embd_on_gpu.not_null() || req.token_embd_on_gpu.value)
+      keep_tok_embd_on_gpu();
     if (!ctx_server.load_model(params))
     {
       glue_msg_load_res res;

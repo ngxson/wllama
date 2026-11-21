@@ -95,6 +95,14 @@ Note:
 - The minimum read size is 1MB. If less than this amount is requested, the full 1MB block is cached for subsequent reads. This is because reading GGUF metadata frequently involves reads of less than 1KB at a time, which can become a bottleneck without caching.
 - Env var `USE_ASYNC_FILE` is used to signal from JS to wasm that we are using async file read (upon starting the module). If `USE_ASYNC_FILE` is not set, we fallback to HeapFS/mmap case (see in next section)
 
+Memory use while loading:
+- The reads are pulled by llama.cpp: the main thread only reads the range that `fread()` asks for, it does not stream the whole file
+- The main thread transfers the `ArrayBuffer` to the worker (no copy), then the worker copies it to the destination in the wasm heap. This is the only copy
+- So the whole file is never in the wasm heap at once (unlike HeapFS below)
+- The wasm heap never shrinks: memory freed after the load goes back to malloc, not to the browser. So the peak during the load stays as page memory, keep it small
+- Tensors on the CPU stay in the wasm heap. Tensors on the GPU are copied through 4 buffers of 1MB (see the `ggml_backend_dev_get_props` patch in "Patches"), then uploaded, so they do not stay in the wasm heap
+- With all layers on the GPU, the token embedding is also put on the GPU (load option `token_embd_on_gpu`), otherwise llama.cpp keeps a CPU copy for the input lookup
+
 ### HeapFS
 
 HeapFS is a lightweight wrapper around emscripten's default FS driver. The main goal is to allow `mmap()` to map to existing data instead of copying it (the default emscripten behavior).
@@ -160,6 +168,7 @@ The C++ patches:
 - `ggml_threadpool_new`, `ggml_threadpool_free`, `ggml_graph_plan`: one shared ggml threadpool, see "Threading model"
 - `mtmd_init_from_file`: record the mtmd context of the server (`shared_mctx`), TTS and realtime need it
 - `fopen`, `fclose`, `fread`, `fseek`, `ftell`: read model files from JS, see "Async file read"
+- `llama_model_load_from_file`, `llama_model_load_from_splits`, `ggml_backend_dev_get_props`, `ggml_backend_dev_host_buffer_type`: while a model loads, report the async, events and host buffer caps for WebGPU, so llama.cpp uploads the weights through 4 small buffers instead of one buffer as big as the biggest tensor. The wasm heap never shrinks, so that big buffer stays as page memory after the load
 - `wgpuQueueSubmit`, `wgpuQueueOnSubmittedWorkDone`, `wgpuBufferMapAsync`, `wgpuInstanceWaitAny`: see "WebGPU queue waits" below
 
 Remove a patch when upstream fixes the problem.
