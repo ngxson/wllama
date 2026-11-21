@@ -17,9 +17,9 @@ import {
   encodeRealtimeAudio,
   type WllamaConfig,
   type WllamaRealtimeSession,
-} from './wllama';
-import type { RealtimeEvent } from './types/oai-compat';
-import { isSupportJSPI } from './utils';
+} from '../wllama';
+import type { RealtimeEvent } from '../types/oai-compat';
+import { isSupportJSPI } from '../utils';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',

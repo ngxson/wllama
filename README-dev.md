@@ -207,7 +207,7 @@ The docker image builds `wasm-opt` with the patch, at the binaryen commit of the
 
 The patched `wasm-opt` is also copied to `scripts/.binaryen-cache` (git-ignored), named by the image tag. The next image build uses it instead of building binaryen again. CI caches this folder.
 
-To test the compat build: build it (without `SKIP_COMPAT`), then `npm run test:compat`. It runs `src/wllama.test.ts` on `compat/wasm/wllama.wasm`, with JSPI hidden on the page. Use `SKIP_MAIN=1` to build only compat. CI runs it in the `test-compat` job, in parallel with the main tests.
+To test the compat build: build it (without `SKIP_COMPAT`), then `npm run test:compat`. It runs `src/testing/wllama.test.ts` on `compat/wasm/wllama.wasm`, with JSPI hidden on the page. Use `SKIP_MAIN=1` to build only compat. CI runs it in the `test-compat` job, in parallel with the main tests.
 
 ## Debugging backend ops
 
