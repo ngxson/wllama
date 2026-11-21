@@ -396,10 +396,16 @@ if (flag('--adb')) {
   };
   const model = adb('shell', 'getprop', 'ro.product.model');
   if (model !== null) {
-    adb('reverse', `tcp:${PORT}`, `tcp:${PORT}`);
-    adb('shell', 'svc', 'power', 'stayon', 'usb');
+    // applied again every 15s: a replugged cable, or another server stopping, removes them
+    const apply = () => {
+      if (!(adb('reverse', '--list') || '').includes(`tcp:${PORT}`)) adb('reverse', `tcp:${PORT}`, `tcp:${PORT}`);
+      adb('shell', 'svc', 'power', 'stayon', 'usb');
+    };
+    apply();
+    setInterval(apply, 15000);
     adb('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP');
-    adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', `http://localhost:${PORT}/device`, 'com.android.chrome');
+    // the application id makes Chrome reuse the same tab
+    adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', `http://localhost:${PORT}/device`, '-e', 'com.android.browser.application_id', 'wllama-dev', 'com.android.chrome');
     console.log(`adb: ${model}: port forwarded, screen kept on while plugged in, device page opened (it connects once the device is unlocked)`);
     const restore = () => {
       adb('shell', 'svc', 'power', 'stayon', 'false');
