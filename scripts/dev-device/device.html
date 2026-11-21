@@ -81,7 +81,9 @@ const show = (level, text) => {
   while (log.childNodes.length > LOG_LINES) log.firstChild.remove();
   if (atBottom) log.scrollTop = log.scrollHeight;
 };
+const MAX_LINE = 16000; // a few huge lines must not make one request too big
 const send = (level, text) => {
+  if (text.length > MAX_LINE) text = text.slice(0, MAX_LINE) + ` ... (${text.length - MAX_LINE} more chars)`;
   show(level, text);
   queue.push({ level, text });
 };
@@ -89,7 +91,8 @@ setInterval(() => {
   if (!queue.length) return;
   const entries = queue;
   queue = [];
-  fetch('/api/log', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, entries }), keepalive: true })
+  // no keepalive: it limits the body to 64KB, and a rejected batch would be retried forever
+  fetch('/api/log', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, entries }) })
     .catch(() => { queue = entries.concat(queue); });
 }, 300);
 $('toggleLog').onclick = () => { $('log').hidden = !$('log').hidden; };

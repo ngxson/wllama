@@ -313,10 +313,10 @@ node scripts/dev-device/index.mjs run ./test.js          # same, with the code o
 node scripts/dev-device/index.mjs logs [--follow]        # console output of the devices
 ```
 
-`--timeout <seconds>` (default 120) and `--device <id>` (default: the device that connected last) work with the commands. A file that loads a model and returns the timings:
+`--timeout <seconds>` (default 120) and `--device <id>` work with the commands. Without `--device`, a command goes to a device whose page is visible (the browser throttles hidden tabs), then to the one that connected last. A file that loads a model and returns the timings:
 
 ```js
-const { Wllama } = await import('/esm/index.js'); // run `npm run build` first
+const { Wllama } = await import('/esm/index.js'); // run `npm run build:wasm` then `npm run build` first
 const wllama = new Wllama({ default: '/src/wasm/wllama.wasm' });
 const t0 = performance.now();
 await wllama.loadModelFromUrl(location.origin + '/models/model.gguf', { n_threads: 4 });

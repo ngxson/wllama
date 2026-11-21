@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -139,7 +140,6 @@ const devices = new Map(); // id -> { id, res (SSE), info, connectedAt, lastSeen
 const pending = new Map(); // cmd id -> { resolve, timer }
 const logs = []; // { n, t, device, level, text }
 let logSeq = 0;
-let cmdSeq = 0;
 const MAX_LOGS = 5000;
 
 const addLog = (device, level, text) => {
@@ -186,6 +186,12 @@ const ISOLATION_HEADERS = {
   'cache-control': 'no-store',
 };
 
+// a read error (for example, the file is deleted by a build) ends only this response
+const pipeFile = (stream, res) => {
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
+};
+
 const serveFile = (req, res, file) => {
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) {
@@ -200,7 +206,8 @@ const serveFile = (req, res, file) => {
     // Range requests, to read big model files in parts
     const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
     if (m) {
-      const start = m[1] ? Number(m[1]) : st.size - Number(m[2]);
+      // a suffix bigger than the file means the whole file
+      const start = m[1] ? Number(m[1]) : Math.max(0, st.size - Number(m[2]));
       const end = m[1] && m[2] ? Math.min(Number(m[2]), st.size - 1) : st.size - 1;
       if (start > end || start >= st.size) {
         res.writeHead(416, { ...headers, 'content-range': `bytes */${st.size}` });
@@ -208,11 +215,11 @@ const serveFile = (req, res, file) => {
       }
       res.writeHead(206, { ...headers, 'content-range': `bytes ${start}-${end}/${st.size}`, 'content-length': end - start + 1 });
       if (req.method === 'HEAD') return res.end();
-      return fs.createReadStream(file, { start, end }).pipe(res);
+      return pipeFile(fs.createReadStream(file, { start, end }), res);
     }
     res.writeHead(200, { ...headers, 'content-length': st.size });
     if (req.method === 'HEAD') return res.end();
-    fs.createReadStream(file).pipe(res);
+    pipeFile(fs.createReadStream(file), res);
   });
 };
 
@@ -307,7 +314,8 @@ const handler = async (req, res) => {
       const cmd = await readBody(req);
       const dev = pickDevice(cmd.device);
       if (!dev) return json(res, 404, { ok: false, error: 'no device connected, open /device on the phone' });
-      const id = ++cmdSeq;
+      // unique across restarts: a device can still be running a command of the previous server
+      const id = randomUUID();
       const timeout = cmd.timeout || 120000;
       const result = await new Promise((resolve) => {
         const timer = setTimeout(() => {
