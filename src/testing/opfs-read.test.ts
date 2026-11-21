@@ -50,15 +50,16 @@ test('reads the Blob when the file is locked', async () => {
   await new ModelManager().downloadModel(TINY_MODEL);
   // another worker holds an exclusive sync access handle on the cached file
   const key = await new ModelManager().cacheManager.getNameFromURL(TINY_MODEL);
-  const cacheDir = await (
-    await navigator.storage.getDirectory()
-  ).getDirectoryHandle('cache');
-  const handle = await cacheDir.getFileHandle(key);
   const locker = new Worker(
     URL.createObjectURL(
       new Blob(
         [
-          'onmessage = async (e) => { await e.data.createSyncAccessHandle(); postMessage("locked"); };',
+          // opened in the worker: a handle cannot be sent to a worker in Safari
+          `onmessage = async (e) => {
+            const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('cache');
+            await (await dir.getFileHandle(e.data)).createSyncAccessHandle();
+            postMessage('locked');
+          };`,
         ],
         { type: 'text/javascript' }
       )
@@ -66,7 +67,7 @@ test('reads the Blob when the file is locked', async () => {
   );
   await new Promise((resolve) => {
     locker.onmessage = resolve;
-    locker.postMessage(handle);
+    locker.postMessage(key);
   });
   try {
     const { text, logs } = await complete((w) =>

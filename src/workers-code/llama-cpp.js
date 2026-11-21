@@ -287,7 +287,7 @@ let seqWindow = 0;
 
 // Files of the OPFS cache are read with a sync access handle, straight into the heap: no Blob, no round trip to the main thread
 // (12-25x faster on Android). It is opened when needed and closed after each wasm call, so the cache can change the file in between
-const opfsFiles = {}; // name -> { handle, access, failed }
+const opfsFiles = {}; // name -> { path (in OPFS), size, access, failed }
 
 // returns the number of bytes read, or -1 to read the Blob instead
 const opfsRead = async (name, offset, req_size, out_ptr) => {
@@ -295,7 +295,14 @@ const opfsRead = async (name, offset, req_size, out_ptr) => {
   if (!f || f.failed) return -1;
   try {
     if (!f.access) {
-      f.access = await f.handle.createSyncAccessHandle({ mode: 'read-only' });
+      let dir = await navigator.storage.getDirectory();
+      for (const d of f.path.slice(0, -1))
+        dir = await dir.getDirectoryHandle(d);
+      const handle = await dir.getFileHandle(f.path[f.path.length - 1]);
+      f.access = await handle.createSyncAccessHandle({ mode: 'read-only' });
+      if (f.access.getSize() !== f.size) {
+        throw new Error('the file in the cache changed');
+      }
       if (!f.used) {
         f.used = true;
         msg({
@@ -599,7 +606,12 @@ onmessage = async (e) => {
     const argSize = args[1];
     const argAllocBuffer = args[2];
     if (args[3]) {
-      opfsFiles[argFilename] = { handle: args[3], access: null, failed: false };
+      opfsFiles[argFilename] = {
+        path: args[3],
+        size: argSize,
+        access: null,
+        failed: false,
+      };
     }
     try {
       // create blank file
