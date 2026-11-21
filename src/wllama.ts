@@ -648,6 +648,9 @@ export class Wllama {
     this.nbThreads = nbThreads;
     this.useMultiThread = supportMultiThread && nbThreads > 1;
 
+    // before creating the worker, so a bad file does not leave this instance half initialized
+    const modelFiles = await prepareBlobs(blobs);
+
     // initialize the worker
     const workerResources = this.getWorkerResources();
     if (params.n_gpu_layers === 0) {
@@ -673,7 +676,6 @@ export class Wllama {
       logLevel = 9999 as any;
     }
 
-    const modelFiles = await prepareBlobs(blobs);
     await this.proxy.moduleInit(modelFiles.all);
 
     // run it

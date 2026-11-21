@@ -83,7 +83,6 @@ export interface WllamaWorkerResources {
   wasmPath: string;
   // if jsPath is not provided, use the JS code embedded inside the wasm file
   jsPath?: string | { code: string } | undefined;
-  // in compat mode, mem64 must be disabled
   compat: boolean;
   // skip WebGPU device initialization entirely (e.g. when n_gpu_layers is 0)
   noWebGPU?: boolean;

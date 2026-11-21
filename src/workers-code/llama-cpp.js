@@ -6,7 +6,6 @@ let wllamaExit;
 let wllamaDebug;
 
 let Module = null;
-let isCompat = false;
 let lastStack = '';
 let isAborted = false;
 let hasMultithread = false;
@@ -34,17 +33,12 @@ const getHeapU8 = () => {
   return new Uint8Array(buffer);
 };
 
-const toSizeT = (num) => {
-  return isCompat ? Number(num) : BigInt(num);
-};
-
 // Get module config that forwards stdout/err to main thread
 const getWModuleConfig = (_argMainScriptBlob, wasmModule) => {
   var pathConfig = RUN_OPTIONS.pathConfig;
   var pthreadPoolSize = RUN_OPTIONS.nbThread;
   var argMainScriptBlob = _argMainScriptBlob;
 
-  isCompat = RUN_OPTIONS.compat;
   hasMultithread = pthreadPoolSize > 1;
 
   msg({
@@ -128,16 +122,14 @@ const getWModuleConfig = (_argMainScriptBlob, wasmModule) => {
 //      https://github.com/godotengine/godot/issues/70621
 const getWasmMemory = () => {
   let minBytes = 128 * 1024 * 1024;
-  // wasm32 is limited to 4GB, Memory64 to 16GB (V8 limit)
-  let maxBytes = (isCompat ? 4 : 16) * 1024 * 1024 * 1024;
+  let maxBytes = 4096 * 1024 * 1024;
   let stepBytes = 128 * 1024 * 1024;
   while (maxBytes > minBytes) {
     try {
       const wasmMemory = new WebAssembly.Memory({
-        initial: toSizeT(minBytes / 65536),
-        maximum: toSizeT(maxBytes / 65536),
+        initial: minBytes / 65536,
+        maximum: maxBytes / 65536,
         shared: true,
-        address: isCompat ? undefined : 'i64',
       });
       return wasmMemory;
     } catch (e) {
@@ -219,7 +211,7 @@ const patchHeapFS = () => {
     const name = stream.node.name;
     if (fsNameToFile[name]) {
       const f = fsNameToFile[name];
-      const mmapPtr = f.ptr + toSizeT(position);
+      const mmapPtr = f.ptr + position;
       return {
         ptr: mmapPtr,
         allocated: false,
@@ -241,7 +233,8 @@ const heapfsAlloc = (name, size, allocBuffer) => {
     throw new Error('File size must be bigger than 0');
   }
   const m = Module;
-  const ptr = toSizeT(allocBuffer ? m.mmapAlloc(size) : 0);
+  // >>> 0: a wasm32 pointer above 2GB arrives as a negative number
+  const ptr = allocBuffer ? m.mmapAlloc(size) >>> 0 : 0;
   const file = {
     ptr: ptr,
     size: size,
@@ -298,7 +291,7 @@ const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
     total += got;
     if (got < size) break; // end of file
   }
-  return toSizeT(total);
+  return total;
 };
 
 const readFileChunk = async (name, offset, req_size, out_ptr) => {
@@ -387,7 +380,8 @@ const runAction = async (data) => {
   const argAction = args[0];
   const argEncodedMsg = args[1];
   try {
-    const inputPtr = await wllamaMalloc(toSizeT(argEncodedMsg.byteLength), 0);
+    // >>> 0: a wasm32 pointer above 2GB arrives as a negative number
+    const inputPtr = (await wllamaMalloc(argEncodedMsg.byteLength, 0)) >>> 0;
     // copy data to wasm heap
     const inputBuffer = new Uint8Array(
       getHeapU8().buffer,
@@ -395,7 +389,7 @@ const runAction = async (data) => {
       argEncodedMsg.byteLength
     );
     inputBuffer.set(argEncodedMsg, 0);
-    const outputPtr = await wllamaAction(argAction, inputPtr);
+    const outputPtr = (await wllamaAction(argAction, inputPtr)) >>> 0;
     if (!Number(outputPtr)) {
       msg({
         callbackId,
@@ -480,7 +474,7 @@ onmessage = async (e) => {
         // init FS
         patchHeapFS();
         // init cwrap
-        const pointer = isCompat ? 'number' : 'bigint';
+        const pointer = 'number';
         // TODO: note sure why emscripten cannot bind if there is only 1 argument
         wllamaMalloc = callWrapper('wllama_malloc', pointer, [
           'number',

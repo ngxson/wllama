@@ -154,14 +154,14 @@ bool wllama_fs_use_async()
 // Thin stub - real implementation lives in llama-cpp.js to avoid
 // C++ formatter mangling the JS syntax inside EM_ASYNC_JS macros.
 
-// offset and out_ptr are passed as double: on wasm32, an i32 above 2GB would arrive in JS as a negative number
-EM_ASYNC_JS(size_t, js_file_read_impl, (const char *path_ptr, double offset, size_t req_size, double out_ptr), {
-  return await _wllama_js_file_read(UTF8ToString(Number(path_ptr)), offset, Number(req_size), out_ptr);
+// offset, size and out_ptr are passed as double: on wasm32, an i32 above 2GB would arrive in JS as a negative number
+EM_ASYNC_JS(size_t, js_file_read_impl, (const char *path_ptr, double offset, double req_size, double out_ptr), {
+  return await _wllama_js_file_read(UTF8ToString(Number(path_ptr)), offset, req_size, out_ptr);
 });
 
 static size_t js_file_read(const char *path, off_t offset, size_t req_size, void *out_ptr)
 {
-  return js_file_read_impl(path, (double)offset, req_size, (double)(uintptr_t)out_ptr);
+  return js_file_read_impl(path, (double)offset, (double)req_size, (double)(uintptr_t)out_ptr);
 }
 
 extern "C"

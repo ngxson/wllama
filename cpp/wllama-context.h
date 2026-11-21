@@ -964,6 +964,9 @@ struct wllama_context
       return res;
     }
 
+    // lazy read needs mmap; also its 4GiB threshold is a size_t, which is 0 on wasm32
+    params.lazy_mode = LLAMA_LAZY_MODE_OFF;
+
     // load model
     llama_backend_init();
     llama_numa_init(params.numa);

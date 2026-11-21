@@ -194,7 +194,7 @@ Performance numbers of the 2 patches: https://github.com/ngxson/wllama/pull/341
 
 ### Asyncify with wasm exceptions
 
-The default build uses JSPI, Memory64 and relaxed SIMD. If the browser misses one of them, wllama uses the compat build (`needCompat()` in `src/utils.ts`): asyncify, 32-bit memory, no relaxed SIMD.
+The default build uses JSPI and relaxed SIMD. If the browser misses one of them, wllama uses the compat build (`needCompat()` in `src/utils.ts`): asyncify, no relaxed SIMD. Both builds use 32-bit memory.
 
 The compat build uses asyncify and wasm exceptions (`-fwasm-exceptions`). Upstream asyncify stops with `UNREACHABLE` when a call that can suspend is inside a `try` ([binaryen#4470](https://github.com/WebAssembly/binaryen/issues/4470)). C++ puts most calls inside a `try` (to run the destructors), so without the patch, the compat build must use JS exceptions (`-fexceptions`), which are slower and bigger.
 

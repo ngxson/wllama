@@ -54,7 +54,6 @@ set(WLLAMA_LINK_OPTIONS
 
 if (WLLAMA_COMPAT)
     # wasm exception + asyncify needs a patched binaryen (asyncify support for try)
-    # no mem64 (not compatible with safari)
     list(APPEND WLLAMA_COMPILE_OPTIONS
         -fwasm-exceptions
         -pthread
@@ -66,14 +65,12 @@ if (WLLAMA_COMPAT)
         -sASYNCIFY_ADD=['wllama_start','wllama_action']
     )
 else()
+    # 32-bit memory like compat: about 12% faster on CPU than Memory64
     list(APPEND WLLAMA_COMPILE_OPTIONS
-        -sMEMORY64=1
         -fwasm-exceptions
-        -include ${CMAKE_CURRENT_SOURCE_DIR}/cpp/wasm64-stdint.h
     )
     list(APPEND WLLAMA_LINK_OPTIONS
-        -sMEMORY64=1
-        -sMAXIMUM_MEMORY=16384MB # the Memory64 limit of V8
+        -sMAXIMUM_MEMORY=4096MB
         -fwasm-exceptions
         -sJSPI
         -sJSPI_EXPORTS=['wllama_start','wllama_action']

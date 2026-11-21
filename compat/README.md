@@ -1,12 +1,12 @@
 # @wllama/wllama-compat
 
-Optional package that provides compatibility WASM assets for `@wllama/wllama` on browsers that lack [JSPI](https://github.com/WebAssembly/js-promise-integration) or [MEMORY64](https://github.com/WebAssembly/memory64) support - most notably Safari and older browsers.
+Optional package that provides compatibility WASM assets for `@wllama/wllama` on browsers that lack [JSPI](https://github.com/WebAssembly/js-promise-integration) or [relaxed SIMD](https://github.com/WebAssembly/relaxed-simd) support - most notably Safari and older browsers.
 
 ## Why this package exists
 
-The default `@wllama/wllama` build relies on two modern WebAssembly features: [JSPI](https://github.com/WebAssembly/js-promise-integration) and [MEMORY64](https://github.com/WebAssembly/memory64)
+The default `@wllama/wllama` build relies on two modern WebAssembly features: [JSPI](https://github.com/WebAssembly/js-promise-integration) and [relaxed SIMD](https://github.com/WebAssembly/relaxed-simd)
 
-When either feature is absent, wllama automatically falls back to **compat mode**: a separate WASM build that uses [Asyncify](https://emscripten.org/docs/porting/asyncify.html) instead of JSPI, and drops MEMORY64.
+When either feature is absent, wllama automatically falls back to **compat mode**: a separate WASM build that uses [Asyncify](https://emscripten.org/docs/porting/asyncify.html) instead of JSPI, and drops relaxed SIMD.
 
 > **Note:** Compat mode has significantly lower performance than the default build. Use it only as a fallback.
 

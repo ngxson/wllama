@@ -36,8 +36,7 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- The model must fit in the WebAssembly memory: 16GB by default, 4GB in compat mode (Safari and older browsers). Layers offloaded to WebGPU do not count.
-- In compat mode, a single file must be smaller than 4GB. If your model is bigger, please follow the **Split model** section below.
+- The model must fit in the 4GB WebAssembly memory, except the layers offloaded to WebGPU.
 
 ## Code demo and documentation
 
@@ -202,7 +201,6 @@ const wllama = new Wllama(WasmFromCDN);
 ### Split model
 
 Cases where we want to split the model:
-- In compat mode (Safari and older browsers), a single file must be smaller than 4GB. If your model is bigger, you can split the model into small files.
 - Even with a small model, splitting into chunks allows the browser to download multiple chunks in parallel, thus making the download process a bit faster.
 
 We use `llama-gguf-split` to split a big gguf file into smaller files. You can download the pre-built binary via [llama.cpp release page](https://github.com/ggerganov/llama.cpp/releases):
