@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest';
 import { Wllama } from './wllama';
+import { LogLevel } from './types/types';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',
@@ -125,3 +126,39 @@ test.sequential('WebGPU completion matches CPU', async () => {
   expect(gpuText.length).toBeGreaterThan(0);
   expect(gpuText).toBe(await complete(0));
 });
+
+test.sequential(
+  'token embedding on GPU or CPU gives the same text',
+  async () => {
+    const complete = async (token_embd_on_gpu: boolean) => {
+      const logs: string[] = [];
+      const keep = (...args: any[]) => logs.push(args.join(' '));
+      const wllama = new Wllama(CONFIG_PATHS, {
+        logger: { debug: keep, log: keep, warn: keep, error: keep },
+      });
+      wllama.setCompat(null);
+      await wllama.loadModelFromUrl(TINY_MODEL, {
+        n_ctx: 1024,
+        token_embd_on_gpu,
+        log_level: LogLevel.DEBUG, // the override is logged at debug level
+      });
+      const res = await wllama.createCompletion({
+        prompt: 'Once upon a time',
+        max_tokens: 8,
+        temperature: 0.0,
+        seed: 42,
+      });
+      await wllama.exit();
+      const overridden = logs.some((l) =>
+        /token_embd\.weight.*overridden to WebGPU/.test(l)
+      );
+      return { text: res.choices[0].text, overridden };
+    };
+
+    const onGpu = await complete(true);
+    const onCpu = await complete(false);
+    expect(onGpu.overridden).toBe(true);
+    expect(onCpu.overridden).toBe(false);
+    expect(onGpu.text).toBe(onCpu.text);
+  }
+);

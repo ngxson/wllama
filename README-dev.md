@@ -160,6 +160,7 @@ The C++ patches:
 - `ggml_threadpool_new`, `ggml_threadpool_free`, `ggml_graph_plan`: one shared ggml threadpool, see "Threading model"
 - `mtmd_init_from_file`: record the mtmd context of the server (`shared_mctx`), TTS and realtime need it
 - `fopen`, `fclose`, `fread`, `fseek`, `ftell`: read model files from JS, see "Async file read"
+- `llama_model_load_from_file`, `llama_model_load_from_splits`, `ggml_backend_dev_get_props`, `ggml_backend_dev_host_buffer_type`: while a model loads, report the async, events and host buffer caps for WebGPU, so llama.cpp uploads the weights through 4 small buffers instead of one buffer as big as the biggest tensor. The wasm heap never shrinks, so that big buffer stays as page memory after the load
 - `wgpuQueueSubmit`, `wgpuQueueOnSubmittedWorkDone`, `wgpuBufferMapAsync`, `wgpuInstanceWaitAny`: see "WebGPU queue waits" below
 
 Remove a patch when upstream fixes the problem.
