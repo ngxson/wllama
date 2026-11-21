@@ -84,3 +84,24 @@ test('loads a model split into virtual shards', async () => {
   ).toBe(true);
   expect(split.text).toBe(plain.text);
 });
+
+test('a failed split does not break the next load', async () => {
+  // 4GB that is not a GGUF, slices are zeros
+  const size = 4 * 1024 * 1024 * 1024;
+  const bad = {
+    size,
+    name: 'bad.gguf',
+    slice: (a = 0, b = size) =>
+      new Blob([new Uint8Array(Math.min(b - a, 1024 * 1024))]),
+  } as unknown as Blob;
+  const wllama = new Wllama({ default: '/src/wasm/wllama.wasm' });
+  wllama.setCompat(null);
+  await expect(wllama.loadModel([bad])).rejects.toThrow('Not a GGUF file');
+  await wllama.loadModel([await getTinyModel()], {
+    n_ctx: 512,
+    n_threads: 1,
+    n_gpu_layers: 0,
+  });
+  expect(wllama.isModelLoaded()).toBe(true);
+  await wllama.exit();
+});

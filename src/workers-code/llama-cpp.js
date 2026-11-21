@@ -233,7 +233,8 @@ const heapfsAlloc = (name, size, allocBuffer) => {
     throw new Error('File size must be bigger than 0');
   }
   const m = Module;
-  const ptr = allocBuffer ? m.mmapAlloc(size) : 0;
+  // >>> 0: a wasm32 pointer above 2GB arrives as a negative number
+  const ptr = allocBuffer ? m.mmapAlloc(size) >>> 0 : 0;
   const file = {
     ptr: ptr,
     size: size,
@@ -379,7 +380,8 @@ const runAction = async (data) => {
   const argAction = args[0];
   const argEncodedMsg = args[1];
   try {
-    const inputPtr = await wllamaMalloc(argEncodedMsg.byteLength, 0);
+    // >>> 0: a wasm32 pointer above 2GB arrives as a negative number
+    const inputPtr = (await wllamaMalloc(argEncodedMsg.byteLength, 0)) >>> 0;
     // copy data to wasm heap
     const inputBuffer = new Uint8Array(
       getHeapU8().buffer,
@@ -387,7 +389,7 @@ const runAction = async (data) => {
       argEncodedMsg.byteLength
     );
     inputBuffer.set(argEncodedMsg, 0);
-    const outputPtr = await wllamaAction(argAction, inputPtr);
+    const outputPtr = (await wllamaAction(argAction, inputPtr)) >>> 0;
     if (!Number(outputPtr)) {
       msg({
         callbackId,
