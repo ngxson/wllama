@@ -696,7 +696,7 @@ struct wllama_context
 
   // llama.cpp keeps the token embedding on the CPU for the input lookup, even if the output layer is on the GPU
   // put it on the GPU instead, if the GPU can do the lookup: this saves its size in page memory
-  void keep_tok_embd_on_gpu()
+  void keep_tok_embd_on_gpu(const std::vector<std::string> &model_paths)
   {
     ggml_backend_dev_t gpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
     if (!gpu)
@@ -708,6 +708,23 @@ struct wllama_context
     bool on_gpu = false;
     const int64_t i_arch = gguf_find_key(gguf, "general.architecture");
     const ggml_tensor *tok_embd = ggml_get_tensor(meta, "token_embd.weight");
+    // the metadata is in the first file, but token_embd can be in another file of a split model
+    ggml_context *meta_split = nullptr;
+    gguf_context *gguf_split = nullptr;
+    for (size_t i = 1; !tok_embd && i < model_paths.size(); i++)
+    {
+      gguf_split = gguf_init_from_file(model_paths[i].c_str(), {/*.no_alloc =*/true, /*.ctx =*/&meta_split});
+      if (!gguf_split)
+        break;
+      tok_embd = ggml_get_tensor(meta_split, "token_embd.weight");
+      if (!tok_embd)
+      {
+        gguf_free(gguf_split);
+        ggml_free(meta_split);
+        gguf_split = nullptr;
+        meta_split = nullptr;
+      }
+    }
     // on unexpected metadata, skip it and let the loader report the error
     if (i_arch >= 0 && gguf_get_kv_type(gguf, i_arch) == GGUF_TYPE_STRING && tok_embd)
     {
@@ -727,6 +744,10 @@ struct wllama_context
     }
     gguf_free(gguf);
     ggml_free(meta);
+    if (gguf_split)
+      gguf_free(gguf_split);
+    if (meta_split)
+      ggml_free(meta_split);
     if (on_gpu)
     {
       params.tensor_buft_overrides.push_back({"^token_embd\\.weight$", ggml_backend_dev_buffer_type(gpu)});
@@ -971,7 +992,7 @@ struct wllama_context
     llama_backend_init();
     llama_numa_init(params.numa);
     if (!req.token_embd_on_gpu.not_null() || req.token_embd_on_gpu.value)
-      keep_tok_embd_on_gpu();
+      keep_tok_embd_on_gpu(model_paths);
     if (!ctx_server.load_model(params))
     {
       glue_msg_load_res res;
