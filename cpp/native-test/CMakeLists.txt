@@ -3,12 +3,13 @@ project(wllama-native-test CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# repo root, relative to this directory (dev/native-test)
+# repo root, relative to this directory (cpp/native-test)
 get_filename_component(WLLAMA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
 
 set(MTMD_VIDEO OFF CACHE BOOL "" FORCE)
 set(GGML_METAL OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
+set(GGML_RPC ON CACHE BOOL "" FORCE) # wllama-context.h registers rpc workers (with the TCP transport here)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
@@ -38,8 +39,11 @@ set(LLAMA_SERVER_SRC
     ${WLLAMA_ROOT}/llama.cpp/tools/server/server-task.cpp
     ${WLLAMA_ROOT}/llama.cpp/tools/server/server-chat.cpp
     ${WLLAMA_ROOT}/llama.cpp/tools/server/server-common.cpp
+    ${WLLAMA_ROOT}/llama.cpp/tools/server/server-decision.cpp
     ${WLLAMA_ROOT}/llama.cpp/tools/server/server-schema.cpp
+    ${WLLAMA_ROOT}/llama.cpp/tools/server/server-slot-sched.cpp
     ${WLLAMA_ROOT}/llama.cpp/tools/server/server-stream.cpp
+    ${WLLAMA_ROOT}/llama.cpp/vendor/cpp-httplib/httplib.cpp
 )
 
 include_directories(${WLLAMA_ROOT}/cpp)
