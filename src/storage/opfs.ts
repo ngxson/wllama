@@ -2,6 +2,10 @@ import { createWorker, isSafariMobile } from '../utils';
 import { OPFS_UTILS_WORKER_CODE } from '../workers-code/generated';
 import type { StorageBackend, StorageFileHint } from './index';
 
+// the handle of each File read from the cache: the worker reads it with a sync access handle, see "Async file read" in README-dev.md
+const fileHandles = new WeakMap<Blob, FileSystemFileHandle>();
+export const getOPFSFileHandle = (blob: Blob) => fileHandles.get(blob);
+
 export class OPFSBackend implements StorageBackend {
   isSupported(): boolean {
     return (
@@ -15,7 +19,9 @@ export class OPFSBackend implements StorageBackend {
     try {
       const cacheDir = await getCacheDir();
       const fileHandle = await cacheDir.getFileHandle(key);
-      return await fileHandle.getFile();
+      const file = await fileHandle.getFile();
+      fileHandles.set(file, fileHandle);
+      return file;
     } catch (e) {
       // NotFoundError or similar
       return null;

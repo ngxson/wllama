@@ -285,9 +285,57 @@ let seqName = null; // the next sequential read is name at seqNext
 let seqNext = -1;
 let seqWindow = 0;
 
+// Files of the OPFS cache are read with a sync access handle, straight into the heap: no Blob, no round trip to the main thread
+// (12-25x faster on Android). It is opened when needed and closed after each wasm call, so the cache can change the file in between
+const opfsFiles = {}; // name -> { handle, access, failed }
+
+// returns the number of bytes read, or -1 to read the Blob instead
+const opfsRead = async (name, offset, req_size, out_ptr) => {
+  const f = opfsFiles[name];
+  if (!f || f.failed) return -1;
+  try {
+    if (!f.access) {
+      f.access = await f.handle.createSyncAccessHandle({ mode: 'read-only' });
+      if (!f.used) {
+        f.used = true;
+        msg({
+          verb: 'console.debug',
+          args: [`Reading ${name} with an OPFS sync access handle`],
+        });
+      }
+    }
+    return f.access.read(getHeapU8().subarray(out_ptr, out_ptr + req_size), {
+      at: offset,
+    });
+  } catch (err) {
+    // for example: another tab has the file open, or the browser does not have sync access handles
+    f.failed = true;
+    msg({
+      verb: 'console.warn',
+      args: [
+        `Cannot read ${name} with an OPFS sync access handle, reading the Blob instead: ${err}`,
+      ],
+    });
+    return -1;
+  }
+};
+
+const opfsCloseAll = () => {
+  for (const f of Object.values(opfsFiles)) {
+    if (f.access) {
+      try {
+        f.access.close();
+      } catch {}
+      f.access = null;
+    }
+  }
+};
+
 // Called from EM_ASYNC_JS stub in cpp/wllama-patch.cpp (path is already a JS string)
 const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
   const name = _stripModelsPrefix(path);
+  const n = await opfsRead(name, offset, req_size, out_ptr);
+  if (n >= 0) return n;
   let total = 0;
   while (total < req_size) {
     const pos = offset + total;
@@ -389,6 +437,7 @@ const runWasmCall = async (callbackId, fn) => {
   try {
     await fn();
   } finally {
+    opfsCloseAll();
     wasmCallBusy = false;
     if (isAborted) {
       // do not touch the wasm again after it aborted; the main thread already rejected the queued tasks
@@ -549,6 +598,9 @@ onmessage = async (e) => {
     const argFilename = args[0];
     const argSize = args[1];
     const argAllocBuffer = args[2];
+    if (args[3]) {
+      opfsFiles[argFilename] = { handle: args[3], access: null, failed: false };
+    }
     try {
       // create blank file
       const emptyBuffer = new ArrayBuffer(0);
