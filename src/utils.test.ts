@@ -11,7 +11,6 @@ import {
   parseModelUrl,
   sortFileByShard,
   isValidGgufFile,
-  isSupportMem64,
   isSupportRelaxedSIMD,
   isSupportJSPI,
   needCompat,
@@ -234,30 +233,11 @@ describe('GGUF file validation', () => {
   });
 });
 
-describe('isSupportMem64', () => {
-  test('needs both the Memory constructor and the compiler', () => {
-    // Safari 27: the Memory constructor accepts i64, the compiler does not
-    const memory = vi
-      .spyOn(WebAssembly, 'Memory')
-      .mockImplementation(function () {} as any);
-    const validate = vi.spyOn(WebAssembly, 'validate');
-    try {
-      validate.mockReturnValue(true);
-      expect(isSupportMem64()).toBe(true);
-      validate.mockReturnValue(false);
-      expect(isSupportMem64()).toBe(false);
-    } finally {
-      memory.mockRestore();
-      validate.mockRestore();
-    }
-  });
-});
-
 describe('needCompat', () => {
   test('uses compat when relaxed SIMD is missing', () => {
-    // the test browsers have JSPI, Memory64 and relaxed SIMD
+    // the test browsers have JSPI and relaxed SIMD
     expect(isSupportRelaxedSIMD()).toBe(true);
-    if (!isSupportJSPI() || !isSupportMem64()) return;
+    if (!isSupportJSPI()) return;
     expect(needCompat()).toBe(false);
     const realValidate = WebAssembly.validate;
     // reject only the relaxed SIMD probe (i8x16.relaxed_swizzle = fd 80 02)

@@ -1,3 +1,5 @@
+import { splitBigGguf } from './gguf-split';
+
 export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
   const output = new Uint8Array(totalSize);
@@ -186,6 +188,11 @@ export const prepareBlobs = async (
     }
   }
 
+  // a single file of 4GB or more is split into virtual shards
+  if (blobs.length === 1) {
+    blobs.splice(0, 1, ...(await splitBigGguf(blobs[0])));
+  }
+
   // prepare model-XXXXX-of-XXXXX.gguf blobs
   sortFileByShard(blobs);
   const result = blobs.map((blob, i) => ({
@@ -268,25 +275,6 @@ export const isSupportJSPI = () => {
  */
 export const isSupportWebGPU = () => {
   return !!(navigator as any).gpu;
-};
-
-/**
- * @returns true if browser support WASM Memory64
- */
-export const isSupportMem64 = (): boolean => {
-  try {
-    new WebAssembly.Memory({
-      address: 'i64',
-      initial: 1n, // 1 page (64 KiB)
-    } as any);
-    // Safari 27 accepts the Memory above but cannot compile memory64, so ask the compiler too
-    // (module (memory i64 1))
-    return WebAssembly.validate(
-      new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 4, 1])
-    );
-  } catch {
-    return false;
-  }
 };
 
 /**
@@ -418,5 +406,4 @@ export const cbToAsyncIter =
 export const canUseAsyncFileRead = (compat: boolean) =>
   isSupportJSPI() || compat;
 
-export const needCompat = () =>
-  !isSupportJSPI() || !isSupportMem64() || !isSupportRelaxedSIMD();
+export const needCompat = () => !isSupportJSPI() || !isSupportRelaxedSIMD();
