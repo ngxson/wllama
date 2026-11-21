@@ -28,6 +28,36 @@ const complete = async (load: (w: Wllama) => Promise<void>) => {
   }
 };
 
+// another worker opens an exclusive sync access handle on the cached file (it fails while someone else has it open)
+// it is opened in the worker: a handle cannot be sent to a worker in Safari
+const openInWorker = async (url: string) => {
+  const key = await new ModelManager().cacheManager.getNameFromURL(url);
+  const worker = new Worker(
+    URL.createObjectURL(
+      new Blob(
+        [
+          `let access;
+          onmessage = async (e) => {
+            try {
+              if (e.data === 'close') { access.close(); postMessage('closed'); return; }
+              const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('cache');
+              access = await (await dir.getFileHandle(e.data)).createSyncAccessHandle();
+              postMessage('opened');
+            } catch (err) { postMessage('failed: ' + err); }
+          };`,
+        ],
+        { type: 'text/javascript' }
+      )
+    )
+  );
+  const call = (msg: string) =>
+    new Promise<string>((resolve) => {
+      worker.onmessage = (e) => resolve(e.data);
+      worker.postMessage(msg);
+    });
+  return { result: await call(key), close: () => call('close'), worker };
+};
+
 // the same model, not from the cache
 const expected = async () => {
   const blob = await (await fetch(TINY_MODEL)).blob();
@@ -36,9 +66,14 @@ const expected = async () => {
 
 test('reads a cached model with an OPFS sync access handle', async () => {
   const want = await expected();
-  const { text, logs } = await complete((w) =>
-    w.loadModelFromUrl(TINY_MODEL, { n_threads: 2 })
-  );
+  const { text, logs } = await complete(async (w) => {
+    await w.loadModelFromUrl(TINY_MODEL, { n_threads: 2 });
+    // the model stays loaded, but its handle is closed after each wasm call: the cache can open the file
+    const other = await openInWorker(TINY_MODEL);
+    expect(other.result).toBe('opened');
+    await other.close();
+    other.worker.terminate();
+  });
   expect(logs.some((l) => l.includes('with an OPFS sync access handle'))).toBe(
     true
   );
@@ -50,26 +85,8 @@ test('reads the Blob when the file is locked', async () => {
   const want = await expected();
   await new ModelManager().downloadModel(TINY_MODEL);
   // another worker holds an exclusive sync access handle on the cached file
-  const key = await new ModelManager().cacheManager.getNameFromURL(TINY_MODEL);
-  const locker = new Worker(
-    URL.createObjectURL(
-      new Blob(
-        [
-          // opened in the worker: a handle cannot be sent to a worker in Safari
-          `onmessage = async (e) => {
-            const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('cache');
-            await (await dir.getFileHandle(e.data)).createSyncAccessHandle();
-            postMessage('locked');
-          };`,
-        ],
-        { type: 'text/javascript' }
-      )
-    )
-  );
-  await new Promise((resolve) => {
-    locker.onmessage = resolve;
-    locker.postMessage(key);
-  });
+  const locker = await openInWorker(TINY_MODEL);
+  expect(locker.result).toBe('opened');
   try {
     const { text, logs } = await complete((w) =>
       w.loadModelFromUrl(TINY_MODEL, { n_threads: 2 })
@@ -77,6 +94,6 @@ test('reads the Blob when the file is locked', async () => {
     expect(logs.some((l) => l.includes('Cannot read'))).toBe(true);
     expect(text).toBe(want);
   } finally {
-    locker.terminate();
+    locker.worker.terminate();
   }
 });
