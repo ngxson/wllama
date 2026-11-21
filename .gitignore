@@ -26,6 +26,7 @@ a.out.wasm
 /compat/wasm/*.wasm
 /src/wasm/*.wasm
 /scripts/.binaryen-cache
+/scripts/dev-device/.certs
 /.ccache
 
 # vitest browser screenshots of failed tests

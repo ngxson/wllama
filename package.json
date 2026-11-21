@@ -25,6 +25,7 @@
   "scripts": {
     "serve": "node ./scripts/http_server.js",
     "serve:mt": "MULTITHREAD=1 node ./scripts/http_server.js",
+    "dev:device": "node ./scripts/dev-device/index.mjs",
     "clean": "rm -rf ./esm && rm -rf ./docs && rm -rf ./wasm",
     "build:worker": "./scripts/build_worker.sh",
     "build:glue": "node ./cpp/generate_glue_prototype.js",

@@ -283,6 +283,53 @@ Expected output ends with `== ALL OK`.
 - Keep the source lists in `CMakeLists.txt` in sync with the root `CMakeLists.txt` when the wasm build's file lists change.
 - `cpp/wllama-patch.cpp` (the `-Wl,--wrap` patches of the wasm link) is not built here: the macOS linker does not have `--wrap`. `main.cpp` defines the state that `cpp/wllama-patch.h` declares. TTS and realtime need the mtmd context that `__wrap_mtmd_init_from_file` records, so they do not work in this harness.
 
+## Testing on a phone or tablet
+
+`scripts/dev-device/` is a dev server to run wllama on an Android phone or tablet (or any browser), driven by an agent or a script on this machine. The device opens a page that stays connected and keeps the screen awake. The page under test runs in an iframe of it, so it can be reloaded without losing the connection. The agent sends commands, the device runs them in the iframe and sends back the result and the console output (wllama's logs included).
+
+```sh
+npm run dev:device                                      # serves the repo on port 8090 (HTTP) and 8091 (HTTPS)
+npm run dev:device -- --models ./path/to/models          # also serves a folder of GGUF files at /models/ (Range requests work)
+npm run dev:device -- --root ../other-worktree           # serves another checkout
+```
+
+Then open the device page on the device. The page must be a secure context, or the browser disables SharedArrayBuffer (no multi-thread), the Wake Lock API and OPFS (the model cache):
+
+- With adb (USB, or wireless debugging), recommended: `npm run dev:device -- --adb` forwards the port (`adb reverse tcp:8090 tcp:8090`), keeps the screen on while the device is plugged in (`adb shell svc power stayon usb`, turned off again when the server stops) and opens `http://localhost:8090/device` in Chrome on the device. `localhost` is a secure context
+- Without adb, on the same Wi-Fi: open one of the `https://<ip>:8091/device` URLs that the server prints, and accept the certificate warning once. The server makes a self-signed certificate for its LAN addresses (`scripts/dev-device/.certs`, git-ignored)
+
+Keeping the device awake: the page holds a screen wake lock (the "awake" field shows `yes (wake lock)`) and takes it again when the browser releases it. The browser can still release it during a long run (seen on a Galaxy Tab S10 FE), and then the device sleeps and locks: with a device on adb, use `--adb`, which keeps the screen on from the system side. When the wake lock is refused (Safari only gives it after a tap on the page) or missing, the page plays a hidden muted video instead (`video`), which needs no tap: an iPhone SE 3 (Safari 27.2) stayed awake and connected for over an hour with it.
+
+An iPhone has no `adb reverse`: open the `https://<ip>:8091/device` URL on it. With Xcode and a paired iPhone, this opens it from this machine: `xcrun devicectl device process launch --device <id from xcrun devicectl list devices> --payload-url https://<ip>:8091/device com.apple.mobilesafari`. Safari on iOS runs the compat build: call `setCompat({ wasm: '/compat/wasm/wllama.wasm' })` in the code under test, or wllama fetches the published compat build from the CDN, which can be another version.
+
+Commands, they print JSON and exit with a non-zero code on failure:
+
+```sh
+node scripts/dev-device/index.mjs status                 # connected devices, with their user agent, cores, WebGPU adapter, isolation, storage quota
+node scripts/dev-device/index.mjs open /examples/basic/  # load a page in the iframe (default: scripts/dev-device/blank.html)
+node scripts/dev-device/index.mjs reload [--hard]        # reload the page under test (--hard: the whole device page)
+node scripts/dev-device/index.mjs eval "document.title"  # run an expression or a function body (with return) in the page under test, it can await
+node scripts/dev-device/index.mjs run ./test.js          # same, with the code of a file
+node scripts/dev-device/index.mjs logs [--follow]        # console output of the devices
+```
+
+`--timeout <seconds>` (default 120) and `--device <id>` work with the commands. Without `--device`, a command goes to a device whose page is visible (the browser throttles hidden tabs), then to the one that connected last. A file that loads a model and returns the timings:
+
+```js
+const { Wllama } = await import('/esm/index.js'); // run `npm run build:wasm` then `npm run build` first
+const wllama = new Wllama({ default: '/src/wasm/wllama.wasm' });
+const t0 = performance.now();
+await wllama.loadModelFromUrl(location.origin + '/models/model.gguf', { n_threads: 4 });
+const loadMs = performance.now() - t0;
+const res = await wllama.createCompletion({ prompt: 'Once upon a time,', max_tokens: 16, temperature: 0 });
+await wllama.exit();
+return { loadMs, text: res.choices[0].text };
+```
+
+When a served file changes (`esm/` after `npm run build`, `examples/`, `src/wasm/`...), the server reloads the page under test on the devices. Changes of `scripts/dev-device/device.html` reload the whole device page; changes of `scripts/dev-device/index.mjs` need a restart of the server. `--no-watch` turns this off.
+
+The commands are only accepted from this machine (`/api/cmd`, `/api/status` and `/api/logs` answer 403 to other addresses), but the files and the device page are served to the whole network: only run it on a network you trust.
+
 ## Build process
 
 The build process uses emscripten in docker to compile the project.

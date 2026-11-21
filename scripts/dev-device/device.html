@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>wllama device</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #111; --muted: #666; --bar: #f2f2f2; --ok: #1a7f37; --bad: #cf222e; --warn: #9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; --muted: #999; --bar: #222; --ok: #3fb950; --bad: #f85149; --warn: #d29922; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #bar { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 10px; padding-top: max(6px, env(safe-area-inset-top)); background: var(--bar); }
+  #bar b { font-weight: 600; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  #bar button { font: inherit; padding: 2px 8px; }
+  #frame { flex: 1; border: 0; width: 100%; background: #fff; }
+  #log { height: 30vh; overflow: auto; margin: 0; padding: 6px 10px; padding-bottom: max(6px, env(safe-area-inset-bottom)); background: var(--bar); font: 11px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+  #log[hidden] { display: none; }
+  #log .error { color: var(--bad); } #log .warn { color: var(--warn); } #log .cmd { color: var(--muted); }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.6); }
+  #overlay[hidden] { display: none; }
+  #overlay button { font-size: 18px; padding: 16px 24px; border-radius: 12px; border: 0; }
+  #nosleep { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span id="conn" class="bad">● offline</span>
+  <span>awake: <b id="awake" class="warn">no</b></span>
+  <span>isolated: <b id="iso"></b></span>
+  <span id="name" style="color:var(--muted)"></span>
+  <span style="flex:1"></span>
+  <button id="toggleLog">logs</button>
+</div>
+<iframe id="frame" src="/scripts/dev-device/blank.html"></iframe>
+<pre id="log"></pre>
+<div id="overlay" hidden><button id="start">Tap to keep the screen awake</button></div>
+<video id="nosleep" muted playsinline loop></video>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const frame = $('frame');
+
+// stable id per browser, a name can be given with ?name=
+const id = (() => {
+  const q = new URLSearchParams(location.search).get('name');
+  if (q) return q;
+  let v = null;
+  try { v = localStorage.getItem('wllamaDeviceId'); } catch {}
+  if (!v) {
+    const ua = navigator.userAgent;
+    const kind = /Android/.test(ua) ? 'android' : /iPhone|iPad/.test(ua) ? 'ios' : 'desktop';
+    v = `${kind}-${Math.random().toString(36).slice(2, 6)}`;
+    try { localStorage.setItem('wllamaDeviceId', v); } catch {}
+  }
+  // several tabs of the same browser are different devices for the server
+  let tab = null;
+  try {
+    tab = sessionStorage.getItem('wllamaTab');
+    if (!tab) sessionStorage.setItem('wllamaTab', (tab = Math.random().toString(36).slice(2, 5)));
+  } catch {}
+  return tab ? `${v}-${tab}` : v;
+})();
+$('name').textContent = id;
+$('iso').textContent = self.crossOriginIsolated ? 'yes' : 'no (no multi-thread)';
+$('iso').className = self.crossOriginIsolated ? 'ok' : 'bad';
+
+//////////////////////////////////////////////////////////////
+// logs: shown here and sent to the server
+//////////////////////////////////////////////////////////////
+
+let queue = [];
+const LOG_LINES = 300;
+const show = (level, text) => {
+  const el = document.createElement('div');
+  el.className = level;
+  el.textContent = `${new Date().toISOString().slice(11, 19)} ${level === 'log' ? '' : level + ': '}${text}`;
+  const log = $('log');
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.appendChild(el);
+  while (log.childNodes.length > LOG_LINES) log.firstChild.remove();
+  if (atBottom) log.scrollTop = log.scrollHeight;
+};
+const MAX_LINE = 16000; // a few huge lines must not make one request too big
+const send = (level, text) => {
+  if (text.length > MAX_LINE) text = text.slice(0, MAX_LINE) + ` ... (${text.length - MAX_LINE} more chars)`;
+  show(level, text);
+  queue.push({ level, text });
+};
+setInterval(() => {
+  if (!queue.length) return;
+  const entries = queue;
+  queue = [];
+  // no keepalive: it limits the body to 64KB, and a rejected batch would be retried forever
+  fetch('/api/log', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, entries }) })
+    .catch(() => { queue = entries.concat(queue); });
+}, 300);
+$('toggleLog').onclick = () => { $('log').hidden = !$('log').hidden; };
+
+// errors of the page under test come from another realm, so instanceof Error is false for them
+const isError = (v) => Object.prototype.toString.call(v) === '[object Error]' || (v && typeof v === 'object' && 'message' in v && 'stack' in v);
+const fmt = (v) => {
+  if (typeof v === 'string') return v;
+  if (isError(v)) return v.stack && v.stack.includes(v.message) ? v.stack : `${v.name}: ${v.message}${v.stack ? '\n' + v.stack : ''}`;
+  // always a string: JSON.stringify gives undefined for undefined (Promise.reject()) or a function
+  try { return JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x)) ?? String(v); } catch { return String(v); }
+};
+const serialize = (v) => {
+  if (v === undefined) return null;
+  if (isError(v)) return { error: v.name, message: v.message, stack: v.stack };
+  try { return JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x))); } catch { return String(v); }
+};
+
+// capture the console and the errors of the page under test
+const hookFrame = () => {
+  let w;
+  try { w = frame.contentWindow; w.document; } catch { return; } // cross-origin page, nothing to hook
+  if (!w || w.__wllamaHooked) return;
+  w.__wllamaHooked = true;
+  for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
+    const orig = w.console[level].bind(w.console);
+    w.console[level] = (...args) => { orig(...args); send(level, args.map(fmt).join(' ')); };
+  }
+  w.addEventListener('error', (e) => send('error', `uncaught: ${fmt(e.error || e.message)}`));
+  w.addEventListener('unhandledrejection', (e) => send('error', `unhandled rejection: ${fmt(e.reason)}`));
+};
+frame.addEventListener('load', hookFrame);
+hookFrame();
+
+//////////////////////////////////////////////////////////////
+// keep the screen awake
+//////////////////////////////////////////////////////////////
+
+let wakeLock = null;
+let videoAwake = false;
+const showAwake = () => {
+  const el = $('awake');
+  if (wakeLock && !wakeLock.released) { el.textContent = 'yes (wake lock)'; el.className = 'ok'; }
+  else if (videoAwake) { el.textContent = 'video'; el.className = 'warn'; }
+  else { el.textContent = 'no'; el.className = 'bad'; }
+  $('overlay').hidden = !!(wakeLock && !wakeLock.released) || videoAwake;
+};
+const acquireWakeLock = async () => {
+  if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return showAwake();
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => {
+      send('warn', `wake lock released (page ${document.visibilityState})`);
+      showAwake();
+      // the browser can release it while the page stays visible (for example in power saving), take it again
+      if (document.visibilityState === 'visible') setTimeout(acquireWakeLock, 1000);
+    });
+  } catch (e) {
+    send('warn', `wake lock: ${e.message}${self.isSecureContext ? '' : ' (not a secure context, use adb reverse or https)'}`);
+    // Safari only gives it after a tap on the page; a muted video can play without one
+    if (!videoAwake) startVideo();
+  }
+  showAwake();
+};
+// without the Wake Lock API (not a secure context), a playing muted video can keep the screen on; it needs a tap
+const startVideo = async () => {
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = 2;
+    const ctx = c.getContext('2d');
+    let i = 0;
+    setInterval(() => { ctx.fillStyle = i++ % 2 ? '#000' : '#010101'; ctx.fillRect(0, 0, 2, 2); }, 1000);
+    const v = $('nosleep');
+    v.srcObject = c.captureStream(1);
+    await v.play();
+    videoAwake = true;
+  } catch (e) {
+    send('warn', `video keep-awake: ${e.message}`);
+  }
+  showAwake();
+};
+$('start').onclick = async () => {
+  await acquireWakeLock();
+  if (!wakeLock || wakeLock.released) await startVideo();
+};
+const postState = () =>
+  fetch('/api/state', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, visible: document.visibilityState === 'visible' }) }).catch(() => {});
+document.addEventListener('visibilitychange', () => {
+  send('info', `page ${document.visibilityState}`);
+  postState();
+  if (document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) acquireWakeLock();
+});
+setInterval(() => {
+  // not while the video keeps the screen on: Safari refuses the wake lock without a tap
+  if ('wakeLock' in navigator && !videoAwake && document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) acquireWakeLock();
+}, 10000);
+acquireWakeLock();
+
+//////////////////////////////////////////////////////////////
+// commands from the agent
+//////////////////////////////////////////////////////////////
+
+const waitLoad = (timeoutMs = 60000) =>
+  new Promise((resolve) => {
+    const t = setTimeout(() => resolve(false), timeoutMs);
+    frame.addEventListener('load', () => { clearTimeout(t); resolve(true); }, { once: true });
+  });
+
+// run code in the page under test: an expression, or a function body (use return), both can await
+const runCode = async (code) => {
+  const F = frame.contentWindow.Function;
+  let fn;
+  try { fn = new F(`return (async () => (${code}\n))();`); } catch { fn = new F(`return (async () => {${code}\n})();`); }
+  return await fn();
+};
+
+const handle = async (cmd) => {
+  send('cmd', `> ${cmd.type}${cmd.url ? ' ' + cmd.url : ''}${cmd.code ? ' ' + cmd.code.slice(0, 200) : ''}`);
+  switch (cmd.type) {
+    case 'open': {
+      const loaded = waitLoad();
+      frame.src = cmd.url;
+      return { loaded: await loaded, url: cmd.url };
+    }
+    case 'reload': {
+      if (cmd.hard) { setTimeout(() => location.reload(), 100); return { reloading: 'device page' }; }
+      const loaded = waitLoad();
+      frame.contentWindow.location.reload();
+      return { loaded: await loaded };
+    }
+    case 'eval':
+      return serialize(await runCode(cmd.code));
+    case 'info':
+      return await deviceInfo();
+    default:
+      throw new Error(`unknown command ${cmd.type}`);
+  }
+};
+
+const deviceInfo = async () => {
+  const info = {
+    userAgent: navigator.userAgent,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigator.deviceMemory,
+    screen: `${screen.width}x${screen.height}@${devicePixelRatio}`,
+    secureContext: self.isSecureContext,
+    crossOriginIsolated: self.crossOriginIsolated,
+    jspi: !!(self.WebAssembly && WebAssembly.Suspending),
+    wakeLock: !!(wakeLock && !wakeLock.released),
+  };
+  try {
+    const a = await navigator.gpu?.requestAdapter();
+    info.webgpu = a ? (a.info ? { vendor: a.info.vendor, architecture: a.info.architecture, description: a.info.description } : true) : false;
+  } catch { info.webgpu = false; }
+  try {
+    const e = await navigator.storage.estimate();
+    info.storage = { usageMB: Math.round(e.usage / 2 ** 20), quotaMB: Math.round(e.quota / 2 ** 20) };
+  } catch {}
+  return info;
+};
+
+const connect = () => {
+  const es = new EventSource(`/api/events?id=${encodeURIComponent(id)}`);
+  es.onopen = async () => {
+    $('conn').textContent = '● connected';
+    $('conn').className = 'ok';
+    fetch('/api/hello', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, info: await deviceInfo() }) });
+    postState();
+  };
+  es.onerror = () => { $('conn').textContent = '● offline'; $('conn').className = 'bad'; };
+  es.onmessage = async (e) => {
+    const cmd = JSON.parse(e.data);
+    let body;
+    try {
+      body = { cmd: cmd.id, ok: true, result: await handle(cmd) };
+    } catch (err) {
+      send('error', fmt(err));
+      body = { cmd: cmd.id, ok: false, error: fmt(err) };
+    }
+    // reloads from file changes have no id, nobody waits for them
+    if (cmd.id) fetch('/api/result', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  };
+};
+connect();
+</script>
+</body>
+</html>
