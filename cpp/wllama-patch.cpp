@@ -281,6 +281,12 @@ static bool is_webgpu(ggml_backend_dev_t dev)
   return dev && strcmp(ggml_backend_dev_name(dev), "WebGPU") == 0;
 }
 
+// rpc workers (see wllama-rpc-transport.cpp), their devices are named "RPC<n>[<endpoint>]"
+static bool is_rpc(ggml_backend_dev_t dev)
+{
+  return dev && strncmp(ggml_backend_dev_name(dev), "RPC", 3) == 0;
+}
+
 extern "C" struct llama_model *__real_llama_model_load_from_file(const char *path_model, struct llama_model_params params);
 extern "C" struct llama_model *__wrap_llama_model_load_from_file(const char *path_model, struct llama_model_params params)
 {
@@ -303,7 +309,7 @@ extern "C" void __real_ggml_backend_dev_get_props(ggml_backend_dev_t device, str
 extern "C" void __wrap_ggml_backend_dev_get_props(ggml_backend_dev_t device, struct ggml_backend_dev_props *props)
 {
   __real_ggml_backend_dev_get_props(device, props);
-  if (loading_model && is_webgpu(device))
+  if (loading_model && (is_webgpu(device) || is_rpc(device)))
   {
     props->caps.async = true;
     props->caps.events = true;
@@ -315,9 +321,9 @@ extern "C" ggml_backend_buffer_type_t __real_ggml_backend_dev_host_buffer_type(g
 extern "C" ggml_backend_buffer_type_t __wrap_ggml_backend_dev_host_buffer_type(ggml_backend_dev_t device)
 {
   ggml_backend_buffer_type_t buft = __real_ggml_backend_dev_host_buffer_type(device);
-  if (!buft && loading_model && is_webgpu(device))
+  if (!buft && loading_model && (is_webgpu(device) || is_rpc(device)))
   {
-    // WriteBuffer() copies the data at call time, so plain CPU memory works as a staging buffer
+    // WriteBuffer() (WebGPU) and set_tensor_async (ggml-rpc) copy the data at call time, so plain CPU memory works as a staging buffer
     return ggml_backend_cpu_buffer_type();
   }
   return buft;

@@ -275,28 +275,54 @@ let pendingReadReject = null;
 
 const _stripModelsPrefix = (path) => path.replace(/^\/?models\//, '');
 
-// postMessage cannot send an ArrayBuffer bigger than 2GB, so big reads are split
-const MAX_READ_CHUNK = 256 * 1024 * 1024;
+// reads are split in chunks of READ_CHUNK at most (postMessage cannot send an ArrayBuffer bigger than 2GB).
+// Each chunk is a new ArrayBuffer, garbage once copied to the heap: small chunks keep that garbage small while loading.
+// llama.cpp uploads the weights to the GPU and to rpc workers in reads of 1MB, one round trip to the main thread each,
+// so sequential reads get a read-ahead that grows (8 times the read, then 4 times more each time) up to READ_CHUNK; other reads (small tensors, the loader jumps between them) get only what they ask for
+const READ_CHUNK = 32 * 1024 * 1024;
+let readAhead = null; // { name, offset, bytes }: the rest of the last chunk
+let seqName = null; // the next sequential read is name at seqNext
+let seqNext = -1;
+let seqWindow = 0;
 
 // Called from EM_ASYNC_JS stub in cpp/wllama-patch.cpp (path is already a JS string)
 const _wllama_js_file_read = async (path, offset, req_size, out_ptr) => {
   const name = _stripModelsPrefix(path);
   let total = 0;
   while (total < req_size) {
-    const size = Math.min(MAX_READ_CHUNK, req_size - total);
-    const got = await readFileChunk(
-      name,
-      offset + total,
-      size,
-      out_ptr + total
-    );
-    total += got;
-    if (got < size) break; // end of file
+    const pos = offset + total;
+    const left = req_size - total;
+    const ra = readAhead;
+    if (
+      ra &&
+      ra.name === name &&
+      pos >= ra.offset &&
+      pos < ra.offset + ra.bytes.length
+    ) {
+      const start = pos - ra.offset;
+      const n = Math.min(left, ra.bytes.length - start);
+      getHeapU8().set(ra.bytes.subarray(start, start + n), out_ptr + total);
+      total += n;
+      seqName = name;
+      seqNext = pos + n;
+      continue;
+    }
+    const sequential = name === seqName && pos === seqNext;
+    seqWindow = sequential ? Math.max(seqWindow * 4, left * 8) : 0;
+    const size = Math.min(READ_CHUNK, Math.max(left, seqWindow));
+    const bytes = await readFileBytes(name, pos, size);
+    const n = Math.min(left, bytes.length);
+    getHeapU8().set(bytes.subarray(0, n), out_ptr + total);
+    total += n;
+    readAhead = bytes.length > n ? { name, offset: pos, bytes } : null;
+    seqName = name;
+    seqNext = pos + n;
+    if (n < left && bytes.length < size) break; // end of file
   }
   return total;
 };
 
-const readFileChunk = async (name, offset, req_size, out_ptr) => {
+const readFileBytes = async (name, offset, req_size) => {
   pendingReadPromise = new Promise((res, rej) => {
     pendingReadResolve = res;
     pendingReadReject = rej;
@@ -314,10 +340,7 @@ const readFileChunk = async (name, offset, req_size, out_ptr) => {
     pendingReadResolve = null;
     pendingReadReject = null;
   }
-
-  const bytes = new Uint8Array(data);
-  getHeapU8().set(bytes, out_ptr);
-  return bytes.length;
+  return new Uint8Array(data);
 };
 
 //////////////////////////////////////////////////////////////

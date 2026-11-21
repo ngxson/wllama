@@ -95,6 +95,7 @@ When wasm calls `fread()`:
 Note:
 - While awaiting the read data, the worker should not have any other activities (a global variable is used as a guard and will raise an exception on any incoming messages)
 - The minimum read size is 1MB. If less than this amount is requested, the full 1MB block is cached for subsequent reads. This is because reading GGUF metadata frequently involves reads of less than 1KB at a time, which can become a bottleneck without caching.
+- On the JS side (`_wllama_js_file_read` in `llama-cpp.js`), the main thread is asked for 32MB at most per read: a bigger read is split in 32MB chunks. Each chunk is a new `ArrayBuffer` that is garbage once copied to the heap, so bigger chunks pile up more garbage while loading. The weights for the GPU and rpc workers are read 1MB at a time, one round trip each, so a read that follows the previous one gets a read-ahead: 8 times the read, then 4 times more each time, up to 32MB, kept for the next reads. A read somewhere else (the loader jumps between tensors) resets it and gets only what it asks for.
 - Env var `USE_ASYNC_FILE` is used to signal from JS to wasm that we are using async file read (upon starting the module). If `USE_ASYNC_FILE` is not set, we fallback to HeapFS/mmap case (see in next section)
 
 Memory use while loading:
@@ -102,7 +103,7 @@ Memory use while loading:
 - The main thread transfers the `ArrayBuffer` to the worker (no copy), then the worker copies it to the destination in the wasm heap. This is the only copy
 - So the whole file is never in the wasm heap at once (unlike HeapFS below)
 - The wasm heap never shrinks: memory freed after the load goes back to malloc, not to the browser. So the peak during the load stays as page memory, keep it small
-- Tensors on the CPU stay in the wasm heap. Tensors on the GPU are copied through 4 buffers of 1MB (see the `ggml_backend_dev_get_props` patch in "Patches"), then uploaded, so they do not stay in the wasm heap
+- Tensors on the CPU stay in the wasm heap. Tensors on the GPU or on rpc workers are copied through 4 buffers of 1MB (see the `ggml_backend_dev_get_props` patch in "Patches"), then uploaded, so they do not stay in the wasm heap
 - With all layers on the GPU, the token embedding is also put on the GPU (load option `token_embd_on_gpu`), otherwise llama.cpp keeps a CPU copy for the input lookup
 
 ### HeapFS
@@ -180,7 +181,7 @@ The C++ patches:
 - `ggml_threadpool_new`, `ggml_threadpool_free`, `ggml_graph_plan`: one shared ggml threadpool, see "Threading model"
 - `mtmd_init_from_file`: record the mtmd context of the server (`shared_mctx`), TTS and realtime need it
 - `fopen`, `fclose`, `fread`, `fseek`, `ftell`: read model files from JS, see "Async file read"
-- `llama_model_load_from_file`, `llama_model_load_from_splits`, `ggml_backend_dev_get_props`, `ggml_backend_dev_host_buffer_type`: while a model loads, report the async, events and host buffer caps for WebGPU, so llama.cpp uploads the weights through 4 small buffers instead of one buffer as big as the biggest tensor. The wasm heap never shrinks, so that big buffer stays as page memory after the load
+- `llama_model_load_from_file`, `llama_model_load_from_splits`, `ggml_backend_dev_get_props`, `ggml_backend_dev_host_buffer_type`: while a model loads, report the async, events and host buffer caps for WebGPU and rpc devices, so llama.cpp uploads the weights through 4 small buffers instead of one buffer as big as the biggest tensor. The wasm heap never shrinks, so that big buffer stays as page memory after the load
 - `wgpuQueueSubmit`, `wgpuQueueOnSubmittedWorkDone`, `wgpuBufferMapAsync`, `wgpuInstanceWaitAny`: see "WebGPU queue waits" below
 - `wgpuAdapterGetLimits`: cap `maxBufferSize` at 2GB. ggml adds the tensor sizes of one buffer in `size_t`, so with a limit near 4GB the sum wraps around on wasm32, and a model with more than 4GB on the GPU fails to load
 
