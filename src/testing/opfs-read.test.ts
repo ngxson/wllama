@@ -13,7 +13,8 @@ const complete = async (load: (w: Wllama) => Promise<void>) => {
     { default: '/src/wasm/wllama.wasm' },
     { logger: { debug: log, log, warn: log, error: log } }
   );
-  wllama.setCompat(null);
+  // without JSPI (Safari, Firefox, COMPAT=1), the compat build reads the files the same way
+  wllama.setCompat({ wasm: '/compat/wasm/wllama.wasm' }, 'firefox_safari');
   try {
     await load(wllama);
     const res = await wllama.createCompletion({
