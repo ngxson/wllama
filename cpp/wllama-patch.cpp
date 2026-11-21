@@ -341,6 +341,7 @@ extern "C"
   WGPUFuture __real_wgpuQueueOnSubmittedWorkDone(WGPUQueue queue, WGPUQueueWorkDoneCallbackInfo info);
   WGPUFuture __real_wgpuBufferMapAsync(WGPUBuffer buffer, WGPUMapMode mode, size_t offset, size_t size, WGPUBufferMapCallbackInfo info);
   WGPUWaitStatus __real_wgpuInstanceWaitAny(WGPUInstance instance, size_t count, WGPUFutureWaitInfo *futures, uint64_t timeout_ns);
+  WGPUStatus __real_wgpuAdapterGetLimits(WGPUAdapter adapter, WGPULimits *limits);
 }
 
 static uint64_t n_submitted = 0;
@@ -428,6 +429,21 @@ extern "C" WGPUWaitStatus __wrap_wgpuInstanceWaitAny(WGPUInstance instance, size
     return WGPUWaitStatus_Success;
   }
   return __real_wgpuInstanceWaitAny(instance, count, futures, timeout_ns);
+}
+
+// ggml adds the tensor sizes of one buffer in size_t, and only starts a new buffer above maxBufferSize
+// on wasm32, a limit near 4GB lets this sum wrap around, so a model with more than 4GB on the GPU gets a buffer that is too small
+// 2GB keeps the sum of a buffer and the next tensor under 4GB; ggml then uses more buffers
+static const uint64_t WGPU_MAX_BUFFER_SIZE_32 = 0x7fff0000;
+extern "C" WGPUStatus __wrap_wgpuAdapterGetLimits(WGPUAdapter adapter, WGPULimits *limits)
+{
+  WGPUStatus status = __real_wgpuAdapterGetLimits(adapter, limits);
+  if (status == WGPUStatus_Success && sizeof(size_t) < sizeof(uint64_t))
+  {
+    limits->maxBufferSize = std::min(limits->maxBufferSize, WGPU_MAX_BUFFER_SIZE_32);
+    limits->maxStorageBufferBindingSize = std::min(limits->maxStorageBufferBindingSize, WGPU_MAX_BUFFER_SIZE_32);
+  }
+  return status;
 }
 
 #endif // WLLAMA_PATCH_WEBGPU

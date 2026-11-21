@@ -170,6 +170,7 @@ The C++ patches:
 - `fopen`, `fclose`, `fread`, `fseek`, `ftell`: read model files from JS, see "Async file read"
 - `llama_model_load_from_file`, `llama_model_load_from_splits`, `ggml_backend_dev_get_props`, `ggml_backend_dev_host_buffer_type`: while a model loads, report the async, events and host buffer caps for WebGPU, so llama.cpp uploads the weights through 4 small buffers instead of one buffer as big as the biggest tensor. The wasm heap never shrinks, so that big buffer stays as page memory after the load
 - `wgpuQueueSubmit`, `wgpuQueueOnSubmittedWorkDone`, `wgpuBufferMapAsync`, `wgpuInstanceWaitAny`: see "WebGPU queue waits" below
+- `wgpuAdapterGetLimits`: cap `maxBufferSize` at 2GB. ggml adds the tensor sizes of one buffer in `size_t`, so with a limit near 4GB the sum wraps around on wasm32, and a model with more than 4GB on the GPU fails to load
 
 Remove a patch when upstream fixes the problem.
 
