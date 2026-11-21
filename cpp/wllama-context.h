@@ -708,12 +708,14 @@ struct wllama_context
     bool on_gpu = false;
     const int64_t i_arch = gguf_find_key(gguf, "general.architecture");
     const ggml_tensor *tok_embd = ggml_get_tensor(meta, "token_embd.weight");
-    if (i_arch >= 0 && tok_embd)
+    // on unexpected metadata, skip it and let the loader report the error
+    if (i_arch >= 0 && gguf_get_kv_type(gguf, i_arch) == GGUF_TYPE_STRING && tok_embd)
     {
       // only if the output layer is on the GPU too
       const int64_t i_layers = gguf_find_key(gguf, (std::string(gguf_get_val_str(gguf, i_arch)) + ".block_count").c_str());
-      const int64_t n_layer = i_layers >= 0 ? gguf_get_val_u32(gguf, i_layers) : INT32_MAX;
-      if (params.n_gpu_layers < 0 || params.n_gpu_layers > n_layer)
+      const bool has_n_layer = i_layers >= 0 && gguf_get_kv_type(gguf, i_layers) == GGUF_TYPE_UINT32;
+      const int64_t n_layer = has_n_layer ? gguf_get_val_u32(gguf, i_layers) : 0;
+      if (has_n_layer && (params.n_gpu_layers < 0 || params.n_gpu_layers > n_layer))
       {
         ggml_init_params ip = {/*.mem_size =*/3 * ggml_tensor_overhead(), /*.mem_buffer =*/nullptr, /*.no_alloc =*/true};
         ggml_context *ctx = ggml_init(ip);
