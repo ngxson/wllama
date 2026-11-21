@@ -60,6 +60,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       },
       {
         "type": "int",
+        "name": "rpc_mem_max",
+        "isNullable": true
+      },
+      {
+        "type": "int",
         "name": "n_ctx",
         "isNullable": false
       },
@@ -388,6 +393,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "bool",
         "name": "success",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "n_rpc_workers",
         "isNullable": false
       },
       {
@@ -968,6 +978,7 @@ export interface GlueMsgLoadReq {
   use_mlock: boolean;
   n_gpu_layers: number;
   token_embd_on_gpu?: boolean | undefined;
+  rpc_mem_max?: number | undefined;
   n_ctx: number;
   n_threads: number;
   model_alias?: string | undefined;
@@ -1038,6 +1049,7 @@ export interface GlueMsgLoadReq {
 export interface GlueMsgLoadRes {
   _name: "load_res";
   success: boolean;
+  n_rpc_workers: number;
   n_ctx: number;
   n_batch: number;
   n_ubatch: number;

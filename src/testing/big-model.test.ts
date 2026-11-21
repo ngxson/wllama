@@ -52,11 +52,11 @@ test('6GB model on GPU only', async () => {
   expect(buffers.some((l) => /WebGPU model buffer size/.test(l))).toBe(true);
 }, 600000);
 
-// about 5GB of layers on the CPU: they stay in the main wasm (4GB), rpc workers are not used with WebGPU
-test.fails(
-  '6GB model, 5GB on CPU and the rest on GPU',
-  async () => {
-    await run(5);
-  },
-  600000
-);
+// about 5GB of layers on the CPU: more than one wasm instance (4GB), so they go to rpc workers
+test('6GB model, 5GB on CPU and the rest on GPU', async () => {
+  const buffers = await run(5);
+  expect(buffers.some((l) => /RPC\d+\[.*\] model buffer size/.test(l))).toBe(
+    true
+  );
+  expect(buffers.some((l) => /WebGPU model buffer size/.test(l))).toBe(true);
+}, 600000);

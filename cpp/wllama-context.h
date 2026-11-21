@@ -756,6 +756,81 @@ struct wllama_context
     }
   }
 
+  // a wasm instance has 4GB: memory to keep free in each rpc worker, in KiB
+  static constexpr size_t RPC_MEM_MARGIN = 1024 * 1024;
+
+  struct mem_usage
+  {
+    std::vector<ggml_backend_dev_t> devs;
+    std::vector<size_t> kib; // model, context and compute buffers of each device, the host is last
+  };
+
+  // memory that a load with these params needs, nothing is allocated. Empty if it fails, the load then reports the error
+  mem_usage measure_mem(llama_model_params mparams)
+  {
+    mem_usage res;
+    auto cparams = common_context_params_to_llama(params);
+    uint32_t n_layer, n_layer_skip, n_ctx_train, n_expert;
+    wllama_mem_kib = true;
+    try
+    {
+      for (const auto &d : common_get_device_memory_data(params.model.get_paths(), &mparams, &cparams, res.devs, n_layer, n_layer_skip, n_ctx_train, n_expert, GGML_LOG_LEVEL_ERROR))
+      {
+        res.kib.push_back(d.model + d.context + d.compute);
+      }
+    }
+    catch (const std::exception &e)
+    {
+      LOG_WRN("%s: %s\n", __func__, e.what());
+    }
+    wllama_mem_kib = false;
+    return res;
+  }
+
+  // number of rpc workers needed if the part of the model on the CPU is bigger than host_mem_max (KiB), else 0
+  int count_rpc_workers(size_t host_mem_max)
+  {
+    const mem_usage mem = measure_mem(common_model_params_to_llama(params));
+    if (mem.kib.empty() || mem.kib.back() <= host_mem_max)
+      return 0;
+    const size_t worker_mem = SIZE_MAX / 1024 - RPC_MEM_MARGIN;
+    const size_t n = (mem.kib.back() + worker_mem - 1) / worker_mem;
+    return (int)std::min({n, (size_t)GGML_RPC_MAX_SERVERS, llama_max_devices() - mem.devs.size()});
+  }
+
+  // the fit of llama.cpp (common/fit.cpp) puts the layers on the rpc workers, as with --rpc. See "RPC workers" in README-dev.md
+  void fit_rpc_workers(size_t n_rpc)
+  {
+    std::vector<size_t> margins(llama_max_devices(), RPC_MEM_MARGIN);
+    wllama_fit_gpu_mem = 0;
+    if (ggml_backend_dev_t gpu = ggml_backend_dev_by_name("WebGPU"))
+    {
+      // WebGPU keeps the layers that the user asked for (n_gpu_layers): its limit for the fit is the memory of these layers
+      std::vector<float> only_gpu(llama_max_devices(), 0.0f);
+      only_gpu[std::min(n_rpc, only_gpu.size() - 1)] = 1.0f;
+      auto mparams = common_model_params_to_llama(params);
+      mparams.tensor_split = only_gpu.data();
+      const mem_usage mem = measure_mem(mparams);
+      if (n_rpc < mem.devs.size() && mem.devs[n_rpc] == gpu)
+      {
+        wllama_fit_gpu_mem = std::max<size_t>(mem.kib[n_rpc], 1);
+        margins[n_rpc] = 0;
+      }
+    }
+    // the fit writes tensor_split and tensor_buft_overrides in place; it only changes n_gpu_layers if it has the default value
+    params.tensor_buft_overrides.resize(llama_max_tensor_buft_overrides(), {nullptr, nullptr});
+    auto mparams = common_model_params_to_llama(params);
+    auto cparams = common_context_params_to_llama(params);
+    mparams.n_gpu_layers = llama_model_default_params().n_gpu_layers;
+    wllama_mem_kib = true;
+    const auto status = common_fit_params(params.model.get_paths(), &mparams, &cparams, params.tensor_split, params.tensor_buft_overrides.data(), margins.data(), params.fit_params_min_ctx, nullptr, GGML_LOG_LEVEL_ERROR);
+    wllama_mem_kib = false;
+    // if the fit fails, llama.cpp splits all layers by the free memory of the devices
+    if (status != COMMON_PARAMS_FIT_STATUS_SUCCESS)
+      wllama_fit_gpu_mem = 0;
+    params.n_gpu_layers = mparams.n_gpu_layers;
+  }
+
   glue_msg_load_res action_load(const char *req_raw)
   {
     PARSE_REQ(glue_msg_load_req);
@@ -988,21 +1063,45 @@ struct wllama_context
 
     // lazy read needs mmap; also its 4GiB threshold is a size_t, which is 0 on wasm32
     params.lazy_mode = LLAMA_LAZY_MODE_OFF;
+    // we call the fit ourselves, only with rpc workers: see fit_rpc_workers()
+    params.fit_params = false;
 
     // rpc workers hold a part of the model in their own memory, same as --rpc in llama.cpp
+    size_t n_rpc = 0;
     if (const char *servers = getenv("WLLAMA_RPC_SERVERS"))
     {
+      // WebGPU is one of the llama_max_devices() devices too
+      const size_t max_rpc = llama_max_devices() - (ggml_backend_dev_by_name("WebGPU") ? 1 : 0);
       for (const auto &endpoint : string_split<std::string>(servers, ','))
       {
+        if (n_rpc == max_rpc)
+          break;
         ggml_backend_register(ggml_backend_rpc_add_server(endpoint.c_str()));
+        n_rpc++;
       }
     }
 
     // load model
     llama_backend_init();
     llama_numa_init(params.numa);
-    if (!req.token_embd_on_gpu.not_null() || req.token_embd_on_gpu.value)
-      keep_tok_embd_on_gpu(model_paths);
+    if (n_rpc > 0)
+    {
+      fit_rpc_workers(n_rpc);
+    }
+    else
+    {
+      if (!req.token_embd_on_gpu.not_null() || req.token_embd_on_gpu.value)
+        keep_tok_embd_on_gpu(model_paths);
+      const int n_rpc_needed = req.rpc_mem_max.not_null() ? count_rpc_workers((size_t)req.rpc_mem_max.value * 1024) : 0;
+      if (n_rpc_needed > 0)
+      {
+        // JS starts the rpc workers and loads again
+        glue_msg_load_res res;
+        res.success.value = false;
+        res.n_rpc_workers.value = n_rpc_needed;
+        return res;
+      }
+    }
     if (!ctx_server.load_model(params))
     {
       glue_msg_load_res res;
@@ -2131,6 +2230,15 @@ void common_log_add(struct common_log *log, enum ggml_log_level level, const cha
   va_end(args);
 }
 
+bool common_log_get_jsonl(void)
+{
+  return false;
+}
+
+void common_log_add_json(struct common_log *log, const char *type, const common_json &data)
+{
+}
+
 static int common_get_verbosity(enum ggml_log_level level)
 {
   return static_cast<int>(level);
@@ -2145,50 +2253,8 @@ void common_log_default_callback(enum ggml_log_level level, const char *text, vo
   }
 }
 
-enum common_params_fit_status common_fit_params(
-    const std::vector<std::string> &paths_model,
-    llama_model_params *mparams,
-    llama_context_params *cparams,
-    float *tensor_split,
-    llama_model_tensor_buft_override *tensor_buft_overrides,
-    size_t *margins,
-    uint32_t n_ctx_min,
-    const common_fit_extra_model *extra,
-    ggml_log_level log_level)
-{
-  return COMMON_PARAMS_FIT_STATUS_FAILURE;
-}
-
 std::pair<long, std::vector<char>> common_remote_get_content(const std::string &url,
                                                              const common_remote_params &params)
 {
   throw std::runtime_error("common_remote_get_content is not implemented in wllama");
 }
-
-#if 1
-common_device_memory_data_vec common_get_device_memory_data(
-    const char *path_model,
-    const llama_model_params *mparams,
-    const llama_context_params *cparams,
-    std::vector<ggml_backend_dev_t> &devs,
-    uint32_t &hp_ngl,
-    uint32_t &hp_n_ctx_train,
-    uint32_t &hp_n_expert,
-    ggml_log_level log_level)
-{
-  throw std::runtime_error("common_get_device_memory_data is not implemented in wllama");
-}
-#else
-std::vector<llama_device_memory_data> common_get_device_memory_data(
-    const char *path_model,
-    const struct llama_model_params *mparams,
-    const struct llama_context_params *cparams,
-    std::vector<ggml_backend_dev_t> &devs,
-    uint32_t &hp_ngl,
-    uint32_t &hp_n_ctx_train,
-    uint32_t &hp_n_expert,
-    enum ggml_log_level log_level)
-{
-  throw std::runtime_error("common_get_device_memory_data is not implemented in wllama");
-}
-#endif

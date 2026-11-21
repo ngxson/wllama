@@ -123,9 +123,12 @@ The main downside of this approach is that on WebGPU, even though some tensors c
 
 ## RPC workers
 
-Both builds use 32-bit memory, so one wasm instance has 4GB at most. Without WebGPU, a bigger model is split across several wasm instances: the main one, plus `rpc_workers` workers that each run the same wasm as a ggml-rpc server (`wllama_rpc_serve`). llama.cpp sees each worker as an RPC device (same as `--rpc`) and puts layers on it.
+Both builds use 32-bit memory, so one wasm instance has 4GB at most. If the part of the model on the CPU is bigger, it is split across several wasm instances: the main one, plus `rpc_workers` workers that each run the same wasm as a ggml-rpc server (`wllama_rpc_serve`). llama.cpp sees each worker as an RPC device (same as `--rpc`) and puts layers on it.
 
-- By default, `pickRpcWorkers()` in `src/wllama.ts` uses workers only when WebGPU is not used and the model does not fit in one instance. `countRpcWorkers()` in `src/gguf-split.ts` estimates the number from the GGUF header: the main instance keeps the input embeddings, the workers get the layers and the output. `token_embd` goes to the first worker, as `keep_tok_embd_on_gpu()` picks the first GPU-type device, and rpc devices are GPU-type. Set `rpc_workers` to force a number, or 0 to disable.
+- By default, the wasm decides if workers are needed (`count_rpc_workers()` in `cpp/wllama-context.h`). Before the load, it measures the memory that the model, the KV cache and the compute buffers need on the CPU, with the user's params (`n_gpu_layers` on WebGPU included). If this is more than `RPC_CONFIG.mainMemMax` (3.5GB), the load returns the number of workers needed (`n_rpc_workers`, one per 3GB), and `loadModel()` starts them and loads again. The measure reads the metadata one more time (0.4s for a 248k vocab), so only files of `RPC_CONFIG.autoMinSize` (2.5GB) or more are measured. Set `rpc_workers` to force a number, or 0 to disable.
+- With workers, the fit of llama.cpp (`common/fit.cpp`, same as `--fit` of llama-server) puts the layers on the devices, see `fit_rpc_workers()`. The device order is `[RPC0, ..., RPCn, WebGPU]`, the first layers go to the first device. The fit fills the devices from the last one: each worker gets layers until 1GB of its 4GB is left, and the layers that are left stay in the main instance, with the input embeddings (`token_embd` too: `keep_tok_embd_on_gpu()` is not used with workers, the fit refuses params that already have a tensor override).
+- WebGPU keeps the layers that the user asked for. The fit only takes memory limits, so we first measure the memory of WebGPU with `n_gpu_layers` layers on it, and give this number to the fit as the limit of WebGPU. The fit then finds the same layer count again.
+- The fit loads the metadata about 10 times (4s for Qwen3.5-4B BF16, 8.4GB, on a M-series Mac).
 - `cpp/wllama-rpc-transport.cpp` replaces `transport.cpp` of ggml-rpc (see `CMakeLists.txt`). The bytes go through 2 SharedArrayBuffer rings per worker, and the reader waits with `Atomics.wait`. The JS side is `src/workers-code/rpc-transport.js`.
 - On the main wasm, ggml-rpc does its I/O in its own thread (one per worker), so the transport also runs in the pthread workers: `worker.ts` adds it to their script, and the channels are posted to each pthread worker before emscripten starts it. The pthread pool gets one more thread per worker.
 - Multi-thread is required.
@@ -183,10 +186,26 @@ The C++ patches:
 - `mtmd_init_from_file`: record the mtmd context of the server (`shared_mctx`), TTS and realtime need it
 - `fopen`, `fclose`, `fread`, `fseek`, `ftell`: read model files from JS, see "Async file read"
 - `llama_model_load_from_file`, `llama_model_load_from_splits`, `ggml_backend_dev_get_props`, `ggml_backend_dev_host_buffer_type`: while a model loads, report the async, events and host buffer caps for WebGPU and rpc devices, so llama.cpp uploads the weights through 4 small buffers instead of one buffer as big as the biggest tensor. The wasm heap never shrinks, so that big buffer stays as page memory after the load
+- `ggml_backend_dev_memory`, `ggml_backend_alloc_ctx_tensors_from_buft_size`, `ggml_backend_sched_reserve_size`: see "Fit on wasm32" below
 - `wgpuQueueSubmit`, `wgpuQueueOnSubmittedWorkDone`, `wgpuBufferMapAsync`, `wgpuInstanceWaitAny`: see "WebGPU queue waits" below
 - `wgpuAdapterGetLimits`: cap `maxBufferSize` at 2GB. ggml adds the tensor sizes of one buffer in `size_t`, so with a limit near 4GB the sum wraps around on wasm32, and a model with more than 4GB on the GPU fails to load
 
 Remove a patch when upstream fixes the problem.
+
+### Fit on wasm32
+
+The fit (`common/fit.cpp`) loads the model without allocation, many times with different layer counts, and reads the memory that each device would use. llama.cpp adds these sizes in `size_t`, so on wasm32 a sum above 4GB wraps around: 6GB of layers on one device reads as 2GB, and the fit puts them there.
+
+While `wllama_mem_kib` is set (only around the fit and the measures, see `measure_mem()` and `fit_rpc_workers()` in `cpp/wllama-context.h`), 3 wrapped functions give sizes in KiB instead of bytes:
+- `ggml_backend_alloc_ctx_tensors_from_buft_size`: size of the weights and of the KV cache. It adds the tensor sizes in 64 bits
+- `ggml_backend_sched_reserve_size`: size of the compute buffers
+- `ggml_backend_dev_memory`: memory of a device. The margins that we give to the fit are in KiB too
+
+So the trace logs of the fit print KiB as bytes. A load never runs with `wllama_mem_kib` set.
+
+`ggml_backend_dev_memory` has 2 more changes:
+- The CPU device reports 4GB (what a wasm instance can have): ggml-cpu multiplies the page count by the page size, which gives 0 in 32 bits. An rpc worker reports this number to the main wasm.
+- With a memory limit on WebGPU (`wllama_fit_gpu_mem`), the rpc devices report 0 free memory while a model loads. The default split of llama.cpp (by free memory) then puts all layers on WebGPU, which is over the limit. Without this, the fit can accept the default split, which does not keep `n_gpu_layers` layers on WebGPU.
 
 ### WebGPU queue waits
 
@@ -224,7 +243,7 @@ The patched `wasm-opt` is also copied to `scripts/.binaryen-cache` (git-ignored)
 
 To test the compat build: build it (without `SKIP_COMPAT`), then `npm run test:compat`. It runs `src/testing/wllama.test.ts` on `compat/wasm/wllama.wasm`, with JSPI hidden on the page. Use `SKIP_MAIN=1` to build only compat. CI runs it in the `test-compat` job, in parallel with the main tests.
 
-To test a model bigger than 4GB: `npm run test:big`. It loads a 6GB model made on the fly (`src/testing/fake-gguf.ts`, no download) as CPU only (rpc workers), GPU only, and about 5GB on CPU with the rest on GPU, which is expected to fail for now. It needs WebGPU and about 12GB of free RAM, so CI does not run it.
+To test a model bigger than 4GB: `npm run test:big`. It loads a 6GB model made on the fly (`src/testing/fake-gguf.ts`, no download) as CPU only (rpc workers), GPU only, and about 5GB on CPU (rpc workers) with the rest on GPU. It needs WebGPU and about 12GB of free RAM, so CI does not run it.
 
 ## Debugging backend ops
 

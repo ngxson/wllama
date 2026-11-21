@@ -504,6 +504,7 @@ struct glue_msg_load_req
   GLUE_FIELD(bool, use_mlock)
   GLUE_FIELD(int, n_gpu_layers)
   GLUE_FIELD_NULLABLE(bool, token_embd_on_gpu)
+  GLUE_FIELD_NULLABLE(int, rpc_mem_max)
   GLUE_FIELD(int, n_ctx)
   GLUE_FIELD(int, n_threads)
   GLUE_FIELD_NULLABLE(str, model_alias)
@@ -574,6 +575,7 @@ struct glue_msg_load_res
 {
   GLUE_HANDLER("load_res")
   GLUE_FIELD(bool, success)
+  GLUE_FIELD(int, n_rpc_workers)
   GLUE_FIELD(int, n_ctx)
   GLUE_FIELD(int, n_batch)
   GLUE_FIELD(int, n_ubatch)

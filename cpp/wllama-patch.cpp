@@ -330,6 +330,69 @@ extern "C" ggml_backend_buffer_type_t __wrap_ggml_backend_dev_host_buffer_type(g
 }
 
 //
+// fit: memory sizes in KiB
+//
+// llama.cpp adds memory sizes in size_t. On wasm32 a sum above 4GB wraps around, so the fit (common/fit.cpp) sees a part of 6GB as 2GB.
+// While wllama_mem_kib is set, the 3 functions that give memory sizes to llama.cpp return KiB instead of bytes. Only the fit sets it, it allocates nothing.
+//
+
+bool wllama_mem_kib = false;
+size_t wllama_fit_gpu_mem = 0;
+
+static size_t to_kib(uint64_t bytes)
+{
+  return (size_t)((bytes + 1023) / 1024);
+}
+
+extern "C" size_t __real_ggml_backend_alloc_ctx_tensors_from_buft_size(struct ggml_context *ctx, ggml_backend_buffer_type_t buft);
+extern "C" size_t __wrap_ggml_backend_alloc_ctx_tensors_from_buft_size(struct ggml_context *ctx, ggml_backend_buffer_type_t buft)
+{
+  if (!wllama_mem_kib)
+    return __real_ggml_backend_alloc_ctx_tensors_from_buft_size(ctx, buft);
+  uint64_t total = 0;
+  for (struct ggml_tensor *t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t))
+  {
+    total += ggml_backend_buft_get_alloc_size_n(buft, &t, 1);
+  }
+  return to_kib(total);
+}
+
+extern "C" void __real_ggml_backend_sched_reserve_size(ggml_backend_sched_t sched, struct ggml_cgraph *measure_graph, size_t *sizes);
+extern "C" void __wrap_ggml_backend_sched_reserve_size(ggml_backend_sched_t sched, struct ggml_cgraph *measure_graph, size_t *sizes)
+{
+  __real_ggml_backend_sched_reserve_size(sched, measure_graph, sizes);
+  for (int i = 0; wllama_mem_kib && i < ggml_backend_sched_get_n_backends(sched); i++)
+  {
+    sizes[i] = to_kib(sizes[i]);
+  }
+}
+
+extern "C" void __real_ggml_backend_dev_memory(ggml_backend_dev_t device, size_t *free, size_t *total);
+extern "C" void __wrap_ggml_backend_dev_memory(ggml_backend_dev_t device, size_t *free, size_t *total)
+{
+  __real_ggml_backend_dev_memory(device, free, total);
+  if (sizeof(size_t) < sizeof(uint64_t) && ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_CPU)
+  {
+    // a wasm instance has 4GB. ggml-cpu multiplies the page count by the page size, which gives 0 in 32 bits
+    *free = *total = SIZE_MAX;
+  }
+  // with a limit on WebGPU, the default split (by free memory) puts all layers on WebGPU: this is over the limit, so the fit always places the layers itself
+  if (wllama_fit_gpu_mem > 0 && loading_model && is_rpc(device))
+  {
+    *free = 0;
+  }
+  if (wllama_mem_kib)
+  {
+    *free /= 1024;
+    *total /= 1024;
+    if (wllama_fit_gpu_mem > 0 && is_webgpu(device))
+    {
+      *free = *total = wllama_fit_gpu_mem;
+    }
+  }
+}
+
+//
 // WebGPU: skip queue waits when the queue is idle
 //
 // ggml-webgpu waits for the queue on each ggml_backend_synchronize(), about 15 times per token, even when nothing was submitted since the last wait.

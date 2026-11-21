@@ -50,6 +50,9 @@ set(WLLAMA_LINK_OPTIONS
     -Wl,--wrap,llama_model_load_from_splits
     -Wl,--wrap,ggml_backend_dev_get_props
     -Wl,--wrap,ggml_backend_dev_host_buffer_type
+    -Wl,--wrap,ggml_backend_dev_memory
+    -Wl,--wrap,ggml_backend_alloc_ctx_tensors_from_buft_size
+    -Wl,--wrap,ggml_backend_sched_reserve_size
 )
 
 if (WLLAMA_COMPAT)
@@ -113,7 +116,6 @@ list(REMOVE_ITEM LLAMA_COMMON_SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/arg.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/console.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/debug.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/fit.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/hf-cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/log.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common/preset.cpp
