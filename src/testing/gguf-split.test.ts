@@ -1,6 +1,6 @@
 import { test, expect, afterEach } from 'vitest';
-import { GGUF_SPLIT_CONFIG, splitBigGguf } from './gguf-split';
-import { Wllama } from './wllama';
+import { GGUF_SPLIT_CONFIG, splitBigGguf } from '../gguf-split';
+import { Wllama } from '../wllama';
 
 const TINY_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';

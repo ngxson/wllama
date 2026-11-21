@@ -4,8 +4,8 @@ import {
   sampleVideo,
   sampleVideoFrames,
   videoToMessageContent,
-} from './video';
-import { Wllama } from './wllama';
+} from '../video';
+import { Wllama } from '../wllama';
 
 const VISION_MODEL = {
   url: 'https://huggingface.co/ggml-org/tinygemma3-GGUF/resolve/main/tinygemma3-Q8_0.gguf',

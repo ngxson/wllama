@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
-import { Wllama } from './wllama';
-import { LogLevel } from './types/types';
+import { Wllama } from '../wllama';
+import { LogLevel } from '../types/types';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',

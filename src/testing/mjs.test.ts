@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
-import { Wllama as WllamaMJS } from '../esm/index.js';
-import { Wllama as WllamaMJSMinified } from '../esm/index.min.js';
+import { Wllama as WllamaMJS } from '../../esm/index.js';
+import { Wllama as WllamaMJSMinified } from '../../esm/index.min.js';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',

@@ -97,7 +97,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN_READONLY }}
 
-  # compat build (asyncify, mem32): only src/wllama.test.ts on Chrome, runs in parallel with "test"
+  # compat build (asyncify, mem32): only src/testing/wllama.test.ts on Chrome, runs in parallel with "test"
   test-compat:
     runs-on: ubuntu-latest
 

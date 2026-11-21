@@ -1,9 +1,9 @@
 import { test, expect } from 'vitest';
-import { ModelManager, Model, ModelValidationStatus } from './model-manager';
-import { OPFSBackend } from './storage/opfs';
-import CacheManager from './cache-manager';
-import { hookNetwork, type NetworkHook } from './testing/network-hook';
-import { getHFFileSHA256 } from './huggingface';
+import { ModelManager, Model, ModelValidationStatus } from '../model-manager';
+import { OPFSBackend } from '../storage/opfs';
+import CacheManager from '../cache-manager';
+import { hookNetwork, type NetworkHook } from './network-hook';
+import { getHFFileSHA256 } from '../huggingface';
 
 const TINY_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf';

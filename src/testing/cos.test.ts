@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from 'vitest';
-import { COSBackend, mockCOS } from './cos';
+import { COSBackend, mockCOS } from '../storage/cos';
 
 async function randomBufAndHash(): Promise<{
   buf: Uint8Array;

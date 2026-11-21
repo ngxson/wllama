@@ -14,7 +14,7 @@ import {
   isSupportRelaxedSIMD,
   isSupportJSPI,
   needCompat,
-} from './utils';
+} from '../utils';
 
 describe('joinBuffers', () => {
   test('joins multiple buffers correctly', () => {

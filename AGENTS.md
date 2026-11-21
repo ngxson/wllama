@@ -22,7 +22,7 @@ Common mistakes that AI agents usually make:
 
 Requirements for each test case:
 
-- Do NOT download a real model, only use a dummy tiny model (GGUF less than 20MB ideally). Reuse the tiny models already used in `src/wllama.test.ts`
+- Do NOT download a real model, only use a dummy tiny model (GGUF less than 20MB ideally). Reuse the tiny models already used in `src/testing/wllama.test.ts`
 - Keep memory usage under 4GB
 - Keep it fast: max 10 seconds
 
