@@ -176,5 +176,6 @@ if (GGML_WEBGPU)
         -Wl,--wrap,wgpuQueueOnSubmittedWorkDone
         -Wl,--wrap,wgpuBufferMapAsync
         -Wl,--wrap,wgpuInstanceWaitAny
+        -Wl,--wrap,wgpuAdapterGetLimits
     )
 endif()
