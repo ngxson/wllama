@@ -95,7 +95,7 @@ When wasm calls `fread()`:
 Note:
 - While awaiting the read data, the worker should not have any other activities (a global variable is used as a guard and will raise an exception on any incoming messages)
 - The minimum read size is 1MB. If less than this amount is requested, the full 1MB block is cached for subsequent reads. This is because reading GGUF metadata frequently involves reads of less than 1KB at a time, which can become a bottleneck without caching.
-- On the JS side (`_wllama_js_file_read` in `llama-cpp.js`), the main thread is asked for 32MB at a time: a smaller read gets the next 32MB, kept for the reads that follow it (the weights for the GPU and rpc workers are read 1MB at a time), and a bigger read is split in 32MB chunks. Each chunk is a new `ArrayBuffer` that is garbage once copied to the heap, so bigger chunks pile up more garbage while loading.
+- On the JS side (`_wllama_js_file_read` in `llama-cpp.js`), the main thread is asked for 32MB at most per read: a bigger read is split in 32MB chunks. Each chunk is a new `ArrayBuffer` that is garbage once copied to the heap, so bigger chunks pile up more garbage while loading. The weights for the GPU and rpc workers are read 1MB at a time, one round trip each, so a read that follows the previous one gets a read-ahead: 8 times the read, then 4 times more each time, up to 32MB, kept for the next reads. A read somewhere else (the loader jumps between tensors) resets it and gets only what it asks for.
 - Env var `USE_ASYNC_FILE` is used to signal from JS to wasm that we are using async file read (upon starting the module). If `USE_ASYNC_FILE` is not set, we fallback to HeapFS/mmap case (see in next section)
 
 Memory use while loading:
