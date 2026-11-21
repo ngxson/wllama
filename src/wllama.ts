@@ -1,4 +1,13 @@
-import { ProxyToWorker, type WllamaWorkerResources } from './worker';
+import {
+  MAX_RPC_WORKERS,
+  countRpcWorkers,
+  readGgufTensorSizes,
+} from './gguf-split';
+import {
+  ProxyToWorker,
+  type RpcInitOptions,
+  type WllamaWorkerResources,
+} from './worker';
 import {
   absoluteUrl,
   canUseAsyncFileRead,
@@ -334,6 +343,7 @@ export class Wllama {
   private compat: WllamaCompat | null = null;
 
   private proxy: ProxyToWorker = null as any;
+  private rpcWorkers: ProxyToWorker[] = [];
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
@@ -665,6 +675,15 @@ export class Wllama {
         'WebGPU on Firefox is slower than on other browsers, due to a Firefox bug (https://bugzilla.mozilla.org/show_bug.cgi?id=1870699). wllama works around most of it, see https://github.com/ngxson/wllama/issues/296'
       );
     }
+    const nRpcWorkers = await this.pickRpcWorkers(
+      params,
+      modelFiles.llm,
+      workerResources
+    );
+    if (nRpcWorkers > 0) {
+      // the layers go to the rpc workers, not to WebGPU
+      workerResources.noWebGPU = true;
+    }
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
@@ -676,100 +695,120 @@ export class Wllama {
       logLevel = 9999 as any;
     }
 
-    await this.proxy.moduleInit(modelFiles.all);
-
-    // run it
-    this.logger().debug('Calling wllamaStart...');
-    const startResult: any = await this.proxy.wllamaStart();
-    if (!startResult.success) {
-      throw new WllamaError(
-        `Error while calling start function, result = ${startResult}`
+    // this attempt's proxy and rpc workers: exit() can be called meanwhile, and a new load can then own this.proxy
+    const proxy = this.proxy;
+    const ownRpcWorkers: ProxyToWorker[] = [];
+    let loadResult: GlueMsgLoadRes;
+    try {
+      const rpc = await this.startRpcWorkers(
+        nRpcWorkers,
+        workerResources,
+        ownRpcWorkers
       );
-    }
-    await this.checkWasmVersion(startResult.version);
+      await proxy.moduleInit(modelFiles.all, rpc);
 
-    // load the model
-    this.logger().debug('Loading model...');
-    const loadResult: GlueMsgLoadRes = await this.proxy.wllamaAction('load', {
-      _name: 'load_req',
-      log_level: logLevel,
-      // if async read is not supported, use mmap; refer to README-dev.md for more details
-      use_mmap: !canUseAsyncFileRead(workerResources.compat),
-      use_mlock: false,
-      n_gpu_layers: params.n_gpu_layers ?? 99999,
-      token_embd_on_gpu: params.token_embd_on_gpu ?? true,
-      n_ctx: params.n_ctx ?? 1024,
-      n_threads: this.useMultiThread ? nbThreads : 1,
-      n_ctx_auto: false, // not supported for now
-      mmproj_path: modelFiles.mmproj
-        ? `/models/${MMPROJ_FILE_NAME}`
-        : undefined,
-      model_paths: modelFiles.llm.map((f) => `models/${f.name}`),
-      embeddings: params.embeddings,
-      offload_kqv: params.offload_kqv,
-      n_batch: params.n_batch,
-      n_ubatch: params.n_ubatch,
-      pooling_type: params.pooling_type as string,
-      rope_scaling_type: params.rope_scaling_type as string,
-      rope_freq_base: params.rope_freq_base,
-      rope_freq_scale: params.rope_freq_scale,
-      yarn_ext_factor: params.yarn_ext_factor,
-      yarn_attn_factor: params.yarn_attn_factor,
-      yarn_beta_fast: params.yarn_beta_fast,
-      yarn_beta_slow: params.yarn_beta_slow,
-      yarn_orig_ctx: params.yarn_orig_ctx,
-      cache_type_k: params.cache_type_k as string,
-      cache_type_v: params.cache_type_v as string,
-      // with unified KV, all sequences share one n_ctx cache, so each request can still use the full context
-      n_parallel: params.n_parallel ?? 4,
-      kv_unified: params.kv_unified ?? true,
-      flash_attn: params.flash_attn,
-      swa_full: params.swa_full,
-      chat_template: params.chat_template,
-      jinja: params.jinja,
-      reasoning: params.reasoning,
-      image_min_tokens: params.image_min_tokens,
-      image_max_tokens: params.image_max_tokens,
-      warmup: params.warmup,
-      no_kv_offload: params.no_kv_offload,
-      mmproj_offload: params.mmproj_offload,
-      cont_batching: params.cont_batching,
-      n_keep: params.n_keep,
-      ctx_shift: params.ctx_shift,
-      cache_idle_slots: params.cache_idle_slots,
-      n_cache_reuse: params.n_cache_reuse,
-      lora_paths: params.lora_adapters?.map((a) => a.path),
-      lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
-      lora_init_without_apply: params.lora_init_without_apply,
-      spec_draft_model: params.spec_draft_model,
-      spec_draft_ngl: params.spec_draft_ngl,
-      spec_draft_n_max: params.spec_draft_n_max,
-      spec_draft_n_min: params.spec_draft_n_min,
-      spec_draft_p_min: params.spec_draft_p_min,
-      spec_draft_threads: params.spec_draft_threads,
-      spec_draft_threads_batch: params.spec_draft_threads_batch,
-      spec_type: params.spec_type,
-      spec_ngram_simple_size_n: params.spec_ngram_simple_size_n,
-      spec_ngram_simple_size_m: params.spec_ngram_simple_size_m,
-      spec_ngram_simple_min_hits: params.spec_ngram_simple_min_hits,
-      spec_ngram_mod_n_min: params.spec_ngram_mod_n_min,
-      spec_ngram_mod_n_max: params.spec_ngram_mod_n_max,
-      spec_ngram_mod_n_match: params.spec_ngram_mod_n_match,
-      kv_overrides_keys: params.kv_overrides
-        ? Object.keys(params.kv_overrides)
-        : undefined,
-      kv_overrides_vals: params.kv_overrides
-        ? Object.values(params.kv_overrides)
-        : undefined,
-      reasoning_budget_tokens: params.reasoning_budget_tokens,
-      reasoning_budget_message: params.reasoning_budget_message,
-      reasoning_format: params.reasoning_format,
-      skip_chat_parsing: params.skip_chat_parsing,
-      prefill_assistant: params.prefill_assistant,
-    });
-    if (!loadResult.success) {
-      await this.exit();
-      throw new WllamaError('Failed to load model', 'load_error');
+      // run it
+      this.logger().debug('Calling wllamaStart...');
+      const startResult: any = await proxy.wllamaStart();
+      if (!startResult.success) {
+        throw new WllamaError(
+          `Error while calling start function, result = ${startResult}`
+        );
+      }
+      await this.checkWasmVersion(startResult.version);
+
+      // load the model
+      this.logger().debug('Loading model...');
+      loadResult = await proxy.wllamaAction('load', {
+        _name: 'load_req',
+        log_level: logLevel,
+        // if async read is not supported, use mmap; refer to README-dev.md for more details
+        use_mmap: !canUseAsyncFileRead(workerResources.compat),
+        use_mlock: false,
+        // rpc devices only get layers when they are offloaded
+        n_gpu_layers: nRpcWorkers > 0 ? 99999 : (params.n_gpu_layers ?? 99999),
+        token_embd_on_gpu: params.token_embd_on_gpu ?? true,
+        n_ctx: params.n_ctx ?? 1024,
+        n_threads: this.useMultiThread ? nbThreads : 1,
+        n_ctx_auto: false, // not supported for now
+        mmproj_path: modelFiles.mmproj
+          ? `/models/${MMPROJ_FILE_NAME}`
+          : undefined,
+        model_paths: modelFiles.llm.map((f) => `models/${f.name}`),
+        embeddings: params.embeddings,
+        offload_kqv: params.offload_kqv,
+        n_batch: params.n_batch,
+        n_ubatch: params.n_ubatch,
+        pooling_type: params.pooling_type as string,
+        rope_scaling_type: params.rope_scaling_type as string,
+        rope_freq_base: params.rope_freq_base,
+        rope_freq_scale: params.rope_freq_scale,
+        yarn_ext_factor: params.yarn_ext_factor,
+        yarn_attn_factor: params.yarn_attn_factor,
+        yarn_beta_fast: params.yarn_beta_fast,
+        yarn_beta_slow: params.yarn_beta_slow,
+        yarn_orig_ctx: params.yarn_orig_ctx,
+        cache_type_k: params.cache_type_k as string,
+        cache_type_v: params.cache_type_v as string,
+        // with unified KV, all sequences share one n_ctx cache, so each request can still use the full context
+        n_parallel: params.n_parallel ?? 4,
+        kv_unified: params.kv_unified ?? true,
+        flash_attn: params.flash_attn,
+        swa_full: params.swa_full,
+        chat_template: params.chat_template,
+        jinja: params.jinja,
+        reasoning: params.reasoning,
+        image_min_tokens: params.image_min_tokens,
+        image_max_tokens: params.image_max_tokens,
+        warmup: params.warmup,
+        no_kv_offload: params.no_kv_offload,
+        mmproj_offload: params.mmproj_offload,
+        cont_batching: params.cont_batching,
+        n_keep: params.n_keep,
+        ctx_shift: params.ctx_shift,
+        cache_idle_slots: params.cache_idle_slots,
+        n_cache_reuse: params.n_cache_reuse,
+        lora_paths: params.lora_adapters?.map((a) => a.path),
+        lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
+        lora_init_without_apply: params.lora_init_without_apply,
+        spec_draft_model: params.spec_draft_model,
+        spec_draft_ngl: params.spec_draft_ngl,
+        spec_draft_n_max: params.spec_draft_n_max,
+        spec_draft_n_min: params.spec_draft_n_min,
+        spec_draft_p_min: params.spec_draft_p_min,
+        spec_draft_threads: params.spec_draft_threads,
+        spec_draft_threads_batch: params.spec_draft_threads_batch,
+        spec_type: params.spec_type,
+        spec_ngram_simple_size_n: params.spec_ngram_simple_size_n,
+        spec_ngram_simple_size_m: params.spec_ngram_simple_size_m,
+        spec_ngram_simple_min_hits: params.spec_ngram_simple_min_hits,
+        spec_ngram_mod_n_min: params.spec_ngram_mod_n_min,
+        spec_ngram_mod_n_max: params.spec_ngram_mod_n_max,
+        spec_ngram_mod_n_match: params.spec_ngram_mod_n_match,
+        kv_overrides_keys: params.kv_overrides
+          ? Object.keys(params.kv_overrides)
+          : undefined,
+        kv_overrides_vals: params.kv_overrides
+          ? Object.values(params.kv_overrides)
+          : undefined,
+        reasoning_budget_tokens: params.reasoning_budget_tokens,
+        reasoning_budget_message: params.reasoning_budget_message,
+        reasoning_format: params.reasoning_format,
+        skip_chat_parsing: params.skip_chat_parsing,
+        prefill_assistant: params.prefill_assistant,
+      });
+      if (!loadResult.success) {
+        throw new WllamaError('Failed to load model', 'load_error');
+      }
+    } catch (e) {
+      // terminate the workers of this attempt, so this instance can load again
+      if (this.proxy === proxy) {
+        await this.exit();
+      } else {
+        await proxy.wllamaExit();
+        for (const w of ownRpcWorkers) await w.wllamaExit();
+      }
+      throw e;
     }
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
@@ -1272,8 +1311,107 @@ export class Wllama {
    * Note: This function will NOT crash if model is not yet loaded
    */
   async exit(): Promise<void> {
-    await this.proxy?.wllamaExit();
+    // detach them first: a new load can start while this one is shutting down
+    const proxy = this.proxy;
+    const rpcWorkers = this.rpcWorkers;
     this.proxy = null as any;
+    this.rpcWorkers = [];
+    await proxy?.wllamaExit();
+    // rpc workers are blocked in the wasm, terminate them
+    for (const w of rpcWorkers) await w.wllamaExit();
+  }
+
+  // without async file reads (no JSPI, not compat), the whole model is copied into the main wasm (mmap), so rpc workers cannot help
+  private static RPC_NEEDS_ASYNC_READ =
+    'The model does not fit in one wasm instance (4GB): rpc workers need a browser with JSPI, or the compat build (see setCompat)';
+
+  // by default, rpc workers are used only when the model does not fit in one wasm instance and WebGPU does not take the layers
+  private async pickRpcWorkers(
+    params: LoadModelParams,
+    files: { blob: Blob }[],
+    resources: WllamaWorkerResources
+  ): Promise<number> {
+    if (params.rpc_workers !== undefined) {
+      const n = params.rpc_workers;
+      if (!Number.isInteger(n) || n < 0 || n > MAX_RPC_WORKERS) {
+        throw new WllamaError(
+          `rpc_workers must be an integer from 0 to ${MAX_RPC_WORKERS}`,
+          'load_error'
+        );
+      }
+      if (params.rpc_workers > 0 && !this.useMultiThread) {
+        throw new WllamaError(
+          'rpc_workers needs multi-thread, see the Cross-Origin headers in README',
+          'load_error'
+        );
+      }
+      if (params.rpc_workers > 0 && !canUseAsyncFileRead(resources.compat)) {
+        throw new WllamaError(Wllama.RPC_NEEDS_ASYNC_READ, 'load_error');
+      }
+      return params.rpc_workers;
+    }
+    // the main wasm does the rpc I/O in its own threads
+    if (!this.useMultiThread) return 0;
+    if (
+      !resources.noWebGPU &&
+      (await (navigator as any).gpu?.requestAdapter?.().catch(() => null))
+    ) {
+      return 0;
+    }
+    let nVocab = 0;
+    const tensors: { name: string; size: number }[] = [];
+    try {
+      for (const f of files) {
+        const info = await readGgufTensorSizes(f.blob);
+        nVocab = Math.max(nVocab, info.nVocab);
+        tensors.push(...info.tensors);
+      }
+    } catch {
+      return 0; // not a valid GGUF, the native load reports the error
+    }
+    const n = countRpcWorkers(tensors, nVocab, params.n_ubatch ?? 512);
+    if (n > 0 && !canUseAsyncFileRead(resources.compat)) {
+      throw new WllamaError(Wllama.RPC_NEEDS_ASYNC_READ, 'load_error');
+    }
+    if (n > 0) {
+      this.logger().debug(
+        `The model does not fit in one wasm instance, using ${n} rpc workers`
+      );
+    }
+    return n;
+  }
+
+  // spawn wasm instances that each hold a part of the model in their own 4GB memory
+  private async startRpcWorkers(
+    n: number,
+    resources: WllamaWorkerResources,
+    started: ProxyToWorker[]
+  ): Promise<RpcInitOptions | undefined> {
+    if (n <= 0) return undefined;
+    const RING_BYTES = 16 * 1024 * 1024; // power of 2
+    const HEADER_BYTES = 64; // same as RPC_HEADER_BYTES in rpc-transport.js
+    const nThreads = this.useMultiThread ? this.nbThreads : 0;
+    const channels: RpcInitOptions['channels'] = [];
+    for (let i = 0; i < n; i++) {
+      const port = 5001 + i;
+      const sab = new SharedArrayBuffer(HEADER_BYTES + 2 * RING_BYTES);
+      const server = new ProxyToWorker(
+        { ...resources, noWebGPU: true },
+        nThreads,
+        this.config.suppressNativeLog ?? false,
+        this.logger()
+      );
+      this.rpcWorkers.push(server);
+      started.push(server);
+      await server.moduleInit([], {
+        env: {},
+        channels: [{ port, sab, role: 'server' }],
+      });
+      await server.rpcServe(port, Math.max(nThreads, 1));
+      channels.push({ port, sab, role: 'client' });
+    }
+    const servers = channels.map((c) => `127.0.0.1:${c.port}`).join(',');
+    return { env: { WLLAMA_RPC_SERVERS: servers }, channels };
   }
 
   /**

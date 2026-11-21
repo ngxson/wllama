@@ -27,7 +27,7 @@ set(WLLAMA_LINK_OPTIONS
     -sSTACK_SIZE=5MB
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
-    -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug
+    -sEXPORTED_FUNCTIONS=_main,_wllama_malloc,_wllama_start,_wllama_action,_wllama_exit,_wllama_debug,_wllama_rpc_serve
     -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8,MEMFS,FS,mmapAlloc,ENV,wasmMemory
     -sNO_EXIT_RUNTIME=1
     -sIMPORTED_MEMORY=1
@@ -62,7 +62,7 @@ if (WLLAMA_COMPAT)
         -fwasm-exceptions
         -sMAXIMUM_MEMORY=4096MB
         -sASYNCIFY=1
-        -sASYNCIFY_ADD=['wllama_start','wllama_action']
+        -sASYNCIFY_ADD=['wllama_start','wllama_action','wllama_rpc_serve']
     )
 else()
     # 32-bit memory like compat: about 12% faster on CPU than Memory64
@@ -73,7 +73,7 @@ else()
         -sMAXIMUM_MEMORY=4096MB
         -fwasm-exceptions
         -sJSPI
-        -sJSPI_EXPORTS=['wllama_start','wllama_action']
+        -sJSPI_EXPORTS=['wllama_start','wllama_action','wllama_rpc_serve']
     )
 endif()
 
@@ -81,6 +81,14 @@ add_compile_options(${WLLAMA_COMPILE_OPTIONS})
 add_link_options(${WLLAMA_LINK_OPTIONS})
 
 add_subdirectory(llama.cpp)
+
+# rpc workers: ggml-rpc talks to the wasm instances of other workers (cpp/wllama-rpc-transport.cpp), not to TCP sockets
+if (TARGET ggml-rpc)
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/ggml/src/ggml-rpc/transport.cpp
+        TARGET_DIRECTORY ggml-rpc
+        PROPERTIES HEADER_FILE_ONLY ON)
+    target_sources(ggml-rpc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/wllama-rpc-transport.cpp)
+endif()
 
 if (NOT WLLAMA_COMPAT)
     # relaxed SIMD only for the hand-written ggml kernels; on the whole build, clang also emits relaxed madd/min/max, which give different results on x86 and ARM

@@ -4,6 +4,7 @@ let wllamaStart;
 let wllamaAction;
 let wllamaExit;
 let wllamaDebug;
+let wllamaRpcServe;
 
 let Module = null;
 let lastStack = '';
@@ -101,6 +102,7 @@ const getWModuleConfig = (_argMainScriptBlob, wasmModule) => {
     wasmMemory: hasMultithread ? getWasmMemory() : null,
     onAbort: function (reason) {
       isAborted = true;
+      rpcFailAll();
       // the reason can be an Error (for example a failed wasm instantiate)
       const message = reason?.message ?? String(reason);
       msg({ verb: 'signal.abort', args: ['abort', message, lastStack, null] });
@@ -462,12 +464,28 @@ onmessage = async (e) => {
     const argMainScriptBlob = args[0];
     const argUseAsyncFile = args[1];
     const argWasmModule = args[2];
+    const argRpc = args[3]; // { env, channels } of the rpc workers
     try {
       Module = getWModuleConfig(argMainScriptBlob, argWasmModule);
+      if (argRpc) {
+        rpcSetChannels(argRpc.channels);
+        // ggml-rpc does its I/O in a thread per server: send the channels to the pthread workers, and add one thread per server (the exception to the pool size rule, see README-dev.md)
+        const BaseWorker = self.Worker;
+        self.Worker = class extends BaseWorker {
+          constructor(...a) {
+            super(...a);
+            this.postMessage({ cmd: 'wllamaRpc', channels: argRpc.channels });
+          }
+        };
+        if (Module.pthreadPoolSize) {
+          Module.pthreadPoolSize += argRpc.channels.length;
+        }
+      }
       Module.preRun = () => {
         if (argUseAsyncFile) {
           Module.ENV['USE_ASYNC_FILE'] = '1';
         }
+        Object.assign(Module.ENV, argRpc?.env ?? {});
       };
       Module.onRuntimeInitialized = () => {
         // async call once module is ready
@@ -489,6 +507,12 @@ onmessage = async (e) => {
         );
         wllamaExit = callWrapper('wllama_exit', 'string', []);
         wllamaDebug = callWrapper('wllama_debug', 'string', []);
+        wllamaRpcServe = Module.cwrap(
+          'wllama_rpc_serve',
+          null,
+          ['number', 'number'],
+          { async: true }
+        );
         msg({ callbackId, result: null });
       };
       wModuleInit();
@@ -532,6 +556,17 @@ onmessage = async (e) => {
     } catch (err) {
       handleError(err);
     }
+    return;
+  }
+
+  // rpc worker: serve the CPU backend to the main wasm, this call never returns
+  if (verb === 'rpc.serve') {
+    const [port, nThreads] = args;
+    msg({ callbackId, result: null });
+    wllamaRpcServe(port, nThreads).catch((err) => {
+      rpcFailAll();
+      handleError(err);
+    });
     return;
   }
 

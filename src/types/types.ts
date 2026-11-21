@@ -10,6 +10,9 @@ export interface LoadModelParams {
   // keep the token embedding on the GPU only, not also on the CPU, when all layers are on the GPU (default: true)
   // this saves its size in page memory; on a model with a separate output layer, it uses this size more GPU memory
   token_embd_on_gpu?: boolean;
+  // number of extra wasm instances (rpc workers) that hold a part of the model, each one has its own 4GB memory
+  // by default, they are used only when the model does not fit in one instance and WebGPU is not used; set 0 to disable
+  rpc_workers?: number;
   // by default, on multi-thread build, we take half number of available threads (hardwareConcurrency / 2)
   n_threads?: number;
   embeddings?: boolean;

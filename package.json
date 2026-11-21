@@ -42,6 +42,7 @@
     "test:firefox": "BROWSER=firefox vitest",
     "test:safari": "BROWSER=safari vitest",
     "test:wgpu": "WEBGPU=1 vitest",
+    "test:big": "BIG_MODEL=1 vitest",
     "test:compat": "COMPAT=1 vitest"
   },
   "repository": {

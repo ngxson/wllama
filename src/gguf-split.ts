@@ -13,6 +13,7 @@ const KEY_ALIGNMENT = 'general.alignment';
 const KEY_SPLIT_NO = 'split.no';
 const KEY_SPLIT_COUNT = 'split.count';
 const KEY_SPLIT_TENSORS_COUNT = 'split.tensors.count';
+const KEY_TOKENS = 'tokenizer.ggml.tokens';
 
 enum GgufType {
   UINT8 = 0,
@@ -50,6 +51,7 @@ interface GgufKv {
 }
 
 interface GgufTensorInfo {
+  name: string;
   raw: Uint8Array; // name, n_dims, dims and type, without the offset
   offset: number; // relative to the data section
 }
@@ -57,6 +59,7 @@ interface GgufTensorInfo {
 interface GgufHeader {
   version: number;
   splitCount: number; // 0 if the key is missing
+  nVocab: number; // 0 if the key is missing
   kvs: GgufKv[];
   tensors: GgufTensorInfo[];
   alignment: number;
@@ -141,6 +144,7 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
   const kvs: GgufKv[] = [];
   let alignment = 32;
   let splitCount = 0;
+  let nVocab = 0;
   for (let i = 0; i < nKv; i++) {
     const start = r.pos;
     const key = r.str();
@@ -149,6 +153,12 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
       alignment = r.u32();
     } else if (key === KEY_SPLIT_COUNT && type === GgufType.UINT16) {
       splitCount = r.u16();
+    } else if (key === KEY_TOKENS && type === GgufType.ARRAY) {
+      const pos = r.pos;
+      r.u32(); // item type
+      nVocab = r.u64();
+      r.pos = pos;
+      r.skipValue(type);
     } else {
       r.skipValue(type);
     }
@@ -157,14 +167,14 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
   const tensors: GgufTensorInfo[] = [];
   for (let i = 0; i < nTensors; i++) {
     const start = r.pos;
-    r.str(); // name
+    const name = r.str();
     const nDims = r.u32();
     r.skip(nDims * 8 + 4); // dims and type
     const raw = r.slice(start);
-    tensors.push({ raw, offset: r.u64() });
+    tensors.push({ name, raw, offset: r.u64() });
   }
   const dataStart = Math.ceil(r.pos / alignment) * alignment;
-  return { version, splitCount, kvs, tensors, alignment, dataStart };
+  return { version, splitCount, nVocab, kvs, tensors, alignment, dataStart };
 };
 
 const readHeader = async (blob: Blob): Promise<GgufHeader> => {
@@ -294,4 +304,78 @@ export const splitBigGguf = async (blob: Blob): Promise<Blob[]> => {
       `${baseName}-${pad(k + 1)}-of-${pad(groups.length)}.gguf`
     );
   });
+};
+
+/**
+ * Size in bytes of each tensor of a GGUF file (with its padding), and the vocab size (0 if the file has no tokenizer)
+ */
+export const readGgufTensorSizes = async (
+  blob: Blob
+): Promise<{ nVocab: number; tensors: { name: string; size: number }[] }> => {
+  const { nVocab, tensors, dataStart } = await readHeader(blob);
+  const dataSize = blob.size - dataStart;
+  return {
+    nVocab,
+    tensors: tensors.map((t, i) => ({
+      name: t.name,
+      size:
+        (i + 1 < tensors.length ? tensors[i + 1].offset : dataSize) - t.offset,
+    })),
+  };
+};
+
+// a wasm instance has 4GB of memory, the budgets leave room for the KV cache and the compute buffers
+export const RPC_BUDGET = {
+  single: 3.5 * 1024 * 1024 * 1024,
+  worker: 2.5 * 1024 * 1024 * 1024,
+};
+export const MAX_RPC_WORKERS = 16; // GGML_RPC_MAX_SERVERS
+
+/**
+ * Number of rpc workers needed so that each wasm instance fits in its memory, 0 if one instance is enough.
+ * The main instance keeps the input embeddings, the rpc workers get the layers and the output.
+ * llama.cpp splits the layers by index in equal shares (the workers report the same memory), the output goes
+ * to the last worker and token_embd to the first one (token_embd_on_gpu, the default; a tied output uses it there),
+ * so the count is chosen from the biggest share, not from the total.
+ */
+export const countRpcWorkers = (
+  tensors: { name: string; size: number }[],
+  nVocab: number,
+  nUbatch: number
+): number => {
+  const isInput = (name: string) =>
+    /^(per_layer_token_embd|position_embd|token_types)\./.test(name);
+  const layers: number[] = [];
+  let input = 0;
+  let tokEmbd = 0;
+  let output = 0; // output layer, and the tensors of no layer
+  for (const t of tensors) {
+    const m = t.name.match(/^blk\.(\d+)\./);
+    if (m) layers[Number(m[1])] = (layers[Number(m[1])] ?? 0) + t.size;
+    else if (isInput(t.name)) input += t.size;
+    else if (t.name === 'token_embd.weight') tokEmbd = t.size;
+    else output += t.size;
+  }
+  // the logits in the compute buffer of the output layer (494MiB measured for gemma-4-E4B, 512MiB estimated)
+  output += nVocab * nUbatch * 4;
+  const nLayer = layers.length;
+  const total = layers.reduce((a, b) => a + (b ?? 0), 0) + tokEmbd + output;
+  if (input + total < RPC_BUDGET.single) return 0;
+  const biggestShare = (n: number) => {
+    const shares = new Array(n).fill(0);
+    // as in llama_model::load_tensors, layer il goes to the device of the split point after il / (n_layer + 1)
+    layers.forEach((size, il) => {
+      shares[Math.min(n - 1, Math.floor((il * n) / (nLayer + 1)))] += size ?? 0;
+    });
+    shares[0] += tokEmbd;
+    shares[n - 1] += output;
+    return Math.max(...shares);
+  };
+  // if no count fits the budget (a huge output layer), take the first one that still fits a whole instance
+  for (const budget of [RPC_BUDGET.worker, RPC_BUDGET.single]) {
+    for (let n = 1; n <= MAX_RPC_WORKERS; n++) {
+      if (biggestShare(n) <= budget) return n;
+    }
+  }
+  return MAX_RPC_WORKERS;
 };

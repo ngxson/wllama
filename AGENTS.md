@@ -26,6 +26,8 @@ Requirements for each test case:
 - Keep memory usage under 4GB
 - Keep it fast: max 10 seconds
 
+The exception is `src/testing/big-model.test.ts` (`npm run test:big`): it checks models bigger than 4GB, so it needs about 12GB of RAM and WebGPU. It only runs when asked (`BIG_MODEL=1`), never in CI, and its model is made on the fly, not downloaded.
+
 ### Syncing llama.cpp upstream
 
 The `llama.cpp` submodule is bumped weekly by `.github/workflows/sync-upstream.yml`. To do it by hand, or when the workflow asks you to fix a broken sync:

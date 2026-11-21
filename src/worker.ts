@@ -22,6 +22,7 @@ import {
 import {
   LLAMA_CPP_WORKER_CODE,
   WEBGPU_POLL_PATCH_CODE,
+  RPC_TRANSPORT_WORKER_CODE,
 } from './workers-code/generated';
 import { WllamaError, WllamaRuntimeError } from './wllama';
 
@@ -37,6 +38,15 @@ const FILE_READ_REQ_EVENT = 'fs.read_req';
 // wasm custom section with the emscripten JS glue, see scripts/pack_wasm.js
 const WASM_JS_SECTION_NAME = 'wllama_js';
 
+export interface RpcInitOptions {
+  env: Record<string, string>;
+  channels: {
+    port: number;
+    sab: SharedArrayBuffer;
+    role: 'client' | 'server';
+  }[];
+}
+
 interface TaskParam {
   verb:
     | 'module.init'
@@ -46,7 +56,8 @@ interface TaskParam {
     | 'wllama.start'
     | 'wllama.action'
     | 'wllama.exit'
-    | 'wllama.debug';
+    | 'wllama.debug'
+    | 'rpc.serve';
   args: any[];
   callbackId: number;
 }
@@ -190,7 +201,11 @@ export class ProxyToWorker {
     }
   }
 
-  async moduleInit(ggufFiles: { name: string; blob: Blob }[]): Promise<void> {
+  // rpc: channels are SharedArrayBuffer rings to the rpc workers, env is set before the wasm starts
+  async moduleInit(
+    ggufFiles: { name: string; blob: Blob }[],
+    rpc?: RpcInitOptions
+  ): Promise<void> {
     let wasmModule: WebAssembly.Module;
     let moduleCode: string;
     try {
@@ -219,6 +234,7 @@ export class ProxyToWorker {
       `const RUN_OPTIONS = ${JSON.stringify(runOptions)};`,
       WEBGPU_POLL_PATCH_CODE,
       `function wModuleInit() { ${mainModuleCode}; return Module; }`,
+      RPC_TRANSPORT_WORKER_CODE,
       LLAMA_CPP_WORKER_CODE,
     ].join(';\n\n');
     this.worker = createWorker(completeCode);
@@ -228,9 +244,13 @@ export class ProxyToWorker {
     const res = await this.pushTask({
       verb: 'module.init',
       args: [
-        new Blob([moduleCode], { type: 'text/javascript' }),
+        // pthread workers also need the rpc transport
+        new Blob([RPC_TRANSPORT_WORKER_CODE, ';\n', moduleCode], {
+          type: 'text/javascript',
+        }),
         this.useAsyncFile,
         wasmModule,
+        rpc,
       ],
       callbackId: this.taskId++,
     });
@@ -308,6 +328,15 @@ export class ProxyToWorker {
     this.rejectAll(
       new WllamaError('The model was unloaded', 'model_not_loaded')
     );
+  }
+
+  // rpc worker: serves its CPU backend on this channel until it is terminated
+  async rpcServe(port: number, nThreads: number): Promise<void> {
+    await this.pushTask({
+      verb: 'rpc.serve',
+      args: [port, nThreads],
+      callbackId: this.taskId++,
+    });
   }
 
   async wllamaDebug(): Promise<any> {

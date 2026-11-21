@@ -35,6 +35,7 @@ process_file() {
 process_file ./src/workers-code/llama-cpp.js  LLAMA_CPP_WORKER_CODE
 process_file ./src/workers-code/opfs-utils.js OPFS_UTILS_WORKER_CODE
 process_file ./src/patch/webgpu-poll.js WEBGPU_POLL_PATCH_CODE
+process_file ./src/workers-code/rpc-transport.js RPC_TRANSPORT_WORKER_CODE
 
 # build CDN paths
 node ./scripts/generate_wasm_from_cdn.js

@@ -1,6 +1,12 @@
 import { test, expect, afterEach } from 'vitest';
-import { GGUF_SPLIT_CONFIG, splitBigGguf } from '../gguf-split';
+import {
+  GGUF_SPLIT_CONFIG,
+  countRpcWorkers,
+  readGgufTensorSizes,
+  splitBigGguf,
+} from '../gguf-split';
 import { Wllama } from '../wllama';
+import { makeFakeModel } from './fake-gguf';
 
 const TINY_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
@@ -104,4 +110,75 @@ test('a failed split does not break the next load', async () => {
   });
   expect(wllama.isModelLoaded()).toBe(true);
   await wllama.exit();
+});
+
+test('reads the tensor sizes of a GGUF', async () => {
+  const [file] = makeFakeModel({
+    nEmbd: 64,
+    nFf: 128,
+    nLayer: 2,
+    nHead: 4,
+    shardSize: 1024 * 1024 * 1024,
+  });
+  const info = await readGgufTensorSizes(file);
+  expect(info.nVocab).toBe(98); // see makeFakeModel
+  // Q8_0: 34 bytes per 32 values, F32: 4 bytes, padded to 32 bytes
+  const q8 = (n: number) => Math.ceil(((n / 32) * 34) / 32) * 32;
+  const f32 = (n: number) => n * 4;
+  const layer = (i: number) => [
+    [`blk.${i}.attn_norm.weight`, f32(64)],
+    ...['q', 'k', 'v', 'output'].map((x) => [
+      `blk.${i}.attn_${x}.weight`,
+      q8(64 * 64),
+    ]),
+    [`blk.${i}.ffn_norm.weight`, f32(64)],
+    ...['gate', 'down', 'up'].map((x) => [
+      `blk.${i}.ffn_${x}.weight`,
+      q8(64 * 128),
+    ]),
+  ];
+  expect(info.tensors.map((t) => [t.name, t.size])).toEqual([
+    ['token_embd.weight', q8(64 * 98)],
+    ['output_norm.weight', f32(64)],
+    ['output.weight', q8(64 * 98)],
+    ...layer(0),
+    ...layer(1),
+  ]);
+  expect(countRpcWorkers(info.tensors, info.nVocab, 512)).toBe(0);
+});
+
+// n layers of the same size
+const layers = (n: number, total: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    name: `blk.${i}.ffn_up.weight`,
+    size: total / n,
+  }));
+
+test('counts the rpc workers from the tensor sizes', () => {
+  // small model: one wasm instance is enough
+  const small = [
+    { name: 'token_embd.weight', size: 0.1e9 },
+    ...layers(16, 1e9),
+  ];
+  expect(countRpcWorkers(small, 32000, 512)).toBe(0);
+  // like gemma-4-E4B: per_layer_token_embd stays in the main instance
+  const gemma = [
+    { name: 'per_layer_token_embd.weight', size: 2.31e9 },
+    { name: 'token_embd.weight', size: 0.55e9 },
+    ...layers(42, 2.28e9),
+  ];
+  expect(countRpcWorkers(gemma, 262144, 512)).toBe(2);
+  // like Qwen3.5-4B BF16: the first worker has token_embd, it needs smaller shares
+  const qwen = [
+    { name: 'token_embd.weight', size: 1.27e9 },
+    ...layers(32, 7.14e9),
+  ];
+  expect(countRpcWorkers(qwen, 248320, 512)).toBe(6);
+  // a big output layer: the last worker gets it with the last layers, the total alone would give 5 workers
+  const bigOutput = [
+    { name: 'token_embd.weight', size: 0.1e9 },
+    ...layers(64, 64 * 96 * 1024 * 1024),
+    { name: 'output.weight', size: 3072 * 1024 * 1024 },
+  ];
+  expect(countRpcWorkers(bigOutput, 32000, 512)).toBe(11);
 });

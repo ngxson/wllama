@@ -36,7 +36,7 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- The model must fit in the 4GB WebAssembly memory, except the layers offloaded to WebGPU.
+- One wasm instance has 4GB of memory. Without WebGPU, a bigger model is split across several wasm instances in workers (`rpc_workers`, automatic by default), which needs multi-thread, and JSPI or the compat build (on Firefox, see `setCompat`).
 
 ## Code demo and documentation
 
