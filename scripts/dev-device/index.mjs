@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Dev server to test wllama on a phone or tablet, driven by an agent on this machine. See "Testing on a phone or tablet" in README-dev.md.
 //
-//   node scripts/dev-device/index.mjs [serve] [--port 8090] [--models DIR] [--no-watch] [--adb]
+//   node scripts/dev-device/index.mjs [serve] [--port 8090] [--models DIR] [--root DIR] [--no-watch] [--adb]
 //   node scripts/dev-device/index.mjs status | open <path> | reload [--hard] | eval <code> | run <file.js> | logs [--follow]
 //
 // The device opens /device: a page that stays connected (server-sent events) and keeps the screen awake,
@@ -17,7 +17,8 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(HERE, '../..');
+// --root: serve another checkout (a worktree), the device page and the certificates stay here
+const ROOT = path.resolve(process.argv.includes('--root') ? process.argv[process.argv.indexOf('--root') + 1] : path.resolve(HERE, '../..'));
 const CERT_DIR = path.join(HERE, '.certs');
 
 const argv = process.argv.slice(2);
@@ -27,7 +28,7 @@ const opt = (name, def) => {
   return i >= 0 && i + 1 < argv.length ? argv[i + 1] : def;
 };
 const PORT = Number(opt('--port', process.env.WLLAMA_DEV_PORT || 8090));
-const positional = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && ['--port', '--models', '--timeout', '--device'].includes(argv[i - 1])));
+const positional = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && ['--port', '--models', '--timeout', '--device', '--root'].includes(argv[i - 1])));
 const command = positional[0] || 'serve';
 
 //////////////////////////////////////////////////////////////

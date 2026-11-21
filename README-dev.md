@@ -290,6 +290,7 @@ Expected output ends with `== ALL OK`.
 ```sh
 npm run dev:device                                      # serves the repo on port 8090 (HTTP) and 8091 (HTTPS)
 npm run dev:device -- --models ./path/to/models          # also serves a folder of GGUF files at /models/ (Range requests work)
+npm run dev:device -- --root ../other-worktree           # serves another checkout
 ```
 
 Then open the device page on the device. The page must be a secure context, or the browser disables SharedArrayBuffer (no multi-thread), the Wake Lock API and OPFS (the model cache):
