@@ -329,12 +329,14 @@ export const RPC_BUDGET = {
   single: 3.5 * 1024 * 1024 * 1024,
   worker: 2.5 * 1024 * 1024 * 1024,
 };
-const MAX_RPC_WORKERS = 16; // GGML_RPC_MAX_SERVERS
+export const MAX_RPC_WORKERS = 16; // GGML_RPC_MAX_SERVERS
 
 /**
  * Number of rpc workers needed so that each wasm instance fits in its memory, 0 if one instance is enough.
  * The main instance keeps the input embeddings, the rpc workers get the layers and the output.
- * token_embd goes with the layers, same as with token_embd_on_gpu (the default).
+ * llama.cpp splits the layers by index in equal shares (the workers report the same memory), the output goes
+ * to the last worker and token_embd to the first one (token_embd_on_gpu, the default; a tied output uses it there),
+ * so the count is chosen from the biggest share, not from the total.
  */
 export const countRpcWorkers = (
   tensors: { name: string; size: number }[],
@@ -343,19 +345,37 @@ export const countRpcWorkers = (
 ): number => {
   const isInput = (name: string) =>
     /^(per_layer_token_embd|position_embd|token_types)\./.test(name);
+  const layers: number[] = [];
   let input = 0;
-  let rest = 0;
+  let tokEmbd = 0;
+  let output = 0; // output layer, and the tensors of no layer
   for (const t of tensors) {
-    if (isInput(t.name)) input += t.size;
-    else rest += t.size;
+    const m = t.name.match(/^blk\.(\d+)\./);
+    if (m) layers[Number(m[1])] = (layers[Number(m[1])] ?? 0) + t.size;
+    else if (isInput(t.name)) input += t.size;
+    else if (t.name === 'token_embd.weight') tokEmbd = t.size;
+    else output += t.size;
   }
-  // rough size of the compute buffer of the output layer, it grows with the vocab
-  const output = nVocab * nUbatch * 4 * 3;
-  if (input + rest + output < RPC_BUDGET.single) return 0;
-  // without output.weight, llama.cpp copies token_embd to the device of the output layer
-  if (!tensors.some((t) => t.name === 'output.weight')) {
-    rest += tensors.find((t) => t.name === 'token_embd.weight')?.size ?? 0;
+  // the logits in the compute buffer of the output layer (494MiB measured for gemma-4-E4B, 512MiB estimated)
+  output += nVocab * nUbatch * 4;
+  const nLayer = layers.length;
+  const total = layers.reduce((a, b) => a + (b ?? 0), 0) + tokEmbd + output;
+  if (input + total < RPC_BUDGET.single) return 0;
+  const biggestShare = (n: number) => {
+    const shares = new Array(n).fill(0);
+    // as in llama_model::load_tensors, layer il goes to the device of the split point after il / (n_layer + 1)
+    layers.forEach((size, il) => {
+      shares[Math.min(n - 1, Math.floor((il * n) / (nLayer + 1)))] += size ?? 0;
+    });
+    shares[0] += tokEmbd;
+    shares[n - 1] += output;
+    return Math.max(...shares);
+  };
+  // if no count fits the budget (a huge output layer), take the first one that still fits a whole instance
+  for (const budget of [RPC_BUDGET.worker, RPC_BUDGET.single]) {
+    for (let n = 1; n <= MAX_RPC_WORKERS; n++) {
+      if (biggestShare(n) <= budget) return n;
+    }
   }
-  const n = Math.ceil((rest + output) / RPC_BUDGET.worker);
-  return Math.min(n, MAX_RPC_WORKERS);
+  return MAX_RPC_WORKERS;
 };

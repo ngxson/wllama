@@ -18,14 +18,21 @@ const run = async (params: Record<string, any>) => {
     __COMPAT__ ? { wasm: '/compat/wasm/wllama.wasm' } : null,
     'firefox_safari'
   );
-  await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 512, ...params });
-  const res = await wllama.createCompletion({
-    prompt: 'Once upon a time, there was a little girl named Lily.',
-    max_tokens: 16,
-    temperature: 0,
-  });
-  await wllama.exit();
-  return { text: res.choices[0].text, logs };
+  try {
+    await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 512, ...params });
+    const res = await wllama.createCompletion({
+      prompt: 'Once upon a time, there was a little girl named Lily.',
+      max_tokens: 16,
+      temperature: 0,
+    });
+    return { text: res.choices[0].text, logs };
+  } catch (e) {
+    // the native logs are only in `logs`, show them to see why it failed
+    console.log(logs.slice(-30).join('\n'));
+    throw e;
+  } finally {
+    await wllama.exit();
+  }
 };
 
 test('splits the model across rpc workers', async () => {

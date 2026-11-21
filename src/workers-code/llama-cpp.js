@@ -102,6 +102,7 @@ const getWModuleConfig = (_argMainScriptBlob, wasmModule) => {
     wasmMemory: hasMultithread ? getWasmMemory() : null,
     onAbort: function (reason) {
       isAborted = true;
+      rpcFailAll();
       // the reason can be an Error (for example a failed wasm instantiate)
       const message = reason?.message ?? String(reason);
       msg({ verb: 'signal.abort', args: ['abort', message, lastStack, null] });
@@ -562,7 +563,10 @@ onmessage = async (e) => {
   if (verb === 'rpc.serve') {
     const [port, nThreads] = args;
     msg({ callbackId, result: null });
-    wllamaRpcServe(port, nThreads).catch(handleError);
+    wllamaRpcServe(port, nThreads).catch((err) => {
+      rpcFailAll();
+      handleError(err);
+    });
     return;
   }
 

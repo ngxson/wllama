@@ -1,4 +1,8 @@
-import { countRpcWorkers, readGgufTensorSizes } from './gguf-split';
+import {
+  MAX_RPC_WORKERS,
+  countRpcWorkers,
+  readGgufTensorSizes,
+} from './gguf-split';
 import {
   ProxyToWorker,
   type RpcInitOptions,
@@ -691,18 +695,24 @@ export class Wllama {
       logLevel = 9999 as any;
     }
 
-    const rpc = await this.startRpcWorkers(nRpcWorkers, workerResources);
-    await this.proxy.moduleInit(modelFiles.all, rpc);
+    try {
+      const rpc = await this.startRpcWorkers(nRpcWorkers, workerResources);
+      await this.proxy.moduleInit(modelFiles.all, rpc);
 
-    // run it
-    this.logger().debug('Calling wllamaStart...');
-    const startResult: any = await this.proxy.wllamaStart();
-    if (!startResult.success) {
-      throw new WllamaError(
-        `Error while calling start function, result = ${startResult}`
-      );
+      // run it
+      this.logger().debug('Calling wllamaStart...');
+      const startResult: any = await this.proxy.wllamaStart();
+      if (!startResult.success) {
+        throw new WllamaError(
+          `Error while calling start function, result = ${startResult}`
+        );
+      }
+      await this.checkWasmVersion(startResult.version);
+    } catch (e) {
+      // terminate the workers started so far, so this instance can load again
+      await this.exit();
+      throw e;
     }
-    await this.checkWasmVersion(startResult.version);
 
     // load the model
     this.logger().debug('Loading model...');
@@ -1303,6 +1313,13 @@ export class Wllama {
     resources: WllamaWorkerResources
   ): Promise<number> {
     if (params.rpc_workers !== undefined) {
+      const n = params.rpc_workers;
+      if (!Number.isInteger(n) || n < 0 || n > MAX_RPC_WORKERS) {
+        throw new WllamaError(
+          `rpc_workers must be an integer from 0 to ${MAX_RPC_WORKERS}`,
+          'load_error'
+        );
+      }
       if (params.rpc_workers > 0 && !this.useMultiThread) {
         throw new WllamaError(
           'rpc_workers needs multi-thread, see the Cross-Origin headers in README',
