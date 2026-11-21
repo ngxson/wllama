@@ -102,7 +102,8 @@ const isError = (v) => Object.prototype.toString.call(v) === '[object Error]' ||
 const fmt = (v) => {
   if (typeof v === 'string') return v;
   if (isError(v)) return v.stack && v.stack.includes(v.message) ? v.stack : `${v.name}: ${v.message}${v.stack ? '\n' + v.stack : ''}`;
-  try { return JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x)); } catch { return String(v); }
+  // always a string: JSON.stringify gives undefined for undefined (Promise.reject()) or a function
+  try { return JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x)) ?? String(v); } catch { return String(v); }
 };
 const serialize = (v) => {
   if (v === undefined) return null;
