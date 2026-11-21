@@ -257,14 +257,17 @@ test.sequential('throws load_error if the model fails to load', async () => {
 
 test.sequential('can load again after the load action throws', async () => {
   const wllama = createWllama();
-  // the native load throws on a kv override without a type
-  await expect(
-    wllama.loadModelFromUrl(TINY_MODEL, { kv_overrides: { foo: 'bad' } })
-  ).rejects.toThrow('Invalid kv_override');
-  expect(wllama.isModelLoaded()).toBe(false);
-  await wllama.loadModelFromUrl(TINY_MODEL);
-  expect(wllama.isModelLoaded()).toBe(true);
-  await wllama.exit();
+  try {
+    // the native load throws on a kv override without a type
+    await expect(
+      wllama.loadModelFromUrl(TINY_MODEL, { kv_overrides: { foo: 'bad' } })
+    ).rejects.toThrow('Invalid kv_override');
+    expect(wllama.isModelLoaded()).toBe(false);
+    await wllama.loadModelFromUrl(TINY_MODEL);
+    expect(wllama.isModelLoaded()).toBe(true);
+  } finally {
+    await wllama.exit();
+  }
 });
 
 test.sequential('throws if the wasm file is not valid', async () => {

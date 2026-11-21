@@ -1,6 +1,7 @@
 // the model is split across wasm instances in other workers
 import { test, expect } from 'vitest';
 import { Wllama } from '../wllama';
+import { makeFakeModel } from './fake-gguf';
 
 declare const __COMPAT__: boolean;
 
@@ -48,3 +49,27 @@ test('splits the model across rpc workers', async () => {
   );
   expect(rpc.text).toBe(cpu.text);
 }, 60000);
+
+test('rpc workers need async file reads', async () => {
+  // without JSPI and without compat, the model is copied into the main wasm, so rpc workers cannot help
+  const suspending = (WebAssembly as any).Suspending;
+  delete (WebAssembly as any).Suspending;
+  const wllama = new Wllama({ default: '/src/wasm/wllama.wasm' });
+  wllama.setCompat(null);
+  const model = makeFakeModel({
+    nEmbd: 64,
+    nFf: 128,
+    nLayer: 2,
+    nHead: 4,
+    shardSize: 1024 * 1024 * 1024,
+  });
+  try {
+    await expect(
+      wllama.loadModel(model, { rpc_workers: 2, n_threads: 2 })
+    ).rejects.toThrow('rpc workers need a browser with JSPI');
+    expect(wllama.isModelLoaded()).toBe(false);
+  } finally {
+    if (suspending) (WebAssembly as any).Suspending = suspending;
+    await wllama.exit();
+  }
+});

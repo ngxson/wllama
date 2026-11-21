@@ -1311,12 +1311,19 @@ export class Wllama {
    * Note: This function will NOT crash if model is not yet loaded
    */
   async exit(): Promise<void> {
-    await this.proxy?.wllamaExit();
+    // detach them first: a new load can start while this one is shutting down
+    const proxy = this.proxy;
+    const rpcWorkers = this.rpcWorkers;
     this.proxy = null as any;
-    // rpc workers are blocked in the wasm, terminate them
-    for (const w of this.rpcWorkers) await w.wllamaExit();
     this.rpcWorkers = [];
+    await proxy?.wllamaExit();
+    // rpc workers are blocked in the wasm, terminate them
+    for (const w of rpcWorkers) await w.wllamaExit();
   }
+
+  // without async file reads (no JSPI, not compat), the whole model is copied into the main wasm (mmap), so rpc workers cannot help
+  private static RPC_NEEDS_ASYNC_READ =
+    'The model does not fit in one wasm instance (4GB): rpc workers need a browser with JSPI, or the compat build (see setCompat)';
 
   // by default, rpc workers are used only when the model does not fit in one wasm instance and WebGPU does not take the layers
   private async pickRpcWorkers(
@@ -1337,6 +1344,9 @@ export class Wllama {
           'rpc_workers needs multi-thread, see the Cross-Origin headers in README',
           'load_error'
         );
+      }
+      if (params.rpc_workers > 0 && !canUseAsyncFileRead(resources.compat)) {
+        throw new WllamaError(Wllama.RPC_NEEDS_ASYNC_READ, 'load_error');
       }
       return params.rpc_workers;
     }
@@ -1360,6 +1370,9 @@ export class Wllama {
       return 0; // not a valid GGUF, the native load reports the error
     }
     const n = countRpcWorkers(tensors, nVocab, params.n_ubatch ?? 512);
+    if (n > 0 && !canUseAsyncFileRead(resources.compat)) {
+      throw new WllamaError(Wllama.RPC_NEEDS_ASYNC_READ, 'load_error');
+    }
     if (n > 0) {
       this.logger().debug(
         `The model does not fit in one wasm instance, using ${n} rpc workers`
