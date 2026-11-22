@@ -489,6 +489,32 @@ test.sequential('reject a part with another range', async () => {
   await expectSameAsRemote(manager, TINY_MODEL);
 });
 
+test.sequential('reject a first response with another range', async () => {
+  smallParts();
+  const manager = opfsManager();
+  await manager.clear();
+  // the bytes of part 1, given for the start of the file
+  const real = await fetch(TINY_MODEL, { headers: { Range: partRange(1) } });
+  const etag = real.headers.get('etag') ?? '';
+  const part1 = await real.arrayBuffer();
+  const net = hookNetwork();
+  net.on(isRange('bytes=0-'), { times: 1 }).handle(
+    () =>
+      new Response(part1, {
+        status: 206,
+        headers: {
+          etag,
+          'content-range': `bytes 262144-524287/1185376`,
+          'content-length': String(part1.byteLength),
+        },
+      })
+  );
+
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
 test.sequential('give up after too many tries without new bytes', async () => {
   const manager = opfsManager();
   await manager.clear();

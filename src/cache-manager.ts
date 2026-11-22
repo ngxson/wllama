@@ -269,6 +269,9 @@ export class CacheManager {
               continue;
             }
           }
+        } else if (response.status === 206 && range && range.start !== 0) {
+          await response.body.cancel();
+          throw new Error(`Wrong range from the server: ${url}`);
         }
         etag = resEtag;
         // on a 206, content-length is only the size of this part
