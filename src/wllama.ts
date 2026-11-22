@@ -25,6 +25,7 @@ import { ModelManager, Model, type ModelSource } from './model-manager';
 import type {
   GlueMsgCancelRes,
   GlueMsgCompletionRes,
+  GlueMsgDetokenizeRes,
   GlueMsgEmbeddingRes,
   GlueMsgRealtimeSendRes,
   GlueMsgRealtimeStartRes,
@@ -35,6 +36,7 @@ import type {
   GlueMsgGetResultRes,
   GlueMsgLoadRes,
   GlueMsgTestBackendOpsRes,
+  GlueMsgTokenizeRes,
   GlueMsgTtsRes,
 } from './glue/messages';
 import { LIBLLAMA_VERSION } from './workers-code/generated';
@@ -193,6 +195,19 @@ export class WllamaRuntimeError extends Error {
  * Set compatibility options for Wllama.
  * By default, these are set to URL of the latest builds on CDN, which requires internet to download. If you want to use local assets or have your own CDN, follow the instruction from @wllama/wllama-compat package.
  */
+export interface TokenizeOptions {
+  /** Add the special tokens of the model, like BOS (default: false) */
+  addSpecial?: boolean;
+  /** Parse special tokens written in the text, like `<|im_start|>` (default: true) */
+  parseSpecial?: boolean;
+}
+
+export interface TokenPiece {
+  id: number;
+  /** The text of the token, or its bytes when it is not valid UTF-8 on its own */
+  piece: string | number[];
+}
+
 export interface WllamaCompat {
   wasm: string;
   /** Optional, override the JS code embedded inside the wasm file */
@@ -1320,6 +1335,61 @@ export class Wllama {
       );
     }
     return result.n_tokens;
+  }
+
+  /**
+   * Convert text to tokens, like the `/tokenize` route of llama-server.
+   *
+   * @param content The text, or an array mixing text and token IDs
+   * @param options.addSpecial Add the special tokens of the model, like BOS (default: false)
+   * @param options.parseSpecial Parse special tokens written in the text, like `<|im_start|>` (default: true)
+   * @param options.withPieces Also return the text of each token. A piece that is not valid UTF-8 on its own (part of a multi-byte character) is returned as its bytes
+   * @returns the token IDs, or with `withPieces`, the token IDs with their pieces
+   */
+  async tokenize(
+    content: string | (string | number)[],
+    options?: TokenizeOptions & { withPieces?: false }
+  ): Promise<number[]>;
+  async tokenize(
+    content: string | (string | number)[],
+    options: TokenizeOptions & { withPieces: true }
+  ): Promise<TokenPiece[]>;
+  async tokenize(
+    content: string | (string | number)[],
+    options: TokenizeOptions & { withPieces?: boolean } = {}
+  ): Promise<number[] | TokenPiece[]> {
+    this.checkModelLoaded();
+    const result = await this.proxy.wllamaAction<GlueMsgTokenizeRes>(
+      'tokenize',
+      {
+        _name: 'tokn_req',
+        data_json: JSON.stringify({
+          content,
+          add_special: options.addSpecial ?? false,
+          parse_special: options.parseSpecial ?? true,
+          with_pieces: options.withPieces ?? false,
+        }),
+      }
+    );
+    return JSON.parse(result.data_json).tokens;
+  }
+
+  /**
+   * Convert tokens to text, like the `/detokenize` route of llama-server.
+   *
+   * @param tokens The token IDs
+   * @returns the text
+   */
+  async detokenize(tokens: number[]): Promise<string> {
+    this.checkModelLoaded();
+    const result = await this.proxy.wllamaAction<GlueMsgDetokenizeRes>(
+      'detokenize',
+      {
+        _name: 'dtkn_req',
+        data_json: JSON.stringify({ tokens }),
+      }
+    );
+    return JSON.parse(result.data_json).content;
   }
 
   /**

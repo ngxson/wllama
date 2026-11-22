@@ -783,6 +783,34 @@ struct glue_msg_slot_restore_res
 
 /////////
 
+// same body and response as the /tokenize and /detokenize routes of llama-server
+
+struct glue_msg_tokenize_req
+{
+  GLUE_HANDLER("tokn_req")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_tokenize_res
+{
+  GLUE_HANDLER("tokn_res")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_detokenize_req
+{
+  GLUE_HANDLER("dtkn_req")
+  GLUE_FIELD(str, data_json)
+};
+
+struct glue_msg_detokenize_res
+{
+  GLUE_HANDLER("dtkn_res")
+  GLUE_FIELD(str, data_json)
+};
+
+/////////
+
 struct glue_msg_test_backend_ops_req
 {
   GLUE_HANDLER("tbop_req")

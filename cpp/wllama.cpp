@@ -121,6 +121,8 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
     WLLAMA_ACTION(cancel)
     WLLAMA_ACTION(slot_save)
     WLLAMA_ACTION(slot_restore)
+    WLLAMA_ACTION(tokenize)
+    WLLAMA_ACTION(detokenize)
     WLLAMA_ACTION(test_backend_ops)
 
     else

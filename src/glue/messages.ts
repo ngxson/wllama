@@ -931,6 +931,54 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       }
     ]
   },
+  "tokn_req": {
+    "name": "tokn_req",
+    "structName": "glue_msg_tokenize_req",
+    "className": "GlueMsgTokenizeReq",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
+  "tokn_res": {
+    "name": "tokn_res",
+    "structName": "glue_msg_tokenize_res",
+    "className": "GlueMsgTokenizeRes",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
+  "dtkn_req": {
+    "name": "dtkn_req",
+    "structName": "glue_msg_detokenize_req",
+    "className": "GlueMsgDetokenizeReq",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
+  "dtkn_res": {
+    "name": "dtkn_res",
+    "structName": "glue_msg_detokenize_res",
+    "className": "GlueMsgDetokenizeRes",
+    "fields": [
+      {
+        "type": "str",
+        "name": "data_json",
+        "isNullable": false
+      }
+    ]
+  },
   "tbop_req": {
     "name": "tbop_req",
     "structName": "glue_msg_test_backend_ops_req",
@@ -1237,6 +1285,30 @@ export interface GlueMsgSlotRestoreRes {
   n_tokens: number;
 }
 
+// struct glue_msg_tokenize_req
+export interface GlueMsgTokenizeReq {
+  _name: "tokn_req";
+  data_json: string;
+}
+
+// struct glue_msg_tokenize_res
+export interface GlueMsgTokenizeRes {
+  _name: "tokn_res";
+  data_json: string;
+}
+
+// struct glue_msg_detokenize_req
+export interface GlueMsgDetokenizeReq {
+  _name: "dtkn_req";
+  data_json: string;
+}
+
+// struct glue_msg_detokenize_res
+export interface GlueMsgDetokenizeRes {
+  _name: "dtkn_res";
+  data_json: string;
+}
+
 // struct glue_msg_test_backend_ops_req
 export interface GlueMsgTestBackendOpsReq {
   _name: "tbop_req";
@@ -1251,4 +1323,4 @@ export interface GlueMsgTestBackendOpsRes {
 }
 
 
-export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgSystemoneReq | GlueMsgSystemoneRes | GlueMsgTtsReq | GlueMsgTtsRes | GlueMsgRealtimeStartReq | GlueMsgRealtimeStartRes | GlueMsgRealtimeSendReq | GlueMsgRealtimeSendRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgCancelReq | GlueMsgCancelRes | GlueMsgSlotSaveReq | GlueMsgSlotSaveRes | GlueMsgSlotRestoreReq | GlueMsgSlotRestoreRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;
+export type GlueMsg = GlueMsgError | GlueMsgLoadReq | GlueMsgLoadRes | GlueMsgCompletionReq | GlueMsgCompletionRes | GlueMsgEmbeddingReq | GlueMsgEmbeddingRes | GlueMsgRerankReq | GlueMsgRerankRes | GlueMsgSystemoneReq | GlueMsgSystemoneRes | GlueMsgTtsReq | GlueMsgTtsRes | GlueMsgRealtimeStartReq | GlueMsgRealtimeStartRes | GlueMsgRealtimeSendReq | GlueMsgRealtimeSendRes | GlueMsgGetResultReq | GlueMsgGetResultRes | GlueMsgCancelReq | GlueMsgCancelRes | GlueMsgSlotSaveReq | GlueMsgSlotSaveRes | GlueMsgSlotRestoreReq | GlueMsgSlotRestoreRes | GlueMsgTokenizeReq | GlueMsgTokenizeRes | GlueMsgDetokenizeReq | GlueMsgDetokenizeRes | GlueMsgTestBackendOpsReq | GlueMsgTestBackendOpsRes;

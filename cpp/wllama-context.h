@@ -1673,6 +1673,89 @@ struct wllama_context
     return res;
   }
 
+  // same as post_tokenize of llama-server
+  glue_msg_tokenize_res action_tokenize(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_tokenize_req);
+    glue_msg_tokenize_res res;
+
+    const json body = json::parse(req.data_json.value);
+    json tokens_response = json::array();
+    if (body.count("content") != 0)
+    {
+      const bool add_special = json_value(body, "add_special", false);
+      const bool parse_special = json_value(body, "parse_special", true);
+      const bool with_pieces = json_value(body, "with_pieces", false);
+
+      llama_tokens tokens = tokenize_mixed(vocab, body.at("content"), add_special, parse_special);
+      // token IDs of a mixed content are kept as they are
+      const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+      for (const auto tok : tokens)
+      {
+        if (tok < 0 || tok >= n_vocab)
+        {
+          throw app_exception("invalid token: " + std::to_string(tok));
+        }
+      }
+
+      if (with_pieces)
+      {
+        for (const auto &token : tokens)
+        {
+          std::string piece = common_token_to_piece(vocab, token);
+          json piece_json;
+          if (is_valid_utf8(piece))
+          {
+            piece_json = piece;
+          }
+          else
+          {
+            piece_json = json::array();
+            for (unsigned char c : piece)
+            {
+              piece_json.push_back(static_cast<int>(c));
+            }
+          }
+          tokens_response.push_back({{"id", token}, {"piece", piece_json}});
+        }
+      }
+      else
+      {
+        tokens_response = tokens;
+      }
+    }
+
+    res.data_json.value = json{{"tokens", std::move(tokens_response)}}.dump();
+    return res;
+  }
+
+  // same as post_detokenize of llama-server
+  glue_msg_detokenize_res action_detokenize(const char *req_raw)
+  {
+    PARSE_REQ(glue_msg_detokenize_req);
+    glue_msg_detokenize_res res;
+
+    const json body = json::parse(req.data_json.value);
+    std::string content;
+    if (body.count("tokens") != 0)
+    {
+      const llama_tokens tokens = body.at("tokens").get<llama_tokens>();
+      // an invalid token would abort the whole wasm instance
+      const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+      for (const auto tok : tokens)
+      {
+        if (tok < 0 || tok >= n_vocab)
+        {
+          throw app_exception("invalid token: " + std::to_string(tok));
+        }
+      }
+      content = tokens_to_str(vocab, tokens);
+    }
+
+    res.data_json.value = json{{"content", std::move(content)}}.dump();
+    return res;
+  }
+
   json format_decision_response(const decision_request &dreq)
   {
     json answers = json::object();
