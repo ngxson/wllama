@@ -14,23 +14,27 @@ async function openFile(filename, offset = 0) {
 }
 
 async function writeFile(buf) {
+  await writeFileAt(buf, writePos);
+  writePos += buf.byteLength;
+}
+
+async function writeFileAt(buf, pos) {
   let n;
   try {
-    n = accessHandle.write(buf, { at: writePos });
+    n = accessHandle.write(buf, { at: pos });
   } catch (e) {
     // iOS Safari can close the handle in the middle of a download, open a new one and try once more
     if (e?.name !== 'InvalidStateError') throw e;
     accessHandle = await fileHandler.createSyncAccessHandle();
-    n = accessHandle.write(buf, { at: writePos });
+    n = accessHandle.write(buf, { at: pos });
   }
   // Chrome stops a file at 2000MB in an incognito window, the write returns a wrong count instead of throwing
   if (n !== buf.byteLength) {
     throw new DOMException(
-      `Cannot write past ${writePos} bytes, the storage is full`,
+      `Cannot write past ${pos} bytes, the storage is full`,
       'QuotaExceededError'
     );
   }
-  writePos += n;
 }
 
 async function closeFile() {
@@ -103,6 +107,10 @@ onmessage = async (e) => {
     } else if (action === 'write') {
       assertNonNull(buf);
       await writeFile(buf);
+      return resOK();
+    } else if (action === 'write-at') {
+      assertNonNull(buf);
+      await writeFileAt(buf, e.data.pos);
       return resOK();
     } else if (action === 'close') {
       await closeFile();

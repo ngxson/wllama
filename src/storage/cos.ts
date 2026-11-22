@@ -1,4 +1,4 @@
-import type { StorageBackend, StorageFileHint } from './index';
+import type { StorageBackend, StorageFileHint, StorageWriter } from './index';
 import { OPFSBackend } from './opfs';
 
 interface CrossOriginStorageGetFileHandleHash {
@@ -122,6 +122,17 @@ export class COSBackend implements StorageBackend {
 
   canWriteAt(hint?: StorageFileHint): boolean {
     return !(hint?.sha256 && this.cos.isSupported());
+  }
+
+  openWriter(
+    key: string,
+    offset: number,
+    hint?: StorageFileHint
+  ): Promise<StorageWriter> {
+    if (!this.canWriteAt(hint)) {
+      throw new Error('COS backend cannot write at an offset');
+    }
+    return this.priv.openWriter(key, offset);
   }
 
   async getSize(key: string, hint?: StorageFileHint): Promise<number> {

@@ -1,7 +1,7 @@
-import { test, expect } from 'vitest';
+import { test, expect, onTestFinished } from 'vitest';
 import { ModelManager, Model, ModelValidationStatus } from '../model-manager';
 import { OPFSBackend } from '../storage/opfs';
-import CacheManager from '../cache-manager';
+import CacheManager, { DOWNLOAD_CONFIG } from '../cache-manager';
 import { hookNetwork, type NetworkHook } from './network-hook';
 import { getHFFileSHA256 } from '../huggingface';
 
@@ -236,7 +236,7 @@ test.sequential(
     const ranges = recordRanges(net, TINY_MODEL);
 
     const model = await manager.downloadModel(TINY_MODEL);
-    expect(ranges).toEqual([null]);
+    expect(ranges).toEqual(['bytes=0-']); // from the start
     expect(model.size).toBe(1185376);
     await expectSameAsRemote(manager, TINY_MODEL);
   }
@@ -305,7 +305,64 @@ test.sequential('do not resume with a weak ETag', async () => {
   const ranges = recordRanges(net, TINY_MODEL);
 
   const model = await manager.downloadModel(TINY_MODEL);
-  expect(ranges).toEqual([null]);
+  expect(ranges).toEqual(['bytes=0-']); // from the start
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
+// stories260K (1185376 bytes) in 5 parts
+const smallParts = () => {
+  const saved = { ...DOWNLOAD_CONFIG };
+  DOWNLOAD_CONFIG.partsMinSize = 256 * 1024;
+  DOWNLOAD_CONFIG.partSize = 256 * 1024;
+  DOWNLOAD_CONFIG.savePrefixEvery = 256 * 1024;
+  onTestFinished(() => Object.assign(DOWNLOAD_CONFIG, saved));
+};
+const partRange = (i: number) =>
+  `bytes=${i * 262144}-${Math.min(1185376, (i + 1) * 262144) - 1}`;
+
+test.sequential('download a big file in parts', async () => {
+  smallParts();
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+  const ranges = recordRanges(net, TINY_MODEL);
+
+  let lastProgress = { loaded: 0, total: 0 };
+  const model = await manager.downloadModel(TINY_MODEL, {
+    progressCallback: (progress) => (lastProgress = progress),
+  });
+  // the first request probes for ranges and gives part 0
+  expect(ranges[0]).toBe('bytes=0-');
+  expect(ranges.slice(1).sort()).toEqual([1, 2, 3, 4].map(partRange).sort());
+  expect(lastProgress).toEqual({ loaded: 1185376, total: 1185376 });
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
+test.sequential('resume a download in parts', async () => {
+  smallParts();
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+
+  // part 1 fails, later parts may finish: a hole
+  net
+    .on(
+      (req) =>
+        req.url === TINY_MODEL && req.headers.get('range') === partRange(1),
+      { times: 1 }
+    )
+    .cutAfter(1000);
+  await expect(
+    manager.downloadModel(TINY_MODEL, { retries: 0 })
+  ).rejects.toThrow();
+  expect((await manager.getModels()).length).toBe(0);
+
+  // resume after part 0, not from the file size
+  const ranges = recordRanges(net, TINY_MODEL);
+  const model = await manager.downloadModel(TINY_MODEL);
+  expect(ranges[0]).toBe('bytes=262144-');
   expect(model.size).toBe(1185376);
   await expectSameAsRemote(manager, TINY_MODEL);
 });

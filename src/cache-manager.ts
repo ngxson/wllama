@@ -8,6 +8,12 @@ const PREFIX_METADATA = '__metadata__';
 // metadata of a partial file, stored as `${PREFIX_METADATA}${PREFIX_PARTIAL}${name}`
 const PREFIX_PARTIAL = '__partial__';
 const DEFAULT_RETRIES = 5;
+const DEFAULT_CONNECTIONS = 4;
+export const DOWNLOAD_CONFIG = {
+  partsMinSize: 64 * 1024 * 1024, // smaller files use one connection
+  partSize: 32 * 1024 * 1024,
+  savePrefixEvery: 256 * 1024 * 1024, // how often to save resume progress
+};
 
 export type DownloadOptions = {
   /**
@@ -31,6 +37,10 @@ export type DownloadOptions = {
    * Number of tries in a row without new bytes before giving up. Default: 5, set to 0 to fail at once
    */
   retries?: number;
+  /**
+   * Connections per file (default: 4), for files of 64MB or more
+   */
+  connections?: number;
 };
 
 // To prevent breaking change, we fill etag with a pre-defined value
@@ -75,6 +85,10 @@ export interface CacheEntryMetadata {
    * Optional SHA256, mostly used by COS backend
    */
   sha256?: string | undefined;
+  /**
+   * Download in parts: size of the complete start of the file
+   */
+  contiguous?: number | undefined;
 }
 
 function hintFromMetadata(
@@ -162,13 +176,15 @@ export class CacheManager {
       const partial = metadata
         ? null
         : await this.readMetadata(`${PREFIX_PARTIAL}${fileKey}`);
+      // parts are written out of order, the file can have holes
+      const prefix = Math.min(partial?.contiguous ?? cachedSize, cachedSize);
       if (
         canResume &&
         partial?.originalURL === url &&
         isStrongEtag(partial.etag) &&
-        cachedSize < partial.originalSize
+        prefix < partial.originalSize
       ) {
-        offset = cachedSize;
+        offset = prefix;
         etag = partial.etag;
       } else {
         // no metadata, file maybe partial; ask server for the real size
@@ -181,7 +197,10 @@ export class CacheManager {
           10
         );
         const headEtag = cleanEtag(head.headers.get('etag'));
-        if (originalSize > 0 && originalSize === cachedSize) {
+        const complete =
+          partial?.contiguous === undefined ||
+          partial.contiguous === originalSize;
+        if (originalSize > 0 && originalSize === cachedSize && complete) {
           await this.writeMetadata(fileKey, {
             originalURL: url,
             originalSize,
@@ -207,13 +226,17 @@ export class CacheManager {
     let kept = offset;
     // true if the bytes on disk can be kept for the next try
     let resumable = offset > 0;
+    // set by downloadParts(): bytes to keep for the next try
+    let partsPrefix: number | null = null;
 
     while (true) {
+      partsPrefix = null;
       try {
         const response = await fetch(url, {
           headers: {
             ...(options.headers ?? {}),
-            ...(offset > 0 ? { Range: `bytes=${offset}-` } : {}),
+            // a 206 means ranges are supported
+            ...(offset > 0 || canResume ? { Range: `bytes=${offset}-` } : {}),
           },
           ...(options.signal ? { signal: options.signal } : {}),
         });
@@ -268,6 +291,41 @@ export class CacheManager {
         }
 
         loaded = offset;
+        const connections = options.connections ?? DEFAULT_CONNECTIONS;
+        if (
+          resumable &&
+          response.status === 206 &&
+          connections > 1 &&
+          total - offset >= DOWNLOAD_CONFIG.partsMinSize &&
+          this.sb.openWriter
+        ) {
+          let lastAt = 0;
+          await this.downloadParts({
+            url,
+            fileKey,
+            hint,
+            response,
+            offset,
+            total,
+            etag,
+            connections,
+            options,
+            onBytes: (n) => {
+              loaded += n;
+              const now = Date.now();
+              if (progressCallback && now - lastAt > 100) {
+                lastAt = now;
+                progressCallback({ loaded, total });
+              }
+            },
+            onPrefix: (prefix) => (partsPrefix = prefix),
+          });
+          progressCallback?.({ loaded, total });
+          if (loaded < total) {
+            throw new Error(`Incomplete download: ${loaded} of ${total} bytes`);
+          }
+          break;
+        }
         let lastProgressAt = 0;
         const progressStream = new TransformStream<Uint8Array, Uint8Array>({
           transform(chunk, controller) {
@@ -306,7 +364,9 @@ export class CacheManager {
           e?.name === 'NoModificationAllowedError';
         if (fatal) throw e;
         // keep the bytes on disk only if the next try can check that the file did not change
-        const size = resumable ? await this.sb.getSize(fileKey, hint) : 0;
+        const size = resumable
+          ? (partsPrefix ?? (await this.sb.getSize(fileKey, hint)))
+          : 0;
         if (size > kept) {
           failures = 0;
           kept = size;
@@ -334,6 +394,133 @@ export class CacheManager {
     }
     await this.writeMetadata(fileKey, metadata);
     await this.sb.delete(`${PREFIX_METADATA}${PREFIX_PARTIAL}${fileKey}`);
+  }
+
+  // part 0 comes from `response`, the others from `connections` workers
+  private async downloadParts(p: {
+    url: string;
+    fileKey: string;
+    hint: StorageFileHint | undefined;
+    response: Response;
+    offset: number;
+    total: number;
+    etag: string;
+    connections: number;
+    options: DownloadOptions;
+    onBytes: (n: number) => void;
+    onPrefix: (prefix: number) => void;
+  }): Promise<void> {
+    const { url, fileKey, offset, total, etag } = p;
+    const PART_SIZE = DOWNLOAD_CONFIG.partSize;
+    const nParts = Math.ceil((total - offset) / PART_SIZE);
+    const partRange = (i: number) =>
+      [
+        offset + i * PART_SIZE,
+        Math.min(total, offset + (i + 1) * PART_SIZE),
+      ] as const;
+
+    const saveMetadata = (contiguous: number) =>
+      this.writeMetadata(`${PREFIX_PARTIAL}${fileKey}`, {
+        originalURL: url,
+        originalSize: total,
+        etag,
+        contiguous,
+      });
+    await saveMetadata(offset);
+    p.onPrefix(offset);
+
+    const writer = await this.sb.openWriter!(fileKey, offset, p.hint);
+    const abort = new AbortController();
+    const onAbort = () => abort.abort();
+    p.options.signal?.addEventListener('abort', onAbort);
+
+    const done = new Array<boolean>(nParts).fill(false);
+    let firstNotDone = 0;
+    let saved = offset;
+    const finish = async (i: number) => {
+      done[i] = true;
+      while (firstNotDone < nParts && done[firstNotDone]) firstNotDone++;
+      const prefix = Math.min(total, offset + firstNotDone * PART_SIZE);
+      p.onPrefix(prefix);
+      if (prefix - saved >= DOWNLOAD_CONFIG.savePrefixEvery) {
+        saved = prefix;
+        await saveMetadata(prefix);
+      }
+    };
+    const pump = async (
+      body: ReadableStream<Uint8Array>,
+      start: number,
+      end: number
+    ) => {
+      const reader = body.getReader();
+      let pos = start;
+      try {
+        while (pos < end) {
+          const { done, value } = await reader.read();
+          if (done) throw new Error(`Incomplete part: ${pos} of ${end} bytes`);
+          const n = Math.min(value.byteLength, end - pos);
+          // write() transfers the buffer
+          await writer.write(pos, value.subarray(0, n));
+          pos += n;
+          p.onBytes(n);
+        }
+      } finally {
+        reader.cancel().catch(() => {});
+      }
+    };
+    let next = 1;
+    const worker = async () => {
+      while (next < nParts) {
+        const i = next++;
+        const [start, end] = partRange(i);
+        const res = await fetch(url, {
+          headers: {
+            ...(p.options.headers ?? {}),
+            Range: `bytes=${start}-${end - 1}`,
+          },
+          signal: abort.signal,
+        });
+        if (
+          res.status !== 206 ||
+          !res.body ||
+          (res.headers.get('etag') ?? '') !== etag
+        ) {
+          res.body?.cancel().catch(() => {});
+          throw new Error(
+            `The file changed on the server or the range is not supported: ${url}`
+          );
+        }
+        await pump(res.body, start, end);
+        await finish(i);
+      }
+    };
+    const first = async () => {
+      await pump(p.response.body!, ...partRange(0));
+      await finish(0);
+      await worker();
+    };
+
+    // the first error stops the other connections
+    const tasks = [
+      first(),
+      ...Array.from({ length: p.connections - 1 }, worker),
+    ].map((t) =>
+      t.catch((e) => {
+        abort.abort();
+        throw e;
+      })
+    );
+    const results = await Promise.allSettled(tasks);
+    p.options.signal?.removeEventListener('abort', onAbort);
+    await writer.close();
+    const errors = results.flatMap((r) =>
+      r.status === 'rejected' ? [r.reason] : []
+    );
+    if (errors.length > 0) {
+      if (p.options.signal?.aborted) throw p.options.signal.reason;
+      // skip the AbortErrors of the stopped connections
+      throw errors.find((e) => e?.name !== 'AbortError') ?? errors[0];
+    }
   }
 
   /**
