@@ -25,6 +25,8 @@ export default defineConfig({
   },
   test: {
     setupFiles: ['./vitest.setup.ts'],
+    // CI runners are slow, model downloads included
+    testTimeout: process.env.GITHUB_ACTIONS ? 60000 : 15000,
     ...(AUTO ? { watch: false } : {}),
     exclude: [
       '**/node_modules/**',

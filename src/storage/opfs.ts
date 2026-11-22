@@ -1,6 +1,6 @@
 import { createWorker, isSafariMobile } from '../utils';
 import { OPFS_UTILS_WORKER_CODE } from '../workers-code/generated';
-import type { StorageBackend, StorageFileHint } from './index';
+import type { StorageBackend, StorageFileHint, StorageWriter } from './index';
 
 // the OPFS path of each File read from the cache: the worker opens it with a sync access handle, see "Async file read" in README-dev.md
 // (a path, not the FileSystemFileHandle: Safari cannot send a handle to a worker)
@@ -52,6 +52,17 @@ export class OPFSBackend implements StorageBackend {
     return true;
   }
 
+  async openWriter(key: string, offset: number): Promise<StorageWriter> {
+    const writable = await openWritable(key, offset);
+    // one sync access handle per file, so writes go one at a time
+    let last = Promise.resolve();
+    const queue = (f: () => Promise<void>) => (last = last.then(f, f));
+    return {
+      write: (pos, buf) => queue(() => writable.writeAt(pos, buf)),
+      close: () => queue(() => writable.close()),
+    };
+  }
+
   async getSize(key: string): Promise<number> {
     try {
       const cacheDir = await getCacheDir();
@@ -98,6 +109,7 @@ async function openWritable(
   offset: number
 ): Promise<{
   write(value: Uint8Array): Promise<void>;
+  writeAt(pos: number, value: Uint8Array): Promise<void>;
   close(): Promise<void>;
 }> {
   const worker = createWorker(OPFS_UTILS_WORKER_CODE);
@@ -112,6 +124,7 @@ async function openWritable(
     data:
       | { action: 'open'; filename: string; offset: number }
       | { action: 'write'; buf: Uint8Array }
+      | { action: 'write-at'; buf: Uint8Array; pos: number }
       | { action: 'close' }
   ) =>
     new Promise<void>((resolve, reject) => {
@@ -127,6 +140,8 @@ async function openWritable(
   await workerExec({ action: 'open', filename: fileName, offset });
   return {
     write: (value) => workerExec({ action: 'write', buf: value }),
+    writeAt: (pos, value) =>
+      workerExec({ action: 'write-at', buf: value, pos }),
     close: async () => {
       await workerExec({ action: 'close' });
       worker.terminate();

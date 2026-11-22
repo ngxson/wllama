@@ -2,6 +2,11 @@ export interface StorageFileHint {
   sha256: string;
 }
 
+export interface StorageWriter {
+  write(pos: number, buf: Uint8Array): Promise<void>;
+  close(): Promise<void>;
+}
+
 export interface StorageBackend {
   isSupported(): boolean;
 
@@ -27,6 +32,15 @@ export interface StorageBackend {
    * True if `write()` accepts an offset, used to resume a download
    */
   canWriteAt?(hint?: StorageFileHint): boolean;
+
+  /**
+   * Random-access writer, keeps the first `offset` bytes. Only if `canWriteAt()` is true
+   */
+  openWriter?(
+    key: string,
+    offset: number,
+    hint?: StorageFileHint
+  ): Promise<StorageWriter>;
 
   /**
    * Get the stored size of a file in bytes.
