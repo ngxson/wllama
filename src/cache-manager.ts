@@ -228,6 +228,8 @@ export class CacheManager {
     let resumable = offset > 0;
     // the start of the file known to be complete: parts can leave holes after it
     let safePrefix = offset;
+    // off after a 206 that cannot be checked (Content-Range not exposed)
+    let probeRanges = canResume;
 
     while (true) {
       let streaming = false;
@@ -236,7 +238,7 @@ export class CacheManager {
           headers: {
             ...(options.headers ?? {}),
             // a 206 means ranges are supported
-            ...(offset > 0 || canResume ? { Range: `bytes=${offset}-` } : {}),
+            ...(offset > 0 || probeRanges ? { Range: `bytes=${offset}-` } : {}),
           },
           ...(options.signal ? { signal: options.signal } : {}),
         });
@@ -269,6 +271,11 @@ export class CacheManager {
               continue;
             }
           }
+        } else if (response.status === 206 && !range) {
+          // its size cannot be checked: ask for the whole file
+          probeRanges = false;
+          await response.body.cancel();
+          continue;
         } else if (response.status === 206 && range && range.start !== 0) {
           await response.body.cancel();
           throw new Error(`Wrong range from the server: ${url}`);

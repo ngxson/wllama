@@ -515,6 +515,33 @@ test.sequential('reject a first response with another range', async () => {
   await expectSameAsRemote(manager, TINY_MODEL);
 });
 
+test.sequential(
+  'ask for the whole file after a 206 that cannot be checked',
+  async () => {
+    const manager = opfsManager();
+    await manager.clear();
+    const net = hookNetwork();
+    // a short 206 body without Content-Range (not exposed by the server)
+    net.on(isRange('bytes=0-'), { times: 1 }).handle(async (_req, next) => {
+      const res = await next();
+      const data = new Uint8Array(await res.arrayBuffer()).slice(0, 1000);
+      return new Response(data, {
+        status: 206,
+        headers: {
+          etag: res.headers.get('etag') ?? '',
+          'content-length': '1000',
+        },
+      });
+    });
+    const ranges = recordRanges(net, TINY_MODEL);
+
+    const model = await manager.downloadModel(TINY_MODEL);
+    expect(ranges).toEqual([null]);
+    expect(model.size).toBe(1185376);
+    await expectSameAsRemote(manager, TINY_MODEL);
+  }
+);
+
 test.sequential('give up after too many tries without new bytes', async () => {
   const manager = opfsManager();
   await manager.clear();
