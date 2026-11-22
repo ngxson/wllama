@@ -367,6 +367,51 @@ test.sequential('resume a download in parts', async () => {
   await expectSameAsRemote(manager, TINY_MODEL);
 });
 
+const isRange = (range: string) => (req: Request) =>
+  req.url === TINY_MODEL && req.headers.get('range') === range;
+
+test.sequential(
+  'keep the complete part when a later try fails early',
+  async () => {
+    smallParts();
+    const manager = opfsManager();
+    await manager.clear();
+    const net = hookNetwork();
+
+    // the last part never comes, part 1 fails after parts 0, 2 and 3 are written: a hole
+    void net.on(isRange(partRange(4)), { times: 1 }).stallAfter(0);
+    net.on(isRange(partRange(1)), { times: 1 }).handle(async (_req, next) => {
+      const res = await next();
+      await new Promise((r) => setTimeout(r, 1000));
+      return cutResponse(res, 1000, {});
+    });
+    // the next try fails before it gets to the parts
+    net.on(isRange('bytes=262144-'), { times: 1 }).fail();
+    const ranges = recordRanges(net, TINY_MODEL);
+
+    const model = await manager.downloadModel(TINY_MODEL);
+    // resumed after part 0, never from the end of the file
+    expect(ranges).toContain('bytes=262144-');
+    expect(ranges).not.toContain(`bytes=${4 * 262144}-`);
+    expect(model.size).toBe(1185376);
+    await expectSameAsRemote(manager, TINY_MODEL);
+  }
+);
+
+test.sequential('stop the download in parts when a part fails', async () => {
+  smallParts();
+  const manager = opfsManager();
+  await manager.clear();
+  const net = hookNetwork();
+
+  // the first response stalls, part 1 fails: the error comes out, not a stalled read
+  void net.on(isRange('bytes=0-'), { times: 1 }).stallAfter(1000);
+  net.on(isRange(partRange(1)), { times: 1 }).fail();
+  await expect(
+    manager.downloadModel(TINY_MODEL, { retries: 0 })
+  ).rejects.toThrow('network error (simulated)');
+});
+
 test.sequential('give up after too many tries without new bytes', async () => {
   const manager = opfsManager();
   await manager.clear();

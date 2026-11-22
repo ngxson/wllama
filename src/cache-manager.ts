@@ -226,11 +226,10 @@ export class CacheManager {
     let kept = offset;
     // true if the bytes on disk can be kept for the next try
     let resumable = offset > 0;
-    // set by downloadParts(): bytes to keep for the next try
+    // set by downloadParts(), kept until a stream write truncates the file
     let partsPrefix: number | null = null;
 
     while (true) {
-      partsPrefix = null;
       try {
         const response = await fetch(url, {
           headers: {
@@ -344,6 +343,7 @@ export class CacheManager {
           },
         });
 
+        partsPrefix = null;
         await this.sb.write(
           fileKey,
           response.body.pipeThrough(progressStream),
@@ -457,10 +457,16 @@ export class CacheManager {
       end: number
     ) => {
       const reader = body.getReader();
+      // the first response is not fetched with abort.signal
+      const onAbort = () => reader.cancel().catch(() => {});
+      abort.signal.addEventListener('abort', onAbort);
       let pos = start;
       try {
         while (pos < end) {
           const { done, value } = await reader.read();
+          if (done && abort.signal.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+          }
           if (done) throw new Error(`Incomplete part: ${pos} of ${end} bytes`);
           const n = Math.min(value.byteLength, end - pos);
           // write() transfers the buffer
@@ -469,6 +475,7 @@ export class CacheManager {
           p.onBytes(n);
         }
       } finally {
+        abort.signal.removeEventListener('abort', onAbort);
         reader.cancel().catch(() => {});
       }
     };
