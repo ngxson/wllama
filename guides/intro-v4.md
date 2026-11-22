@@ -41,6 +41,7 @@ This means you can now load the GGUF file as-is, there is no need to split it an
 ```js
 // a 5GB model, a single file
 await wllama.loadModelFromUrl('https://huggingface.co/.../gemma-4-E4B-it-Q4_0.gguf');
+await wllama.exit();
 
 // a part on WebGPU, the rest on the CPU
 await wllama.loadModelFromUrl('https://huggingface.co/.../gemma-4-E4B-it-Q4_0.gguf', {
@@ -51,7 +52,7 @@ await wllama.loadModelFromUrl('https://huggingface.co/.../gemma-4-E4B-it-Q4_0.gg
 You can control the number of RPC workers with `rpc_workers`. By default, they are only used when needed; set it to 0 to disable them.
 
 > [!IMPORTANT]
-> RPC workers need multi-threading, so the page must be cross-origin isolated (COOP / COEP headers). Without it, a model whose CPU part is bigger than 4GB cannot be loaded.
+> RPC workers need multi-threading, so the page must be cross-origin isolated (COOP / COEP headers). Without it, a model whose CPU part is bigger than 4GB cannot be loaded. An older Firefox without JSPI cannot load it either.
 
 ## Faster loading and downloading
 
@@ -75,6 +76,7 @@ await wllama.loadModelFromUrl({
   url: 'https://huggingface.co/.../Qwen3-4B-Q4_K_M.gguf',
   draftUrl: 'https://huggingface.co/.../dflash-Qwen3-4B-Q4_K_M.gguf',
 });
+await wllama.exit();
 
 // a model with its MTP layers inside: no draft file
 await wllama.loadModelFromUrl('https://huggingface.co/.../Qwen3.5-4B-MTP-Q4_K_M.gguf', {
@@ -82,7 +84,7 @@ await wllama.loadModelFromUrl('https://huggingface.co/.../Qwen3.5-4B-MTP-Q4_K_M.
 });
 ```
 
-With `loadModel()`, the draft can also be passed in the list of files, along with the model. On WebGPU, DFlash, DSpark and MTP make generation about 1.2x faster. On CPU, it is usually slower, so it is not recommended.
+With `loadModel()`, a DFlash, DSpark or Eagle3 draft, or an MTP sidecar, can also be passed in the list of files, along with the model; a smaller model used as the draft goes to `spec_draft_model`. On WebGPU, DFlash, DSpark and MTP make generation about 1.2x faster. On CPU, it is usually slower, so it is not recommended.
 
 ## LoRA adapters
 
@@ -94,6 +96,7 @@ await wllama.loadModelFromUrl({
   url: 'https://example.com/model.gguf',
   loraUrls: ['https://example.com/adapter.gguf'],
 });
+await wllama.exit();
 
 // from a Blob, with its scale
 await wllama.loadModelFromUrl('https://example.com/model.gguf', {

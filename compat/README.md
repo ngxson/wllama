@@ -6,7 +6,7 @@ Optional package that provides the compat WASM build of `@wllama/wllama`, for br
 
 The default `@wllama/wllama` build relies on two modern WebAssembly features: [JSPI](https://github.com/WebAssembly/js-promise-integration) and [relaxed SIMD](https://github.com/WebAssembly/relaxed-simd).
 
-When one of them is missing, wllama automatically falls back to **compat mode**: a separate WASM build that uses [Asyncify](https://emscripten.org/docs/porting/asyncify.html) instead of JSPI, and drops relaxed SIMD. It supports the same features as the default build, including WebGPU and models bigger than 4GB, but it is slower.
+When one of them is missing, wllama automatically falls back to **compat mode** (except on Firefox, see [Browser compatibility](#browser-compatibility)): a separate WASM build that uses [Asyncify](https://emscripten.org/docs/porting/asyncify.html) instead of JSPI, and drops relaxed SIMD. It supports the same features as the default build, including WebGPU and models bigger than 4GB, but it is slower.
 
 ## Browser compatibility
 
