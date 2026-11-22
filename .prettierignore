@@ -13,6 +13,9 @@
 /examples/advanced
 /examples/basic
 /examples/embeddings
+# the overlay is built into llama.cpp/ui, it follows the prettier config of llama.cpp/ui/apps/chat
+/examples/main/overlay
+/examples/main/.build
 
 /scripts
 /esm
