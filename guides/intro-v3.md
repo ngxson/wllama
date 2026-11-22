@@ -190,13 +190,11 @@ The following APIs are **no longer available** in v3.0. They were tied to the ol
 
 | Removed | Reason |
 |---|---|
-| `tokenize` / `detokenize` | Low-level tokenizer API removed |
 | `decode` / `encode` | Replaced by OAI completion API |
 | `samplingInit` / `samplingAccept` / `samplingSample` | Sampling is now handled internally per-request |
 | Sequence shift/remove operations | Not exposed by llama-server context |
 
-> [!IMPORTANT]
-> If you rely on tokenizer APIs, please leave a comment on [PR #213](https://github.com/ngxson/wllama/pull/213) — it can be added back in the future.
+`tokenize()` and `detokenize()` are available again, with the same options as the `/tokenize` and `/detokenize` routes of llama-server: `tokenize(text, { addSpecial, parseSpecial, withPieces })` returns the token IDs, and `detokenize(tokens)` returns a string (it returned a `Uint8Array` by default in v2).
 
 ### Sampling params moved to per-request
 

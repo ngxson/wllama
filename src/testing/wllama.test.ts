@@ -452,6 +452,40 @@ test.sequential('abort signal', async () => {
   await wllama.exit();
 });
 
+test.sequential('tokenizes and detokenizes', async () => {
+  const wllama = createWllama();
+  await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 128 });
+
+  const text = 'Once upon a time, there was a little girl';
+  const tokens = await wllama.tokenize(text);
+  expect(tokens.length).toBeGreaterThan(5);
+  expect(tokens.every((t) => Number.isInteger(t))).toBe(true);
+  expect((await wllama.detokenize(tokens)).trim()).toBe(text);
+
+  // special tokens: BOS only with addSpecial
+  expect(tokens[0]).not.toBe(wllama.getBOS());
+  const withBos = await wllama.tokenize(text, { addSpecial: true });
+  expect(withBos).toEqual([wllama.getBOS(), ...tokens]);
+
+  // the pieces put together give the same text
+  const pieces = await wllama.tokenize(text, { withPieces: true });
+  expect(pieces.map((p) => p.id)).toEqual(tokens);
+  expect(pieces.map((p) => p.piece).join('')).toBe(
+    await wllama.detokenize(tokens)
+  );
+
+  // text and token IDs mixed
+  const mixed = await wllama.tokenize([wllama.getBOS(), text]);
+  expect(mixed).toEqual(withBos);
+
+  // invalid tokens are refused, then it still works
+  await expect(wllama.detokenize([1e9])).rejects.toThrow('invalid token');
+  await expect(wllama.detokenize([-1])).rejects.toThrow('invalid token');
+  await expect(wllama.tokenize([text, 1e9])).rejects.toThrow('invalid token');
+  expect(await wllama.tokenize(text)).toEqual(tokens);
+  await wllama.exit();
+});
+
 test.sequential('generates embeddings', async () => {
   const wllama = createWllama();
 
