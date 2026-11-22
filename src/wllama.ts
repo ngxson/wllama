@@ -616,19 +616,7 @@ export class Wllama {
     const model = useCache
       ? await this.modelManager.getModelOrDownload(source, params)
       : await this.modelManager.downloadModel(source, params);
-    const blobs = await model.open();
-    // a draft-simple model looks like any model, so it is passed explicitly
-    const iDraft = source.draftUrl
-      ? model.files.findIndex((f) => f.metadata.originalURL === source.draftUrl)
-      : -1;
-    if (iDraft >= 0 && params.spec_draft_model === undefined) {
-      const [draft] = blobs.splice(iDraft, 1);
-      return await this.loadModel(blobs, {
-        ...params,
-        spec_draft_model: draft,
-      });
-    }
-    return await this.loadModel(blobs, params);
+    return await this.loadModel(model, params);
   }
 
   /**
@@ -657,10 +645,26 @@ export class Wllama {
     ggufBlobsOrModel: Blob[] | Model,
     params: LoadModelParams = {}
   ): Promise<void> {
-    const blobs: Blob[] =
-      ggufBlobsOrModel instanceof Model
-        ? await ggufBlobsOrModel.open()
-        : [...(ggufBlobsOrModel as Blob[])]; // copy array
+    let blobs: Blob[];
+    if (ggufBlobsOrModel instanceof Model) {
+      const model = ggufBlobsOrModel;
+      blobs = await model.open();
+      // a draft-simple model looks like any model, so it is passed explicitly
+      const iDraft = model.draftUrl
+        ? model.files.findIndex(
+            (f) => f.metadata.originalURL === model.draftUrl
+          )
+        : -1;
+      if (iDraft >= 0) {
+        const [draft] = blobs.splice(iDraft, 1);
+        params = {
+          ...params,
+          spec_draft_model: params.spec_draft_model ?? draft,
+        };
+      }
+    } else {
+      blobs = [...ggufBlobsOrModel]; // copy array
+    }
     if (blobs.some((b) => b.size === 0)) {
       throw new WllamaError(
         'Input model (or splits) must be non-empty Blob or File',

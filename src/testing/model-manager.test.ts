@@ -423,6 +423,36 @@ test.sequential(
   }
 );
 
+test.sequential(
+  'keeps the order of the LoRA adapters, matches the cache on all the files',
+  async () => {
+    const manager = new ModelManager();
+    await manager.clear();
+    // any small GGUF files as stand-ins for the draft and the adapters
+    const [a, b, c] = ModelManager.parseModelUrl(SPLIT_MODEL);
+    const source = { url: TINY_MODEL, draftUrl: a, loraUrls: [c, b] };
+    const urls = (m: Model) => m.files.map((f) => f.metadata.originalURL);
+    // the order of loraUrls gives the ids of the adapters
+    expect(urls(await manager.downloadModel(source))).toEqual([
+      TINY_MODEL,
+      a,
+      c,
+      b,
+    ]);
+    expect(urls(await manager.getModelOrDownload(source))).toEqual([
+      TINY_MODEL,
+      a,
+      c,
+      b,
+    ]);
+    const net = hookNetwork();
+    expect(urls(await manager.getModelOrDownload({ url: TINY_MODEL }))).toEqual(
+      [TINY_MODEL]
+    );
+    expect(getRequests(net).length).toBe(0);
+  }
+);
+
 test.sequential('download invalid model URL', async () => {
   const manager = new ModelManager();
   const invalidUrl = 'https://invalid.example.com/model.gguf';

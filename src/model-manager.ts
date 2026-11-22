@@ -112,7 +112,7 @@ export class Model {
    */
   size: number;
   /**
-   * List of all shards in the cache, sorted by original URL (ascending order)
+   * List of all files in the cache: the shards in order, then mmproj, draft and LoRA adapters (in the order of loraUrls, it gives their ids)
    */
   files: CacheEntry[];
   /**
@@ -244,9 +244,6 @@ export class Model {
       }
       allFiles.push(file);
     }
-    allFiles.sort((a, b) =>
-      a.metadata.originalURL.localeCompare(b.metadata.originalURL)
-    );
     return allFiles;
   }
 

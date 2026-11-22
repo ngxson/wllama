@@ -20,6 +20,7 @@ import {
 } from '../wllama';
 import type { RealtimeEvent } from '../types/oai-compat';
 import { isSupportJSPI } from '../utils';
+import { ModelManager } from '../model-manager';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',
@@ -514,6 +515,37 @@ test.sequential('drafts with a smaller model', async () => {
   const drafted = await complete(MOE_DRAFT);
   expect(drafted.timings?.draft_n).toBeGreaterThan(0);
   expect(drafted.choices[0].text).toBe(plain.choices[0].text);
+
+  // a Model object keeps its draft
+  const wllama = createWllama();
+  const model = await new ModelManager().getModelOrDownload({
+    url: MOE_MODEL,
+    draftUrl: MOE_DRAFT,
+  });
+  await wllama.loadModel(model, { n_ctx: 512 });
+  const res = await wllama.createCompletion({
+    prompt: 'I believe the meaning of life is',
+    max_tokens: 16,
+    temperature: 0,
+  });
+  expect(res.timings?.draft_n).toBeGreaterThan(0);
+  await wllama.exit();
+
+  // spec_draft_model wins over draftUrl, the file of draftUrl is not loaded at all
+  const draft = (
+    await (await new ModelManager().getModelOrDownload(MOE_DRAFT)).open()
+  )[0];
+  await wllama.loadModelFromUrl(
+    { url: MOE_MODEL, draftUrl: TINY_MODEL },
+    { n_ctx: 512, spec_draft_model: draft }
+  );
+  const res2 = await wllama.createCompletion({
+    prompt: 'I believe the meaning of life is',
+    max_tokens: 16,
+    temperature: 0,
+  });
+  expect(res2.timings?.draft_n).toBeGreaterThan(0);
+  await wllama.exit();
 });
 
 test.sequential('tokenizes and detokenizes', async () => {
