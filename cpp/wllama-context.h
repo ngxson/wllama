@@ -829,6 +829,8 @@ struct wllama_context
     if (status != COMMON_PARAMS_FIT_STATUS_SUCCESS)
       wllama_fit_gpu_mem = 0;
     params.n_gpu_layers = mparams.n_gpu_layers;
+    // with n_ctx = 0, the fit can pick a smaller context than the trained one
+    params.n_ctx = cparams.n_ctx;
   }
 
   glue_msg_load_res action_load(const char *req_raw)

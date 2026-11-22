@@ -68,6 +68,38 @@ test('uses rpc workers when the model does not fit in the main instance', async 
   }
 }, 60000);
 
+test('exit() during the restart with rpc workers stops the load', async () => {
+  const config = { ...RPC_CONFIG };
+  Object.assign(RPC_CONFIG, { autoMinSize: 0, mainMemMax: 1 });
+  const wllama = new Wllama(
+    { default: '/src/wasm/wllama.wasm' },
+    {
+      logger: {
+        // called before the first attempt is cleaned up
+        debug: (...args: any[]) => {
+          if (/using 1 rpc workers/.test(args.join(' '))) wllama.exit();
+        },
+        log: () => {},
+        warn: () => {},
+        error: () => {},
+      },
+    }
+  );
+  wllama.setCompat(
+    __COMPAT__ ? { wasm: '/compat/wasm/wllama.wasm' } : null,
+    'firefox_safari'
+  );
+  try {
+    await expect(
+      wllama.loadModelFromUrl(TINY_MODEL, { n_gpu_layers: 0, n_threads: 2 })
+    ).rejects.toThrow('exit() was called');
+    expect(wllama.isModelLoaded()).toBe(false);
+  } finally {
+    Object.assign(RPC_CONFIG, config);
+    await wllama.exit();
+  }
+}, 60000);
+
 test('rpc workers need async file reads', async () => {
   // without JSPI and without compat, the model is copied into the main wasm, so rpc workers cannot help
   const suspending = (WebAssembly as any).Suspending;

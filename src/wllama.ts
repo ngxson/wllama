@@ -342,6 +342,7 @@ export class Wllama {
 
   private proxy: ProxyToWorker = null as any;
   private rpcWorkers: ProxyToWorker[] = [];
+  private exitCount = 0; // number of exit() calls
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
@@ -812,7 +813,15 @@ export class Wllama {
       this.logger().debug(
         `The model does not fit in one wasm instance, using ${loadResult.n_rpc_workers} rpc workers`
       );
+      const exitCount = this.exitCount;
       await exitWorkers();
+      // exitWorkers() calls exit() once, or not at all if exit() was called before
+      if (this.exitCount !== exitCount + 1) {
+        throw new WllamaError(
+          'exit() was called while the model was loading',
+          'load_error'
+        );
+      }
       return await this.loadModel(blobs, {
         ...params,
         rpc_workers: loadResult.n_rpc_workers,
@@ -1320,6 +1329,7 @@ export class Wllama {
    */
   async exit(): Promise<void> {
     // detach them first: a new load can start while this one is shutting down
+    this.exitCount++;
     const proxy = this.proxy;
     const rpcWorkers = this.rpcWorkers;
     this.proxy = null as any;
