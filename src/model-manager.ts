@@ -14,6 +14,8 @@ export interface ModelSource {
    */
   url: string;
   mmprojUrl?: string;
+  draftUrl?: string; // speculative decoding draft model
+  loraUrls?: string[];
 }
 
 /**
@@ -70,11 +72,17 @@ export class Model {
     modelManager: ModelManager,
     url: string,
     mmprojUrl?: string,
-    savedFiles?: CacheEntry[]
+    savedFiles?: CacheEntry[],
+    sidecars: {
+      draftUrl?: string | undefined;
+      loraUrls?: string[] | undefined;
+    } = {}
   ) {
     this.modelManager = modelManager;
     this.url = url;
     this.mmprojUrl = mmprojUrl;
+    this.draftUrl = sidecars.draftUrl;
+    this.loraUrls = sidecars.loraUrls ?? [];
     if (savedFiles) {
       // this file is already in cache
       this.files = this.getAllFiles(savedFiles);
@@ -95,6 +103,8 @@ export class Model {
    * URL to mmproj file, if exists
    */
   mmprojUrl?: string | undefined;
+  draftUrl?: string | undefined;
+  loraUrls: string[];
   /**
    * Size in bytes (total size of all shards).
    *
@@ -102,7 +112,7 @@ export class Model {
    */
   size: number;
   /**
-   * List of all shards in the cache, sorted by original URL (ascending order)
+   * List of all files in the cache: the shards in order, then mmproj, draft and LoRA adapters (in the order of loraUrls, it gives their ids)
    */
   files: CacheEntry[];
   /**
@@ -174,6 +184,8 @@ export class Model {
           metadataAdditional: {
             originalURL: w.url,
             mmprojURL: this.mmprojUrl,
+            draftURL: this.draftUrl,
+            loraURLs: this.loraUrls.length ? this.loraUrls : undefined,
           } satisfies Partial<CacheEntryMetadata>,
           progressCallback: ({ loaded }) => {
             loadedSize[w.index] = loaded;
@@ -209,13 +221,17 @@ export class Model {
   }
 
   /**
-   * URLs of all files of this model (shards + mmproj), without duplicates
+   * URLs of all files of this model (shards + mmproj + draft + LoRA adapters), without duplicates
    */
   private getAllUrls(): string[] {
     const urls = [...ModelManager.parseModelUrl(this.url)];
     if (this.mmprojUrl) {
       urls.push(this.mmprojUrl);
     }
+    if (this.draftUrl) {
+      urls.push(this.draftUrl);
+    }
+    urls.push(...this.loraUrls);
     return [...new Set(urls)];
   }
 
@@ -228,9 +244,6 @@ export class Model {
       }
       allFiles.push(file);
     }
-    allFiles.sort((a, b) =>
-      a.metadata.originalURL.localeCompare(b.metadata.originalURL)
-    );
     return allFiles;
   }
 
@@ -299,9 +312,16 @@ export class ModelManager {
       const mmprojUrl = file.metadata.mmprojURL;
       const isFirstShard =
         shards.length === 1 || shards[0] === file.metadata.originalURL;
-      if (isFirstShard) {
+      // the files of a model all have its metadata, so the draft and the adapters are not models of their own
+      const isSidecar =
+        file.metadata.originalURL === file.metadata.draftURL ||
+        !!file.metadata.loraURLs?.includes(file.metadata.originalURL);
+      if (isFirstShard && !isSidecar) {
         models.push(
-          new Model(this, file.metadata.originalURL, mmprojUrl, cachedFiles)
+          new Model(this, file.metadata.originalURL, mmprojUrl, cachedFiles, {
+            draftUrl: file.metadata.draftURL,
+            loraUrls: file.metadata.loraURLs,
+          })
         );
       }
     }
@@ -331,7 +351,10 @@ export class ModelManager {
         'download_error'
       );
     }
-    const model = new Model(this, source.url, source.mmprojUrl);
+    const model = new Model(this, source.url, source.mmprojUrl, undefined, {
+      draftUrl: source.draftUrl,
+      loraUrls: source.loraUrls,
+    });
     const validity = model.validate();
     if (validity !== ModelValidationStatus.VALID) {
       await model.refresh(options);
@@ -347,7 +370,15 @@ export class ModelManager {
     options: DownloadOptions = {}
   ): Promise<Model> {
     const models = await this.getModels();
-    const model = models.find((m) => m.url === source.url);
+    const sameList = (a: string[], b: string[]) =>
+      a.length === b.length && a.every((u, i) => u === b[i]);
+    const model = models.find(
+      (m) =>
+        m.url === source.url &&
+        m.mmprojUrl === source.mmprojUrl &&
+        m.draftUrl === source.draftUrl &&
+        sameList(m.loraUrls, source.loraUrls ?? [])
+    );
     if (model) {
       options.progressCallback?.({ loaded: model.size, total: model.size });
       return model;

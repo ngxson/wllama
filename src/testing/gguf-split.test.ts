@@ -1,6 +1,8 @@
 import { test, expect, afterEach } from 'vitest';
 import { GGUF_SPLIT_CONFIG, splitBigGguf } from '../gguf-split';
 import { Wllama } from '../wllama';
+import { classifyGguf, prepareBlobs } from '../utils';
+import { makeGgufHeader } from './fake-gguf';
 
 const TINY_MODEL =
   'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf';
@@ -104,4 +106,107 @@ test('a failed split does not break the next load', async () => {
   });
   expect(wllama.isModelLoaded()).toBe(true);
   await wllama.exit();
+});
+
+test('tells the model, mmproj, draft and LoRA files apart', async () => {
+  const layer = (i: number) => [
+    `blk.${i}.attn_q.weight`,
+    `blk.${i}.ffn_down.weight`,
+  ];
+  const nextn = (i: number) => [...layer(i), `blk.${i}.nextn.eh_proj.weight`];
+  const role = (p: Parameters<typeof makeGgufHeader>[0]) =>
+    classifyGguf(makeGgufHeader(p));
+
+  expect(
+    await role({
+      arch: 'llama',
+      tensors: ['token_embd.weight', ...layer(0), ...layer(1)],
+    })
+  ).toEqual({ role: 'model' });
+  expect(
+    await role({ arch: 'clip', tensors: ['v.patch_embd.weight'] })
+  ).toEqual({ role: 'mmproj' });
+  expect(
+    await role({
+      arch: 'llama',
+      type: 'adapter',
+      tensors: ['blk.0.attn_q.weight.lora_a'],
+    })
+  ).toEqual({ role: 'lora' });
+  expect(await role({ arch: 'dflash', tensors: layer(0) })).toEqual({
+    role: 'draft',
+    spec_type: 'draft-dflash',
+  });
+  expect(await role({ arch: 'eagle3', tensors: layer(0) })).toEqual({
+    role: 'draft',
+    spec_type: 'draft-eagle3',
+  });
+  // an MTP sidecar only has the blocks of the MTP layers
+  expect(
+    await role({ arch: 'qwen35', tensors: ['token_embd.weight', ...nextn(32)] })
+  ).toEqual({ role: 'draft', spec_type: 'draft-mtp' });
+  // a model with its MTP layers inside, and the last shard of a split model, are the model
+  expect(
+    await role({
+      arch: 'qwen35',
+      tensors: [...layer(0), ...layer(1), ...nextn(2)],
+    })
+  ).toEqual({ role: 'model' });
+  expect(
+    await role({ arch: 'qwen35', splitCount: 3, tensors: nextn(32) })
+  ).toEqual({ role: 'model' });
+});
+
+test('prepares the model, mmproj, draft and LoRA files', async () => {
+  const model = makeGgufHeader({
+    arch: 'llama',
+    tensors: ['blk.0.attn_q.weight'],
+  });
+  const mmproj = makeGgufHeader({
+    arch: 'clip',
+    tensors: ['v.patch_embd.weight'],
+  });
+  const draft = makeGgufHeader({
+    arch: 'dflash',
+    tensors: ['blk.0.attn_q.weight'],
+  });
+  const lora = () =>
+    makeGgufHeader({
+      arch: 'llama',
+      type: 'adapter',
+      tensors: ['blk.0.attn_q.weight.lora_a'],
+    });
+
+  const files = await prepareBlobs([lora(), draft, model, mmproj, lora()]);
+  expect(files.llm.map((f) => f.name)).toEqual(['model-00001-of-00001.gguf']);
+  expect(files.mmproj?.name).toBe('mmproj.gguf');
+  expect(files.draft).toMatchObject({
+    name: 'draft.gguf',
+    spec_type: 'draft-dflash',
+  });
+  expect(files.loras.map((f) => f.name)).toEqual([
+    'lora-1.gguf',
+    'lora-2.gguf',
+  ]);
+  expect(files.all.map((f) => f.name)).toEqual([
+    'model-00001-of-00001.gguf',
+    'mmproj.gguf',
+    'draft.gguf',
+    'lora-1.gguf',
+    'lora-2.gguf',
+  ]);
+
+  // a normal model given as the draft runs with draft-simple
+  const small = makeGgufHeader({
+    arch: 'llama',
+    tensors: ['blk.0.attn_q.weight'],
+  });
+  expect((await prepareBlobs([model], small)).draft?.spec_type).toBe(
+    'draft-simple'
+  );
+
+  await expect(prepareBlobs([model, draft], draft)).rejects.toThrow(
+    'More than one speculative draft'
+  );
+  await expect(prepareBlobs([mmproj])).rejects.toThrow('No model file');
 });

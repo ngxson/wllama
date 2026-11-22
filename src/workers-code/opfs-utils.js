@@ -14,14 +14,23 @@ async function openFile(filename, offset = 0) {
 }
 
 async function writeFile(buf) {
+  let n;
   try {
-    writePos += accessHandle.write(buf, { at: writePos });
+    n = accessHandle.write(buf, { at: writePos });
   } catch (e) {
     // iOS Safari can close the handle in the middle of a download, open a new one and try once more
     if (e?.name !== 'InvalidStateError') throw e;
     accessHandle = await fileHandler.createSyncAccessHandle();
-    writePos += accessHandle.write(buf, { at: writePos });
+    n = accessHandle.write(buf, { at: writePos });
   }
+  // Chrome stops a file at 2000MB in an incognito window, the write returns a wrong count instead of throwing
+  if (n !== buf.byteLength) {
+    throw new DOMException(
+      `Cannot write past ${writePos} bytes, the storage is full`,
+      'QuotaExceededError'
+    );
+  }
+  writePos += n;
 }
 
 async function closeFile() {

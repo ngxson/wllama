@@ -20,6 +20,7 @@ import {
 } from '../wllama';
 import type { RealtimeEvent } from '../types/oai-compat';
 import { isSupportJSPI } from '../utils';
+import { ModelManager } from '../model-manager';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',
@@ -449,6 +450,101 @@ test.sequential('abort signal', async () => {
 
   expect(i).toBe(4);
 
+  await wllama.exit();
+});
+
+// same models as the LoRA and speculative tests of llama-server
+const MOE_REPO =
+  'https://huggingface.co/ggml-org-dev/stories15M_MOE/resolve/main';
+const MOE_MODEL = `${MOE_REPO}/stories15M_MOE-Q8_0.gguf`;
+const MOE_LORA = `${MOE_REPO}/moe_shakespeare15M.gguf`;
+const MOE_DRAFT =
+  'https://huggingface.co/ggml-org-dev/tiny-llamas/resolve/main/stories15M-q4_0.gguf';
+
+test.sequential('applies a LoRA adapter given with the model', async () => {
+  const complete = async (
+    source: { url: string; loraUrls?: string[] },
+    lora?: { id: number; scale: number }[]
+  ) => {
+    const wllama = createWllama();
+    await wllama.loadModelFromUrl(source, { n_ctx: 512 });
+    const res = await wllama.createCompletion({
+      prompt: 'Look in thy glass',
+      max_tokens: 32,
+      temperature: 0,
+      ...(lora ? { lora } : {}),
+    });
+    await wllama.exit();
+    return res.choices[0].text;
+  };
+  // without the adapter, a bedtime story; with it, Shakespeare
+  expect(await complete({ url: MOE_MODEL })).toMatch(
+    /(little|girl|three|years|old)+/
+  );
+  expect(await complete({ url: MOE_MODEL, loraUrls: [MOE_LORA] })).toMatch(
+    /(eye|love|glass|sun)+/
+  );
+  // a request can change its scale
+  expect(
+    await complete({ url: MOE_MODEL, loraUrls: [MOE_LORA] }, [
+      { id: 0, scale: 0 },
+    ])
+  ).toMatch(/(little|girl|three|years|old)+/);
+});
+
+test.sequential('drafts with a smaller model', async () => {
+  const complete = async (draftUrl?: string) => {
+    const wllama = createWllama();
+    await wllama.loadModelFromUrl(
+      draftUrl ? { url: MOE_MODEL, draftUrl } : { url: MOE_MODEL },
+      { n_ctx: 512, spec_draft_n_min: 4, spec_draft_n_max: 8 }
+    );
+    const res = await wllama.createCompletion({
+      prompt: 'I believe the meaning of life is',
+      max_tokens: 16,
+      temperature: 0.2,
+      top_k: 5,
+      seed: 4242,
+    });
+    await wllama.exit();
+    return res;
+  };
+  const plain = await complete();
+  expect(plain.timings?.draft_n ?? 0).toBe(0);
+  // a normal model as the draft runs with draft-simple, the output does not change
+  const drafted = await complete(MOE_DRAFT);
+  expect(drafted.timings?.draft_n).toBeGreaterThan(0);
+  expect(drafted.choices[0].text).toBe(plain.choices[0].text);
+
+  // a Model object keeps its draft
+  const wllama = createWllama();
+  const model = await new ModelManager().getModelOrDownload({
+    url: MOE_MODEL,
+    draftUrl: MOE_DRAFT,
+  });
+  await wllama.loadModel(model, { n_ctx: 512 });
+  const res = await wllama.createCompletion({
+    prompt: 'I believe the meaning of life is',
+    max_tokens: 16,
+    temperature: 0,
+  });
+  expect(res.timings?.draft_n).toBeGreaterThan(0);
+  await wllama.exit();
+
+  // spec_draft_model wins over draftUrl, the file of draftUrl is not loaded at all
+  const draft = (
+    await (await new ModelManager().getModelOrDownload(MOE_DRAFT)).open()
+  )[0];
+  await wllama.loadModelFromUrl(
+    { url: MOE_MODEL, draftUrl: TINY_MODEL },
+    { n_ctx: 512, spec_draft_model: draft }
+  );
+  const res2 = await wllama.createCompletion({
+    prompt: 'I believe the meaning of life is',
+    max_tokens: 16,
+    temperature: 0,
+  });
+  expect(res2.timings?.draft_n).toBeGreaterThan(0);
   await wllama.exit();
 });
 
@@ -1260,12 +1356,16 @@ test.sequential(
         stream: true,
         abortSignal: abort.signal,
       });
+      let last: { final: boolean } | undefined;
       const err = await (async () => {
-        for await (const _ of stream) {
+        for await (const chunk of stream) {
+          last = chunk;
           abort.abort();
         }
       })().catch((e: unknown) => e);
-      expect((err as Error).name).toBe('AbortError');
+      // the first chunk can be the last one, then there is nothing to abort
+      if (err === undefined) expect(last?.final).toBe(true);
+      else expect((err as Error).name).toBe('AbortError');
     }
     const res = await wllama.createSpeech({ input: 'Hi', n_predict: 4 });
     expect(res.audio.byteLength).toBeGreaterThan(44);
@@ -1735,12 +1835,16 @@ test.sequential(
       response_format: 'pcm',
       stream: true,
     });
+    let last: { final: boolean } | undefined;
     const err = await (async () => {
-      for await (const _ of running) {
+      for await (const chunk of running) {
+        last = chunk;
         await wllama.exit();
       }
     })().catch((e: unknown) => e);
-    expect((err as Error).message).toMatch('unloaded');
+    // the first chunk can be the last one, then there is nothing to stop
+    if (err === undefined) expect(last?.final).toBe(true);
+    else expect((err as Error).message).toMatch('unloaded');
   },
   120000
 );

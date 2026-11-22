@@ -423,6 +423,53 @@ test.sequential(
   }
 );
 
+test.sequential(
+  'keeps the order of the LoRA adapters, matches the cache on all the files',
+  async () => {
+    const manager = new ModelManager();
+    await manager.clear();
+    // any small GGUF files as stand-ins for the draft and the adapters
+    const [a, b, c] = ModelManager.parseModelUrl(SPLIT_MODEL);
+    const source = { url: TINY_MODEL, draftUrl: a, loraUrls: [c, b] };
+    const urls = (m: Model) => m.files.map((f) => f.metadata.originalURL);
+    // the order of loraUrls gives the ids of the adapters
+    expect(urls(await manager.downloadModel(source))).toEqual([
+      TINY_MODEL,
+      a,
+      c,
+      b,
+    ]);
+    expect(urls(await manager.getModelOrDownload(source))).toEqual([
+      TINY_MODEL,
+      a,
+      c,
+      b,
+    ]);
+    // the draft is not listed as a model of its own
+    expect((await manager.getModels()).map((m) => m.url)).toEqual([TINY_MODEL]);
+    const net = hookNetwork();
+    expect(urls(await manager.getModelOrDownload({ url: TINY_MODEL }))).toEqual(
+      [TINY_MODEL]
+    );
+    expect(getRequests(net).length).toBe(0);
+  }
+);
+
+test.sequential(
+  'updates the extra files of a cached model without downloading it again',
+  async () => {
+    const manager = new ModelManager();
+    await manager.clear();
+    const [, b] = ModelManager.parseModelUrl(SPLIT_MODEL);
+    await manager.downloadModel(TINY_MODEL);
+    const net = hookNetwork();
+    await manager.downloadModel({ url: TINY_MODEL, loraUrls: [b] });
+    const listed = await manager.getModels();
+    expect(listed.map((m) => [m.url, m.loraUrls])).toEqual([[TINY_MODEL, [b]]]);
+    expect(getRequests(net).filter((r) => r.url === TINY_MODEL).length).toBe(0);
+  }
+);
+
 test.sequential('download invalid model URL', async () => {
   const manager = new ModelManager();
   const invalidUrl = 'https://invalid.example.com/model.gguf';

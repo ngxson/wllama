@@ -66,9 +66,12 @@ export interface LoadModelParams {
   ctx_shift?: boolean;
   cache_idle_slots?: boolean;
   n_cache_reuse?: number;
-  lora_adapters?: { path: string; scale?: number }[];
+  lora_adapters?: {
+    path: string; // path in the wasm file system
+    scale?: number;
+  }[];
   lora_init_without_apply?: boolean;
-  spec_draft_model?: string;
+  spec_draft_model?: string | Blob;
   spec_draft_ngl?: number;
   spec_draft_n_max?: number;
   spec_draft_n_min?: number;
@@ -126,6 +129,7 @@ export interface LoadedContextInfo {
 
 // Note: snake_case is used to match llama.cpp's naming convention
 export interface SamplingParams {
+  lora?: { id: number; scale: number }[]; // id: index of the LoRA adapter
   // See sampling.h for more details
   seed?: number;
   mirostat?: number | undefined; // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
