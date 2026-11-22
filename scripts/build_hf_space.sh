@@ -22,9 +22,26 @@ if [ -z "$(git status --porcelain)" ]; then
   echo "nothing changed, skipping..."
   exit 0
 fi
+# the space has a storage limit (1GB) and every build adds new wasm files: push one commit without history
+git checkout -q --orphan build
 git add -A
-git commit -m "update"
-git push
+git commit -q -m "update"
+
+# the LFS files of the old builds still count until they are deleted, delete them before uploading the new ones
+git lfs ls-files --long | awk '{print $1}' > ../lfs_keep.txt
+python3 - <<'PY'
+import os
+from huggingface_hub import HfApi
+
+api = HfApi(token=os.environ["HF_TOKEN"])
+keep = set(open("../lfs_keep.txt").read().split())
+old = [f for f in api.list_lfs_files("ngxson/wllama", repo_type="space") if f.file_oid not in keep]
+print(f"deleting {len(old)} old LFS files ({sum(f.size for f in old) / 1e6:.0f} MB)")
+if old:
+    api.permanently_delete_lfs_files("ngxson/wllama", old, repo_type="space")
+PY
+
+git push --force origin build:main
 
 echo ">>> clean up"
 cd ..
