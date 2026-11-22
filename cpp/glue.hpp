@@ -601,8 +601,10 @@ struct glue_msg_load_res
   GLUE_FIELD(bool, has_chat)
   GLUE_FIELD(bool, has_audio_stream)
   GLUE_FIELD(bool, has_live_asr)
+  GLUE_FIELD(bool, has_audio_duplex)
   GLUE_FIELD(int, audio_input_rate)
   GLUE_FIELD(int, audio_output_rate)
+  GLUE_FIELD(int, audio_output_channels)
   GLUE_FIELD(arr_str, audio_voices)
 };
 

@@ -117,8 +117,10 @@ export interface LoadedContextInfo {
   has_chat: boolean; // false for a TTS-only or a realtime transcription model
   has_audio_stream: boolean; // realtime sessions are available
   has_live_asr: boolean; // text comes out while the audio goes in, with intent: 'transcription'
+  has_audio_duplex: boolean; // full duplex (e.g. Hibiki): a realtime session speaks while it listens, there are no turns
   audio_input_rate: number; // in Hz, 0 if there is no audio input
   audio_output_rate: number; // in Hz, 0 if there is no audio output
+  audio_output_channels: number; // 1 = mono, 2 = stereo (pcm samples are interleaved), 0 if there is no audio output
   audio_voices: string[]; // predefined voices of createSpeech()
 }
 

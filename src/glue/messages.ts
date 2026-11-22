@@ -526,6 +526,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": false
       },
       {
+        "type": "bool",
+        "name": "has_audio_duplex",
+        "isNullable": false
+      },
+      {
         "type": "int",
         "name": "audio_input_rate",
         "isNullable": false
@@ -533,6 +538,11 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
       {
         "type": "int",
         "name": "audio_output_rate",
+        "isNullable": false
+      },
+      {
+        "type": "int",
+        "name": "audio_output_channels",
         "isNullable": false
       },
       {
@@ -1123,8 +1133,10 @@ export interface GlueMsgLoadRes {
   has_chat: boolean;
   has_audio_stream: boolean;
   has_live_asr: boolean;
+  has_audio_duplex: boolean;
   audio_input_rate: number;
   audio_output_rate: number;
+  audio_output_channels: number;
   audio_voices: string[];
 }
 
