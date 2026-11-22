@@ -14,7 +14,7 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 
 > [!IMPORTANT]
 >
-> **🔥🔥 V4 is out: up to 2.8x faster, no more model size limit, speculative decoding and LoRA adapters. Read the [V4 release guide](./guides/intro-v4.md)** (and the [V3 release guide](./guides/intro-v3.md) for the API)
+> **🔥🔥 V4 is out: up to 2.8x faster, no more model size limit, support speculative decoding and LoRA adapters. Read the [V4 release guide](./guides/intro-v4.md)**
 >
 > For compatibility issues, please refer to [@wllama/wllama-compat](./compat/README.md)
 
