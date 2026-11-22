@@ -1,47 +1,29 @@
 # @wllama/wllama-compat
 
-Optional package that provides compatibility WASM assets for `@wllama/wllama` on browsers that lack [JSPI](https://github.com/WebAssembly/js-promise-integration) or [relaxed SIMD](https://github.com/WebAssembly/relaxed-simd) support - most notably Safari and older browsers.
+Optional package that provides the compat WASM build of `@wllama/wllama`, for browsers that lack [JSPI](https://github.com/WebAssembly/js-promise-integration) or [relaxed SIMD](https://github.com/WebAssembly/relaxed-simd) support - most notably Safari.
 
 ## Why this package exists
 
-The default `@wllama/wllama` build relies on two modern WebAssembly features: [JSPI](https://github.com/WebAssembly/js-promise-integration) and [relaxed SIMD](https://github.com/WebAssembly/relaxed-simd)
+The default `@wllama/wllama` build relies on two modern WebAssembly features: [JSPI](https://github.com/WebAssembly/js-promise-integration) and [relaxed SIMD](https://github.com/WebAssembly/relaxed-simd).
 
-When either feature is absent, wllama automatically falls back to **compat mode**: a separate WASM build that uses [Asyncify](https://emscripten.org/docs/porting/asyncify.html) instead of JSPI, and drops relaxed SIMD.
-
-> **Note:** Compat mode has significantly lower performance than the default build. Use it only as a fallback.
+When one of them is missing, wllama automatically falls back to **compat mode**: a separate WASM build that uses [Asyncify](https://emscripten.org/docs/porting/asyncify.html) instead of JSPI, and drops relaxed SIMD. It supports the same features as the default build, including WebGPU and models bigger than 4GB, but it is slower.
 
 ## Browser compatibility
 
 | | Chromium | Firefox | Safari |
 |---|---|---|---|
-| Auto-compat (default, recommended) | ✅ | 🟡 (no WebGPU) | 🟡 (supports WebGPU) |
-| Force-compat | ✅ | 🔴 (supports WebGPU) | 🟡 (supports WebGPU) |
-| Non-compat mode | ✅ | 🟡 (no WebGPU) | ❌ |
+| Auto-compat (default, recommended) | ✅ | ✅ (supports WebGPU) | 🟡 (supports WebGPU) |
+| Non-compat mode | ✅ | ✅ (supports WebGPU) | ❌ |
 
 - ✅: Good speed
 - 🟡: Acceptable speed
-- 🔴: Runs but slow, not usable
 - ❌: Does not run at all
 
-### Default behaviour
+Chromium and Firefox run the default build. An older Firefox without JSPI still runs the default build, but without WebGPU and models over 4GB; it uses compat mode only if it does not support relaxed SIMD.
 
-Out of the box, wllama fetches the compat assets from jsDelivr CDN when compat mode is needed. If you want to self-host the assets (no external CDN dependency), install this package (see new section.)
+## Default behaviour
 
-### Recommended preset
-
-By default (`mode = 'safari'`), compat is disabled on Firefox because WebGPU via compat mode is extremely slow there. This is the recommended behaviour:
-
-```js
-wllama.setCompat('default');
-```
-
-If you also want compat on Firefox (e.g. to reach users without JSPI enabled), pass `'firefox_safari'`:
-
-```js
-wllama.setCompat('default', 'firefox_safari');
-```
-
-## Disabling compat mode
+Out of the box, wllama fetches the compat build from jsDelivr CDN when compat mode is needed, nothing needs to be done. If you want to host the file yourself (no external CDN dependency), install this package, see [Using this package](#using-this-package).
 
 To opt out of compat mode completely (e.g. you don't target Safari):
 
@@ -51,7 +33,7 @@ wllama.setCompat(null);
 
 ## Using this package
 
-**You only need to install package if you want to store compat assets locally**. By default, assets are pulled from CDN.
+**You only need to install this package if you want to host the compat build yourself**. By default, it is pulled from CDN.
 
 ```bash
 npm install @wllama/wllama-compat
@@ -69,13 +51,21 @@ wllama.setCompat({
 });
 ```
 
-The JS code of the build is embedded inside `wllama.wasm`, so there is only one file to host. For Vite:
+For Vite:
 
 ```ts
+import { Wllama } from '@wllama/wllama';
+import wasm from '@wllama/wllama/esm/wasm/wllama.wasm?url';
 import compatWasm from '@wllama/wllama-compat/wasm/wllama.wasm?url';
 
-const instance = new Wllama(WLLAMA_CONFIG_PATHS, { logger: DebugLogger });
-instance.setCompat({ wasm: compatWasm });
+const wllama = new Wllama({ default: wasm });
+wllama.setCompat({ wasm: compatWasm });
 ```
 
-> **Note:** in older versions, `setCompat()` also needed a `worker` (the `wllama.js` file). It is no longer needed and can be removed. `wllama.js` is kept as a placeholder, so old setups still work (with a warning). A `worker` with real emscripten code still overrides the embedded JS code, for example for custom builds.
+> [!IMPORTANT]
+> The version of `@wllama/wllama-compat` must be the same as `@wllama/wllama`. Otherwise, loading a model fails with a `version_mismatch` error.
+
+## Migration from older versions
+
+- The JS code of the build is now embedded inside `wllama.wasm`, so there is only one file to host. `setCompat()` does not need a `worker` (the `wllama.js` file) anymore. `wllama.js` is kept as a placeholder, so old setups still work (with a warning). A `worker` with real emscripten code still overrides the embedded JS code, for example for custom builds.
+- The second parameter of `setCompat()` (`'safari'` or `'firefox_safari'`) is not used anymore. Firefox now runs the default build, see [Browser compatibility](#browser-compatibility).

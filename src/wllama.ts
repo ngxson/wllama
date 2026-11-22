@@ -12,6 +12,7 @@ import {
   isFirefox,
   isString,
   isSupportJSPI,
+  isSupportRelaxedSIMD,
   isSupportMultiThread,
   isSupportWebGPU,
   MAX_RPC_WORKERS,
@@ -425,19 +426,14 @@ export class Wllama {
 
   /**
    * Set compatibility options for Wllama.
+   * The compat build is used on browsers without JSPI or wasm relaxed SIMD (e.g. Safari). Firefox only uses it without relaxed SIMD: without JSPI, the main build is faster there.
    * @param compat Set to null to disable compatibility, or 'default' to use the default compat resources from CDN.
-   * @param mode 'safari' by default; If set to 'firefox_safari', the compat mode will **also** be enabled on Firefox, which will significantly degrade the performance but allow using WebGPU on Firefox.
+   * @param _mode @deprecated not used anymore
    */
   setCompat(
     compat: WllamaCompat | null | 'default',
-    mode: 'safari' | 'firefox_safari' = 'safari'
+    _mode?: 'safari' | 'firefox_safari'
   ) {
-    if (mode === 'safari') {
-      if (isFirefox()) {
-        this.compat = null;
-        return;
-      }
-    }
     this.compat = compat === 'default' ? WasmCompatFromCDN : compat;
   }
 
@@ -1940,13 +1936,11 @@ export class Wllama {
       wasmPath: absoluteUrl(this.pathConfig['default']),
       compat: false,
     };
-    if (needCompat()) {
+    // compat is very slow on Firefox: without JSPI, the main build runs too (on CPU only)
+    if (isFirefox() ? !isSupportRelaxedSIMD() : needCompat()) {
       if (!this.compat) {
         this.logger().warn(
-          'Not using compat mode' +
-            (isFirefox()
-              ? ' (expected on Firefox - WebGPU will be disabled)'
-              : '')
+          'Not using compat mode, the browser does not support JSPI or wasm relaxed SIMD: WebGPU and models over 4GB are disabled'
         );
       } else {
         const isUsingDefault = this.compat.wasm === WasmCompatFromCDN.wasm;
@@ -1965,16 +1959,10 @@ export class Wllama {
       }
     }
 
-    if (isFirefox()) {
-      if (workerResources.compat) {
-        this.logger().warn(
-          'Using compat mode on Firefox, performance will be significantly degraded; Consider enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
-        );
-      } else if (!isSupportJSPI()) {
-        this.logger().warn(
-          'WebGPU is disabled on Firefox due to missing JSPI support. Please consider enabling compat mode, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
-        );
-      }
+    if (isFirefox() && !isSupportJSPI()) {
+      this.logger().warn(
+        'This version of Firefox does not support JSPI, WebGPU and models over 4GB are disabled. Consider updating it, or enabling "javascript.options.wasm_js_promise_integration" in "about:config".'
+      );
     }
 
     return workerResources;

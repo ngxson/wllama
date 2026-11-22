@@ -16,10 +16,7 @@ const run = async (params: Record<string, any>) => {
     { default: '/src/wasm/wllama.wasm' },
     { logger: { debug: log, log, warn: log, error: log } }
   );
-  wllama.setCompat(
-    __COMPAT__ ? { wasm: '/compat/wasm/wllama.wasm' } : null,
-    'firefox_safari'
-  );
+  wllama.setCompat(__COMPAT__ ? { wasm: '/compat/wasm/wllama.wasm' } : null);
   try {
     await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 512, ...params });
     const res = await wllama.createCompletion({
@@ -85,10 +82,7 @@ test('exit() during the restart with rpc workers stops the load', async () => {
       },
     }
   );
-  wllama.setCompat(
-    __COMPAT__ ? { wasm: '/compat/wasm/wllama.wasm' } : null,
-    'firefox_safari'
-  );
+  wllama.setCompat(__COMPAT__ ? { wasm: '/compat/wasm/wllama.wasm' } : null);
   try {
     await expect(
       wllama.loadModelFromUrl(TINY_MODEL, { n_gpu_layers: 0, n_threads: 2 })
