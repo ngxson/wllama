@@ -6,6 +6,8 @@
 /models
 /build
 /build-*
+/.ccache
+/scripts/.binaryen-cache
 /cache
 /tmp
 /compat
@@ -19,4 +21,13 @@ a.out.wasm
 /cpp/test_glue
 /cpp/*.bin
 *.test.ts
+/src/testing
+/cpp/native-test
+/cpp/test_glue.cpp
+/scripts/dev-device
+/scripts/bisect_test.sh
+/scripts/build_hf_space.sh
+/vitest.config.ts
+/vitest.setup.ts
+/AGENTS.md
 __screenshots__
