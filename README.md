@@ -14,7 +14,7 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 
 > [!IMPORTANT]
 >
-> **🔥🔥 V3 is out, with WebGPU, multimodal and tool calling support. Read the [V3 release guide](./guides/intro-v3.md)**
+> **🔥🔥 V4 is out: up to 2.8x faster, no more model size limit, speculative decoding and LoRA adapters. Read the [V4 release guide](./guides/intro-v4.md)** (and the [V3 release guide](./guides/intro-v3.md) for the API)
 >
 > For compatibility issues, please refer to [@wllama/wllama-compat](./compat/README.md)
 
@@ -23,20 +23,22 @@ For changelog, please visit [releases page](https://github.com/ngxson/wllama/rel
 ## Features
 
 - 🔌 OpenAI-compatible API (fully-typed built-in)
-- 🚀 WebGPU support
-- 🔥 Multimodal support (image and audio file input)
-- Speech support: text to speech, transcription and realtime audio
+- 🚀 WebGPU support, with CPU + WebGPU for models that do not fit in the GPU
+- 🔥 Multimodal support (image, audio and video input)
+- Speech support: text to speech, transcription and realtime audio (including full duplex)
 - 🔥 Tool calling support
 - Can run inference directly on browser (using [WebAssembly SIMD](https://emscripten.org/docs/porting/simd.html)), no backend or GPU is needed!
 - No runtime dependency (see [package.json](./package.json))
 - Load a GGUF file as-is, even bigger than 4GB, no need to split it (models already split with `llama-gguf-split` work too)
+- Speculative decoding (MTP, DFlash, DSpark, Eagle3) and LoRA adapters
+- Models are cached in OPFS: fast loading, downloads over multiple connections that resume when interrupted
 - Auto switch between single-thread and multi-thread build based on browser support
 - Inference is done inside a worker, does not block UI render
 - Pre-built npm package [@wllama/wllama](https://www.npmjs.com/package/@wllama/wllama)
 
 Limitations:
 - To enable multi-thread, you must add `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. See [this discussion](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/106#issuecomment-913450724) for more details.
-- One wasm instance has 4GB of memory. If the part of the model that is not on WebGPU is bigger, it is split across several wasm instances in workers (`rpc_workers`, automatic by default), which needs multi-thread, and JSPI or the compat build (on Firefox, see `setCompat`).
+- One wasm instance has 4GB of memory. If the part of the model that is not on WebGPU is bigger, it is split across several wasm instances in workers (`rpc_workers`, automatic by default), which needs multi-thread, and JSPI or the compat build (an older Firefox without JSPI cannot load such models).
 
 ## Code demo and documentation
 
@@ -91,7 +93,7 @@ NOTE: this example only covers completions usage. For embeddings, please see [ex
 
 ### Speech and realtime audio
 
-These APIs need a model with audio support and its mmproj file, for example [LFM3-Omni](https://huggingface.co/ggml-org/LFM3-Omni-2B-GGUF). Use `getLoadedContextInfo()` to see what the model can do (`has_audio_input`, `has_audio_output`, `has_audio_stream`, `has_live_asr`, `audio_voices`).
+These APIs need a model with audio support and its mmproj file, for example [LFM3-Omni](https://huggingface.co/ggml-org/LFM3-Omni-2B-GGUF). Use `getLoadedContextInfo()` to see what the model can do (`has_audio_input`, `has_audio_output`, `has_audio_stream`, `has_live_asr`, `has_audio_duplex`, `audio_voices`).
 
 ```js
 // text to speech, returns a WAV file. Use stream: true to get chunks as they are generated
@@ -137,7 +139,7 @@ There are 4 kinds of session:
 
 WebGPU support is introduced via [PR #215](https://github.com/ngxson/wllama/pull/215).
 
-Upon updating to V3.1, WebGPU will be enabled automatically. By default, all layers will be offloaded to GPU. If the model is too big to fit into VRAM, you can manually adjust the number of layers via the `n_gpu_layers` parameter of `LoadModelParams`. Example:
+WebGPU is enabled automatically. By default, all layers are offloaded to GPU. If the model is too big to fit into VRAM, you can manually adjust the number of layers via the `n_gpu_layers` parameter of `LoadModelParams`, the other layers run on the CPU. Example:
 
 ```js
 await wllama.loadModel(files, {
@@ -242,7 +244,7 @@ const wllama = new Wllama(pathConfig, {
 
 ## How to compile the binary yourself
 
-This repository already come with pre-built binary from llama.cpp source code. However, in some cases you may want to compile it yourself:
+The npm package already comes with pre-built binaries (this repository does not). However, in some cases you may want to compile it yourself:
 - You don't trust the pre-built one.
 - You want to try out latest - bleeding-edge changes from upstream llama.cpp source code.
 
