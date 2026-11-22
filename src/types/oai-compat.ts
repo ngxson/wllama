@@ -439,11 +439,19 @@ export interface SpeechParams {
   voice?: string; // see LoadedContextInfo.audio_voices
   lang?: string;
   speaker_ref?: ArrayBuffer; // WAV, MP3 or FLAC file to clone the voice from (convert other formats first, e.g. WebM/Opus), cannot be used with a voice from audio_voices
-  response_format?: 'wav' | 'pcm'; // pcm: raw float32 LE mono samples (default: wav)
+  speaker_ref_text?: string; // transcript of speaker_ref, for models that use it (e.g. Fish Audio S2)
+  raw_prompt?: boolean; // send the input to the model as is (e.g. phonemes), without the "tts" chat template
+  response_format?: 'wav' | 'pcm'; // pcm: raw float32 LE samples, interleaved if LoadedContextInfo.audio_output_channels is 2 (default: wav)
   n_predict?: number; // limit of audio frames (default: no limit)
   top_k?: number;
   top_p?: number;
+  temperature?: number; // for the backbone sampler and the audio frames, for models that support it, 0 = greedy
   seed?: number;
+  speed?: number; // speaking speed relative to a typical pace, for models that support it (1.0 = model default)
+  loudness?: number; // target loudness in LUFS, for models that support it (0 = model default)
+  cfg_scale?: number; // classifier-free guidance scale of the audio codes, for models that support it (0 = model default, 1 = no guidance)
+  flow_steps?: number; // steps of the flow-matching ODE solver, for models that support it (0 = model default)
+  repeat_penalty?: number; // repetition penalty of the backbone sampler
   abortSignal?: AbortSignal;
 }
 

@@ -378,8 +378,12 @@ struct realtime_session_live : realtime_session
   std::string item_text;
   bool input_ended = false;
 
+  // the client can send its audio at another rate (session.update), it is resampled to the rate of the model
+  int input_rate;
+  mtmd_helper::resampler_ptr resampler;
+
   realtime_session_live(server_response_reader &rd, const std::string &model_name, int sample_rate)
-      : queue_tasks(rd.queue_tasks), queue_results(rd.queue_results), model_name(model_name), sample_rate(sample_rate) {}
+      : queue_tasks(rd.queue_tasks), queue_results(rd.queue_results), model_name(model_name), sample_rate(sample_rate), input_rate(sample_rate) {}
 
   const std::string &get_id() const override { return id; }
 
@@ -390,7 +394,7 @@ struct realtime_session_live : realtime_session
         {"object", "realtime.transcription_session"},
         {"type", "transcription"},
         {"audio", {{"input", {
-                                 {"format", {{"type", "audio/pcm"}, {"rate", sample_rate}}},
+                                 {"format", {{"type", "audio/pcm"}, {"rate", input_rate}}},
                                  {"transcription", {{"model", model_name}}},
                                  {"turn_detection", nullptr},
                                  {"noise_reduction", nullptr},
@@ -439,6 +443,24 @@ struct realtime_session_live : realtime_session
     const std::string type = json_value(ev, "type", std::string());
     if (type == "session.update" || type == "transcription_session.update")
     {
+      // same as the /v1/realtime route of llama-server
+      const json session = json_value(ev, "session", json::object());
+      const json audio = session.is_object() ? session.value("audio", json::object()) : json::object();
+      const json in = audio.is_object() ? audio.value("input", json::object()) : json::object();
+      if (in.is_object() && in.contains("format") && in["format"].is_object())
+      {
+        const int rate = json_value(in["format"], "rate", input_rate);
+        if (rate < 8000 || rate > 192000)
+        {
+          send_error("session.update: the input audio rate must be between 8000 and 192000 Hz", "invalid_request_error");
+          return;
+        }
+        if (rate != input_rate)
+        {
+          input_rate = rate;
+          resampler.reset();
+        }
+      }
       send_event({{"type", "session.updated"}, {"session", session_json()}});
     }
     else if (type == "input_audio_buffer.append")
@@ -459,6 +481,30 @@ struct realtime_session_live : realtime_session
         int16_t v;
         memcpy(&v, pcm.data() + 2 * i, sizeof(v));
         samples[i] = v / 32768.0f;
+      }
+      if (!resampler)
+      {
+        resampler.reset(mtmd_helper_resampler_init(input_rate, sample_rate));
+        if (!resampler)
+        {
+          send_error("failed to initialize the audio resampler", "server_error");
+          return;
+        }
+      }
+      const float *out = nullptr;
+      const int64_t n = mtmd_helper_resampler_process(resampler.get(), samples.data(), samples.size(), &out);
+      if (n < 0)
+      {
+        send_error("failed to resample the audio", "server_error");
+        return;
+      }
+      if (n == 0)
+      {
+        return;
+      }
+      if (out != samples.data())
+      {
+        samples.assign(out, out + n);
       }
       if (!control(SERVER_CONTROL_ACTION_AUDIO_APPEND, std::move(samples)))
       {
@@ -546,6 +592,7 @@ struct wllama_context
     std::vector<server_decision_question> questions;
     std::vector<std::vector<float>> scores; // indexed by task index
     int32_t n_tokens = 0;
+    bool is_packed = false; // one task holds the scores of several questions
   };
   std::unordered_map<int, decision_request> decision_reqs; // keyed by req_id
   std::unordered_map<int, std::vector<json>> embedding_reqs; // keyed by req_id
@@ -1164,9 +1211,11 @@ struct wllama_context
     res.has_audio_output.value = server_meta.has_cap_tts;
     res.has_chat.value = server_meta.has_cap_chat;
     res.has_audio_stream.value = server_meta.has_audio_stream;
-    res.has_live_asr.value = server_meta.has_audio_stream && (!mtmd_cap.chat || !asr_prompt.empty());
+    res.has_live_asr.value = server_meta.has_audio_stream && !mtmd_cap.audio_duplex && (!mtmd_cap.chat || !asr_prompt.empty());
+    res.has_audio_duplex.value = mtmd_cap.audio_duplex;
     res.audio_input_rate.value = server_meta.has_inp_audio ? mtmd_get_audio_sample_rate(shared_mctx) : 0;
     res.audio_output_rate.value = server_meta.has_cap_tts ? mtmd_gen_audio_get_info(shared_mctx).sample_rate : 0;
+    res.audio_output_channels.value = server_meta.has_cap_tts ? mtmd_gen_audio_get_info(shared_mctx).n_channels : 0;
     res.audio_voices.arr = server_meta.tts_voices;
     return res;
   }
@@ -1362,9 +1411,11 @@ struct wllama_context
     json body = json::parse(req.data_json.value);
     decision_request dreq;
     dreq.questions = decision.parse_questions(body, false);
+    const auto &questions = dreq.questions;
+    const size_t set_size = decision.set_size(questions);
 
     std::vector<raw_buffer> files;
-    const json state = decision.parse_state(body, files);
+    const json state = decision.prepare_state(decision.parse_state(body, files));
     if (!files.empty())
     {
       throw app_exception("Image input is not supported for systemone");
@@ -1372,16 +1423,38 @@ struct wllama_context
 
     auto rd = std::make_unique<server_response_reader>(ctx_server.get_response_reader());
 
-    // one task per variant of each question
+    // same as post_systemone of llama-server: one task per variant of each question, or one task for all the questions, or per packed set
+    dreq.is_packed = decision.is_joint() || set_size > 0;
     std::vector<server_task> tasks;
-    for (const auto &question : dreq.questions)
+    if (decision.is_joint())
     {
-      for (size_t variant = 0; variant < decision.n_variants(question); variant++)
+      server_task task = server_task(SERVER_TASK_TYPE_DECISION);
+      task.id = rd->get_new_id();
+      decision.fill_task_joint(state, questions, files, nullptr, mtmd_helper_init_opt_default(), task);
+      tasks.push_back(std::move(task));
+    }
+    else if (set_size > 0)
+    {
+      for (size_t i = 0; i < questions.size(); i += set_size)
       {
+        const std::vector<server_decision_question> set(questions.begin() + i, questions.begin() + std::min(questions.size(), i + set_size));
         server_task task = server_task(SERVER_TASK_TYPE_DECISION);
         task.id = rd->get_new_id();
-        decision.fill_task(state, dreq.questions, question, variant, files, nullptr, mtmd_helper_init_opt_default(), task);
+        decision.fill_task_set(state, set, files, nullptr, mtmd_helper_init_opt_default(), task);
         tasks.push_back(std::move(task));
+      }
+    }
+    else
+    {
+      for (const auto &question : questions)
+      {
+        for (size_t variant = 0; variant < decision.n_variants(question); variant++)
+        {
+          server_task task = server_task(SERVER_TASK_TYPE_DECISION);
+          task.id = rd->get_new_id();
+          decision.fill_task(state, questions, question, variant, files, nullptr, mtmd_helper_init_opt_default(), task);
+          tasks.push_back(std::move(task));
+        }
       }
     }
     dreq.scores.resize(tasks.size());
@@ -1406,7 +1479,7 @@ struct wllama_context
     const auto info = mtmd_gen_audio_get_info(shared_mctx);
 
     json body = json::parse(req_raw);
-    const std::string prompt = json_value(body, "input", std::string());
+    const std::string prompt = json_value(body, "input", json_value(body, "prompt", std::string()));
     if (prompt.empty())
     {
       throw app_exception("\"input\" must be a non-empty string");
@@ -1418,9 +1491,17 @@ struct wllama_context
     // a model with a "tts" chat template speaks the prompt rendered from it
     const std::string lang = json_value(body, "lang", std::string());
     const std::string voice = json_value(body, "voice", std::string());
-    const std::string tts_prompt = common_chat_get_tts_prompt(meta->chat_params.tmpls.get(), prompt, lang, voice);
+    // raw_prompt: the input goes to the model as is (e.g. phonemes), the "tts" chat template is skipped
+    const bool raw_prompt = json_value(body, "raw_prompt", false);
+    const auto g2p = [this](const std::string &word)
+    {
+      char buf[512];
+      return mtmd_gen_audio_g2p(shared_mctx, word.c_str(), buf, sizeof(buf)) > 0 ? std::string(buf) : std::string();
+    };
+    const std::string tts_prompt = raw_prompt ? std::string() : common_chat_get_tts_prompt(meta->chat_params.tmpls.get(), prompt, lang, voice, g2p);
     task.tts_inp.set_prompt(tts_prompt.empty() ? prompt : tts_prompt);
     task.tts_inp.set_lang(lang);
+    task.tts_inp.set_speaker_ref_text(json_value(body, "speaker_ref_text", std::string()));
     task.tts_inp.data.stream = task.params.stream;
     task.tts_inp.data.out_type = json_value(body, "response_format", std::string("wav")) == "pcm"
                                      ? MTMD_HELPER_GEN_AUDIO_OUTTYPE_PCM
@@ -1435,6 +1516,10 @@ struct wllama_context
     if (task.tts_inp.data.top_p > 0)
     {
       task.params.sampling.top_p = task.tts_inp.data.top_p;
+    }
+    if (task.tts_inp.data.temp >= 0)
+    {
+      task.params.sampling.temp = task.tts_inp.data.temp;
     }
 
     // a model with predefined voices only speaks with one of them
@@ -1538,12 +1623,13 @@ struct wllama_context
 
     // same choice as the /v1/realtime route of llama-server
     const bool live_asr = !asr_prompt.empty() && json_value(body, "intent", std::string()) == "transcription";
-    const bool is_conversation = mtmd_cap.chat && !live_asr;
+    const bool is_conversation = mtmd_cap.audio_duplex || (mtmd_cap.chat && !live_asr);
     std::unique_ptr<realtime_session> session;
     if (is_conversation)
     {
       auto conversation = std::make_unique<realtime_session_conversation>(*rd, *meta, params, sampling, mtmd_cap, vocab);
-      if (!conversation->conversation.configure())
+      // a full duplex model has no turns, so no chat template to fit
+      if (!mtmd_cap.audio_duplex && !conversation->conversation.configure())
       {
         res.success.value = false;
         res.message.value = "The chat template does not fit the realtime turn format";
@@ -1598,7 +1684,15 @@ struct wllama_context
     run_queue_scope scope;
     try
     {
-      it->second->handle(req.data_json.value);
+      auto *conv = dynamic_cast<realtime_session_conversation *>(it->second.get());
+      if (conv && conv->conversation.duplex && is_realtime_cancel(req.data_json.value))
+      {
+        duplex_cancel(*conv, *readers.at(req.req_id.value));
+      }
+      else
+      {
+        it->second->handle(req.data_json.value);
+      }
     }
     catch (const std::exception &e)
     {
@@ -1607,6 +1701,46 @@ struct wllama_context
 
     res.success.value = true;
     return res;
+  }
+
+  static bool is_realtime_cancel(const std::string &msg)
+  {
+    try
+    {
+      return json_value(json::parse(msg), "type", std::string()) == "response.cancel";
+    }
+    catch (const std::exception &)
+    {
+      return false;
+    }
+  }
+
+  // llama-server waits after a duplex response.cancel until the results of the cancelled response are out (they come from
+  // another thread there), so that the next audio opens a new response. Here the results only come through get_result, so
+  // take them now instead
+  void duplex_cancel(realtime_session_conversation &conv, server_response_reader &rd)
+  {
+    auto &c = conv.conversation;
+    c.control(SERVER_CONTROL_ACTION_RESPONSE_CANCEL);
+    const auto is_open = [&c]()
+    {
+      std::lock_guard<std::mutex> lock(c.mutex);
+      return c.duplex_open && !c.closed.load();
+    };
+    for (int i = 0; i < 10000 && is_open() && rd.has_next(); i++)
+    {
+      auto [result, is_error] = get_next_result(rd);
+      if (!result)
+      {
+        break;
+      }
+      if (is_error)
+      {
+        conv.send_error(json_value(result->to_json(), "message", std::string("server error")), "server_error");
+        break;
+      }
+      conv.on_result(*result);
+    }
   }
 
   // llama-server saves and restores a slot with a file, the file here is in MEMFS and lives only during the action
@@ -1760,10 +1894,24 @@ struct wllama_context
   {
     json answers = json::object();
     size_t i_result = 0;
+    size_t i_score = 0;
     for (const auto &question : dreq.questions)
     {
       std::vector<std::vector<float>> scores;
-      for (size_t variant = 0; variant < decision.n_variants(question); variant++)
+      if (dreq.is_packed)
+      {
+        // the scores of the questions of a set follow each other in its result
+        const auto &result = dreq.scores[i_result];
+        GGML_ASSERT(i_score + question.options.size() <= result.size());
+        scores.emplace_back(result.begin() + i_score, result.begin() + i_score + question.options.size());
+        i_score += question.options.size();
+        if (i_score == result.size())
+        {
+          i_result++;
+          i_score = 0;
+        }
+      }
+      for (size_t variant = 0; !dreq.is_packed && variant < decision.n_variants(question); variant++)
       {
         scores.push_back(dreq.scores[i_result++]);
       }

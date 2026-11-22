@@ -127,10 +127,11 @@ for await (const event of session.events()) {
 await session.close();
 ```
 
-There are 3 kinds of session:
+There are 4 kinds of session:
 - Default: a conversation. Send `response.create` after the audio, the answer comes as `response.output_text.delta` and `response.output_audio.delta` events. Use `decodeRealtimeAudio()` to read the audio
 - `session.update` with `type: 'transcription'`: each committed audio buffer is transcribed on its own
-- `createRealtimeSession({ intent: 'transcription' })`: live ASR, the text comes out while the audio goes in. Needs `has_live_asr`, LFM3-Omni does not have it
+- `createRealtimeSession({ intent: 'transcription' })`: live ASR, the text comes out while the audio goes in. Needs `has_live_asr`, LFM3-Omni does not have it. The input can be sent at another rate with `session.update` (`audio.input.format.rate`), it is resampled
+- Full duplex, for models with `has_audio_duplex` (e.g. Hibiki, French to English speech translation): no turns, the first `input_audio_buffer.append` opens a response, then every 80 ms of input audio gives 80 ms of output audio and the text of the translation. `response.cancel` ends the response, the next audio opens another one
 
 ### WebGPU support
 

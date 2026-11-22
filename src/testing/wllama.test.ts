@@ -733,6 +733,125 @@ test.sequential('answers systemone questions', async () => {
   await wllama.exit();
 });
 
+// same tiny models as the systemone tests of llama-server
+const tinyDecisionModel = (name: string) =>
+  `https://huggingface.co/ggml-org-dev/${name}-for-testing-GGUF/resolve/main/${name}-for-testing-Q4_0.gguf`;
+const SYSTEMONE_STATE =
+  'I was charged twice for my order last week and nobody has replied.';
+const SYSTEMONE_QUESTIONS = {
+  route: {
+    type: 'choice',
+    instructions: 'Which team should handle this?',
+    criteria: {
+      billing: 'payments and refunds',
+      shipping: null,
+      technical: null,
+    },
+  },
+  urgency: {
+    type: 'score',
+    instructions: 'How urgent is this?',
+    criteria: ['can wait', 'this week', 'today', 'right now'],
+  },
+  angry: { type: 'noul', instructions: 'Is the customer angry?' },
+} as const;
+const answerScores = (a: any): number[] =>
+  'probabilities' in a ? Object.values(a.probabilities) : [a.noul];
+const expectAnswersClose = (a: any, b: any, tol: number) => {
+  expect(a.type).toBe(b.type);
+  const x = answerScores(a);
+  const y = answerScores(b);
+  expect(x.length).toBe(y.length);
+  x.forEach((v, i) => expect(Math.abs(v - y[i])).toBeLessThan(tol));
+};
+const loadDecisionModel = async (name: string) => {
+  const wllama = createWllama();
+  // non-causal models: the whole prompt must fit in one ubatch
+  await wllama.loadModelFromUrl(tinyDecisionModel(name), {
+    n_ctx: 4096,
+    n_batch: 1024,
+    n_ubatch: 1024,
+  });
+  const decide = async (questions: Record<string, any>) =>
+    (await wllama.createSystemOne({ state: SYSTEMONE_STATE, questions }))
+      .answers as Record<string, any>;
+  return { wllama, decide };
+};
+
+test.sequential('packs systemone questions of lfm3-d1', async () => {
+  const { wllama, decide } = await loadDecisionModel('tiny-d1-2B');
+
+  // the questions are packed in one prompt, they only see each other through the conv and sliding window layers
+  const packed = await decide(SYSTEMONE_QUESTIONS);
+  expect(Object.keys(packed)).toEqual(Object.keys(SYSTEMONE_QUESTIONS));
+  for (const [qid, question] of Object.entries(SYSTEMONE_QUESTIONS)) {
+    expectAnswersClose(
+      packed[qid],
+      (await decide({ [qid]: question }))[qid],
+      0.02
+    );
+  }
+
+  // 17 questions are 2 sets of at most 16, the last one is alone in its set, so it is the same as a lone question
+  const questions: Record<string, any> = {};
+  for (let i = 0; i < 16; i++) {
+    questions[`q${i}`] = {
+      type: 'noul',
+      instructions: `Is statement number ${i} true?`,
+    };
+  }
+  questions.route = SYSTEMONE_QUESTIONS.route;
+  const packed17 = await decide(questions);
+  expect(Object.keys(packed17)).toEqual(Object.keys(questions));
+  expectAnswersClose(
+    packed17.route,
+    (await decide({ route: questions.route })).route,
+    1e-6
+  );
+  await wllama.exit();
+});
+
+test.sequential('answers systemone questions of h2o-lightning', async () => {
+  const { wllama, decide } = await loadDecisionModel('tiny-h2o-lightning-4b');
+  // the type defaults to choice
+  expect((await decide({ q: { criteria: { a: null, b: null } } })).q.type).toBe(
+    'choice'
+  );
+  // noul criteria can be described under "yes" and "no"
+  const noul = { type: 'noul', instructions: 'Is the customer angry?' };
+  const a = (
+    await decide({
+      q: { ...noul, criteria: { true: 'very angry', false: 'calm' } },
+    })
+  ).q;
+  const b = (
+    await decide({
+      q: { ...noul, criteria: { yes: 'very angry', no: 'calm' } },
+    })
+  ).q;
+  expect(Math.abs(a.noul - b.noul)).toBeLessThan(1e-6);
+  await wllama.exit();
+});
+
+test.sequential(
+  'answers systemone questions of clef in one prompt',
+  async () => {
+    const { wllama, decide } = await loadDecisionModel('tiny-clef');
+    // all the questions are answered by the joint head, the options of a choice are sorted by key
+    const answers = await decide({
+      q: {
+        type: 'choice',
+        instructions: 'Pick one.',
+        criteria: { b: null, c: null, a: null },
+      },
+      angry: SYSTEMONE_QUESTIONS.angry,
+    });
+    expect(Object.keys(answers)).toEqual(['q', 'angry']);
+    expect(Object.keys(answers.q.probabilities)).toEqual(['a', 'b', 'c']);
+    await wllama.exit();
+  }
+);
+
 test.sequential('allowOffline', async () => {
   const wllama = createWllama(CONFIG_PATHS, {
     allowOffline: true,
@@ -979,8 +1098,10 @@ test.sequential(
     expect(info.has_chat).toBe(true);
     expect(info.has_audio_stream).toBe(true);
     expect(info.has_live_asr).toBe(true);
+    expect(info.has_audio_duplex).toBe(false);
     expect(info.audio_input_rate).toBe(16000);
     expect(info.audio_output_rate).toBe(24000);
+    expect(info.audio_output_channels).toBe(1);
     expect(info.audio_voices).toEqual(['female', 'male']);
     await wllama.exit();
   },
@@ -1034,6 +1155,14 @@ test.sequential(
 
     const male = await wllama.createSpeech({ ...params, voice: 'male' });
     expect(new Uint8Array(male.audio)).not.toEqual(new Uint8Array(res.audio));
+
+    // raw_prompt skips the "tts" chat template (for phoneme input), LFM3 refuses a prompt without it
+    await expect(
+      wllama.createSpeech({ ...params, raw_prompt: true })
+    ).rejects.toThrow('failed to process TTS prompt');
+    expect(new Uint8Array((await wllama.createSpeech(params)).audio)).toEqual(
+      new Uint8Array(res.audio)
+    );
 
     await expect(
       wllama.createSpeech({ ...params, voice: 'nobody' })
@@ -1384,6 +1513,46 @@ test.sequential(
     await expect(session.send({ type: 'response.create' })).rejects.toThrow(
       'closed'
     );
+    await wllama.exit();
+  },
+  120000
+);
+
+test.sequential(
+  'transcribes live audio at another rate',
+  async () => {
+    const wllama = await loadAudioModel();
+    const session = await wllama.createRealtimeSession({
+      intent: 'transcription',
+      seed: 42,
+    });
+    await readUntil(session, (e) => e.type === 'session.created');
+
+    await session.send({
+      type: 'session.update',
+      session: {
+        audio: { input: { format: { type: 'audio/pcm', rate: 4000 } } },
+      },
+    });
+    let events = await readUntil(session, (e) => e.type === 'error');
+    expect(events.at(-1)!.error.message).toContain('between 8000 and 192000');
+
+    // 8 kHz audio is resampled to the rate of the model
+    await session.send({
+      type: 'session.update',
+      session: {
+        audio: { input: { format: { type: 'audio/pcm', rate: 8000 } } },
+      },
+    });
+    events = await readUntil(session, (e) => e.type === 'session.updated');
+    expect(events.at(-1)!.session.audio.input.format.rate).toBe(8000);
+    await session.appendAudio(createTestPcm(2, 8000));
+    await session.send({ type: 'input_audio_buffer.commit' });
+    events = await readUntil(session, (e) =>
+      e.type.endsWith('input_audio_transcription.completed')
+    );
+    expect(events.filter((e) => e.type === 'error')).toEqual([]);
+    await session.close();
     await wllama.exit();
   },
   120000
