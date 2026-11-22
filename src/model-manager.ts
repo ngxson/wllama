@@ -312,7 +312,11 @@ export class ModelManager {
       const mmprojUrl = file.metadata.mmprojURL;
       const isFirstShard =
         shards.length === 1 || shards[0] === file.metadata.originalURL;
-      if (isFirstShard) {
+      // the files of a model all have its metadata, so the draft and the adapters are not models of their own
+      const isSidecar =
+        file.metadata.originalURL === file.metadata.draftURL ||
+        !!file.metadata.loraURLs?.includes(file.metadata.originalURL);
+      if (isFirstShard && !isSidecar) {
         models.push(
           new Model(this, file.metadata.originalURL, mmprojUrl, cachedFiles, {
             draftUrl: file.metadata.draftURL,

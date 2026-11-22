@@ -445,6 +445,8 @@ test.sequential(
       c,
       b,
     ]);
+    // the draft is not listed as a model of its own
+    expect((await manager.getModels()).map((m) => m.url)).toEqual([TINY_MODEL]);
     const net = hookNetwork();
     expect(urls(await manager.getModelOrDownload({ url: TINY_MODEL }))).toEqual(
       [TINY_MODEL]
