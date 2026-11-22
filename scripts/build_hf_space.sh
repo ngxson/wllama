@@ -34,6 +34,8 @@ git clone --recurse-submodules https://github.com/ngxson/wllama.git source
 # the example imports @wllama/wllama from esm/, which is not committed, build it
 (cd source && npm ci --include=dev && npm run build)
 
+# build.sh only removes assets/: remove all the previous build output (the hashed files in _app/ change on each build), keep the space files
+find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .gitattributes ! -name .gitignore ! -name README.md ! -name build.sh ! -name source -exec rm -rf {} +
 ./build.sh
 
 echo ">>> push"

@@ -87,7 +87,7 @@ let wllamaInstance = new Wllama(WLLAMA_CONFIG_PATHS, ...);
 // (the rest is the same with earlier example)
 ```
 
-For complete code example, see [examples/main/src/utils/wllama.context.tsx](./examples/main/src/utils/wllama.context.tsx)
+For complete code example, see [examples/main/overlay/src/lib/wllama/wllama-server.ts](./examples/main/overlay/src/lib/wllama/wllama-server.ts) (loading models) and [routes.ts](./examples/main/overlay/src/lib/wllama/routes.ts) (chat completion)
 
 NOTE: this example only covers completions usage. For embeddings, please see [examples/embeddings/index.html](./examples/embeddings/index.html). For audio, see [Speech and realtime audio](#speech-and-realtime-audio)
 

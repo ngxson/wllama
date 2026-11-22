@@ -1,0 +1,11 @@
+[
+  { "repo": "Qwen/Qwen3-0.6B-GGUF", "quant": "Q8_0" },
+  { "repo": "openbmb/MiniCPM5-1B-GGUF", "quant": "Q4_K_M" },
+  { "repo": "openbmb/MiniCPM5-2B-GGUF", "quant": "Q4_K_M" },
+  { "repo": "prism-ml/Ternary-Bonsai-2-2B-gguf", "file": "Ternary-Bonsai-2-2B-Q2_0.gguf", "mmprojQuant": "Q8_0" },
+  { "repo": "LiquidAI/LFM3-Omni-2B-GGUF", "quant": "Q4_K_M", "mmprojQuant": "Q8_0" },
+  { "repo": "unsloth/Qwen3.5-2B-GGUF", "quant": "Q4_K_M" },
+  { "repo": "unsloth/Qwen3.5-4B-GGUF", "quant": "Q4_K_M" },
+  { "repo": "unsloth/gemma-4-E2B-it-GGUF", "quant": "Q4_K_M" },
+  { "repo": "unsloth/gemma-4-E4B-it-GGUF", "quant": "Q4_K_M" }
+]
