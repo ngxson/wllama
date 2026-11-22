@@ -176,7 +176,8 @@ export const classifyGguf = async (blob: Blob): Promise<GgufRole> => {
 type ModelShard = { blob: Blob; name: string };
 export const prepareBlobs = async (
   blobsInp: Blob[],
-  draftInp?: Blob
+  draftInp?: Blob,
+  lorasInp: Blob[] = []
 ): Promise<{
   llm: ModelShard[];
   mmproj: ModelShard | null;
@@ -187,7 +188,7 @@ export const prepareBlobs = async (
   const blobs: Blob[] = [];
   let blobMmproj: Blob | null = null;
   let draft: { blob: Blob; spec_type: string } | null = null;
-  const blobLoras: Blob[] = [];
+  const blobLoras: Blob[] = [...lorasInp];
 
   const setDraft = (blob: Blob, spec_type: string) => {
     if (draft) {

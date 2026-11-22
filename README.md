@@ -272,7 +272,6 @@ npm run build
 
 ## TODO
 
-- Add support for LoRA adapter
 - Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
 
 ## Acknowledgments

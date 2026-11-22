@@ -67,7 +67,8 @@ export interface LoadModelParams {
   cache_idle_slots?: boolean;
   n_cache_reuse?: number;
   lora_adapters?: {
-    path: string; // path in the wasm file system
+    path?: string; // path in the wasm file system
+    blob?: Blob; // or the GGUF file of the adapter
     scale?: number;
   }[];
   lora_init_without_apply?: boolean;

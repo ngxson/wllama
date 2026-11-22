@@ -689,21 +689,39 @@ export class Wllama {
     this.useMultiThread = supportMultiThread && nbThreads > 1;
 
     // before creating the worker, so a bad file does not leave this instance half initialized
+    const loraBlobs = (params.lora_adapters ?? []).flatMap((a) =>
+      a.blob ? [a.blob] : []
+    );
     let modelFiles: Awaited<ReturnType<typeof prepareBlobs>>;
     try {
       modelFiles = await prepareBlobs(
         blobs,
         params.spec_draft_model instanceof Blob
           ? params.spec_draft_model
-          : undefined
+          : undefined,
+        loraBlobs
       );
     } catch (e) {
       throw new WllamaError((e as Error).message, 'load_error');
     }
-    // scale 1, like --lora of llama-server
+    // ids follow this order; adapters given with the model files get scale 1, like --lora of llama-server
+    let iLoraBlob = 0;
     const loraAdapters = [
-      ...(params.lora_adapters ?? []),
-      ...modelFiles.loras.map((f) => ({ path: `/models/${f.name}`, scale: 1 })),
+      ...(params.lora_adapters ?? []).map((a) => {
+        const path = a.blob
+          ? `/models/${modelFiles.loras[iLoraBlob++]!.name}`
+          : a.path;
+        if (!path) {
+          throw new WllamaError(
+            'A LoRA adapter needs a path or a blob',
+            'load_error'
+          );
+        }
+        return { path, scale: a.scale ?? 1 };
+      }),
+      ...modelFiles.loras
+        .slice(loraBlobs.length)
+        .map((f) => ({ path: `/models/${f.name}`, scale: 1 })),
     ];
 
     // initialize the worker

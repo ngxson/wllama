@@ -490,6 +490,30 @@ test.sequential('applies a LoRA adapter given with the model', async () => {
       { id: 0, scale: 0 },
     ])
   ).toMatch(/(little|girl|three|years|old)+/);
+
+  // a Blob in lora_adapters, with its scale
+  const lora = (
+    await (await new ModelManager().getModelOrDownload(MOE_LORA)).open()
+  )[0]!;
+  const withScale = async (scale: number) => {
+    const wllama = createWllama();
+    await wllama.loadModelFromUrl(MOE_MODEL, {
+      n_ctx: 512,
+      lora_adapters: [{ blob: lora, scale }],
+    });
+    const res = await wllama.createCompletion({
+      prompt: 'Look in thy glass',
+      max_tokens: 32,
+      temperature: 0,
+    });
+    await wllama.exit();
+    return res.choices[0].text;
+  };
+  expect(await withScale(1)).toMatch(/(eye|love|glass|sun)+/);
+  expect(await withScale(0)).toMatch(/(little|girl|three|years|old)+/);
+  await expect(
+    createWllama().loadModelFromUrl(MOE_MODEL, { lora_adapters: [{}] })
+  ).rejects.toThrow('needs a path or a blob');
 });
 
 test.sequential('drafts with a smaller model', async () => {

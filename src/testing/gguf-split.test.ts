@@ -196,6 +196,12 @@ test('prepares the model, mmproj, draft and LoRA files', async () => {
     'lora-2.gguf',
   ]);
 
+  // the adapters of lora_adapters come first, their order gives the ids
+  const given = lora();
+  const withGiven = await prepareBlobs([lora(), model], undefined, [given]);
+  expect(withGiven.loras.length).toBe(2);
+  expect(withGiven.loras[0]!.blob).toBe(given);
+
   // a normal model given as the draft runs with draft-simple
   const small = makeGgufHeader({
     arch: 'llama',
