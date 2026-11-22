@@ -35,6 +35,7 @@ jobs:
           else
             git config --global user.email "son@huggingface.co"
             git config --global user.name "Xuan Son NGUYEN"
+            python3 -m pip install --quiet huggingface_hub
             cd scripts && ./build_hf_space.sh
           fi
         env:
