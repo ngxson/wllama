@@ -270,10 +270,6 @@ npm run build:wasm
 npm run build
 ```
 
-## TODO
-
-- Support multi-sequences: knowing the resource limitation when using WASM, I don't think having multi-sequences is a good idea
-
 ## Acknowledgments
 
 Wllama was created and is maintained by [Xuan-Son Nguyen](https://ngxson.com/). The WebGPU backend for llama.cpp is maintained by [Reese Levine](https://reeselevine.github.io/). We thank all other contributors to both wllama and llama.cpp, whose work made this project possible.
