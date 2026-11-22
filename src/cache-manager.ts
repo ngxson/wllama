@@ -230,13 +230,15 @@ export class CacheManager {
     let safePrefix = offset;
     // off after a 206 that cannot be checked (Content-Range not exposed)
     let probeRanges = canResume;
+    // the ranges are set here, not by the caller
+    const headers = withoutRange(options.headers);
 
     while (true) {
       let streaming = false;
       try {
         const response = await fetch(url, {
           headers: {
-            ...(options.headers ?? {}),
+            ...headers,
             // a 206 means ranges are supported
             ...(offset > 0 || probeRanges ? { Range: `bytes=${offset}-` } : {}),
           },
@@ -272,9 +274,14 @@ export class CacheManager {
             }
           }
         } else if (response.status === 206 && !range) {
+          await response.body.cancel();
+          if (!probeRanges) {
+            throw new Error(
+              `A partial response that cannot be checked: ${url}`
+            );
+          }
           // its size cannot be checked: ask for the whole file
           probeRanges = false;
-          await response.body.cancel();
           continue;
         } else if (response.status === 206 && range && range.start !== 0) {
           await response.body.cancel();
@@ -498,7 +505,7 @@ export class CacheManager {
         const [start, end] = partRange(i);
         const res = await fetch(url, {
           headers: {
-            ...(p.options.headers ?? {}),
+            ...withoutRange(p.options.headers),
             Range: `bytes=${start}-${end - 1}`,
           },
           signal: abort.signal,
@@ -693,6 +700,14 @@ export class CacheManager {
 export default CacheManager;
 
 class DownloadHttpError extends Error {}
+
+function withoutRange(
+  headers?: Record<string, string>
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers ?? {}).filter(([k]) => k.toLowerCase() !== 'range')
+  );
+}
 
 function cleanEtag(etag: string | null): string {
   return (etag || '').replace(/[^A-Za-z0-9]/g, '');

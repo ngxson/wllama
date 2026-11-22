@@ -542,6 +542,36 @@ test.sequential(
   }
 );
 
+test.sequential('ignore a Range header from the caller', async () => {
+  const manager = opfsManager();
+  await manager.clear();
+  const model = await manager.downloadModel(TINY_MODEL, {
+    headers: { range: 'bytes=0-999' },
+  });
+  expect(model.size).toBe(1185376);
+  await expectSameAsRemote(manager, TINY_MODEL);
+});
+
+test.sequential(
+  'fail when every response is a 206 that cannot be checked',
+  async () => {
+    const manager = opfsManager();
+    await manager.clear();
+    const net = hookNetwork();
+    net.on({ method: 'GET', url: TINY_MODEL }).handle(async (_req, next) => {
+      const res = await next();
+      const data = new Uint8Array(await res.arrayBuffer()).slice(0, 1000);
+      return new Response(data, {
+        status: 206,
+        headers: { 'content-length': '1000' },
+      });
+    });
+    await expect(
+      manager.downloadModel(TINY_MODEL, { retries: 1 })
+    ).rejects.toThrow('cannot be checked');
+  }
+);
+
 test.sequential('give up after too many tries without new bytes', async () => {
   const manager = opfsManager();
   await manager.clear();

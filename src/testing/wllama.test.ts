@@ -31,7 +31,7 @@ const createWllama = (config = CONFIG_PATHS, options: WllamaConfig = {}) => {
   const w = new Wllama(config, options);
   const compatWasm =
     config === CONFIG_PATHS ? '/compat/wasm/wllama.wasm' : config.default;
-  w.setCompat(__COMPAT__ ? { wasm: compatWasm } : null, 'firefox_safari');
+  w.setCompat(__COMPAT__ ? { wasm: compatWasm } : null);
   return w;
 };
 
@@ -1152,7 +1152,7 @@ const testReadBigFile = async (compat: boolean) => {
   if (compat) {
     // hide JSPI so the wasm32 compat build is used
     delete (WebAssembly as any).Suspending;
-    wllama.setCompat({ wasm: '/compat/wasm/wllama.wasm' }, 'firefox_safari');
+    wllama.setCompat({ wasm: '/compat/wasm/wllama.wasm' });
   }
   try {
     await expect(
