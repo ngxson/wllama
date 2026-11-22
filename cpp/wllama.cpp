@@ -18,6 +18,14 @@
 #include "wllama-context.h"
 #include "wllama.h"
 #include "ggml-rpc.h"
+#include "arg.h"
+
+// copied from common/arg.cpp, which is not built (it needs the downloader); used by server_get_model_name()
+std::string common_get_default_local_path(const std::string & url) {
+  auto f = string_split<std::string>(url, '#').front();
+  f = string_split<std::string>(f, '?').front();
+  return fs_get_cache_file(string_split<std::string>(f, '/').back()).string();
+}
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
