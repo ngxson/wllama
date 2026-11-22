@@ -1361,7 +1361,7 @@ struct wllama_context
 
     json body = json::parse(req.data_json.value);
     decision_request dreq;
-    dreq.questions = decision.parse_questions(body);
+    dreq.questions = decision.parse_questions(body, false);
 
     std::vector<raw_buffer> files;
     const json state = decision.parse_state(body, files);
