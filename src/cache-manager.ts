@@ -69,6 +69,8 @@ export interface CacheEntryMetadata {
    * URL to mmproj file, if exists
    */
   mmprojURL?: string | undefined;
+  draftURL?: string | undefined;
+  loraURLs?: string[] | undefined;
   /**
    * Optional SHA256, mostly used by COS backend
    */

@@ -50,6 +50,7 @@ interface GgufKv {
 }
 
 interface GgufTensorInfo {
+  name: string;
   raw: Uint8Array; // name, n_dims, dims and type, without the offset
   offset: number; // relative to the data section
 }
@@ -57,6 +58,8 @@ interface GgufTensorInfo {
 interface GgufHeader {
   version: number;
   splitCount: number; // 0 if the key is missing
+  arch: string; // general.architecture
+  type: string; // general.type
   kvs: GgufKv[];
   tensors: GgufTensorInfo[];
   alignment: number;
@@ -141,6 +144,8 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
   const kvs: GgufKv[] = [];
   let alignment = 32;
   let splitCount = 0;
+  let arch = '';
+  let generalType = '';
   for (let i = 0; i < nKv; i++) {
     const start = r.pos;
     const key = r.str();
@@ -149,6 +154,10 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
       alignment = r.u32();
     } else if (key === KEY_SPLIT_COUNT && type === GgufType.UINT16) {
       splitCount = r.u16();
+    } else if (key === 'general.architecture' && type === GgufType.STRING) {
+      arch = r.str();
+    } else if (key === 'general.type' && type === GgufType.STRING) {
+      generalType = r.str();
     } else {
       r.skipValue(type);
     }
@@ -157,14 +166,23 @@ const parseHeader = (bytes: Uint8Array): GgufHeader => {
   const tensors: GgufTensorInfo[] = [];
   for (let i = 0; i < nTensors; i++) {
     const start = r.pos;
-    r.str(); // name
+    const name = r.str();
     const nDims = r.u32();
     r.skip(nDims * 8 + 4); // dims and type
     const raw = r.slice(start);
-    tensors.push({ raw, offset: r.u64() });
+    tensors.push({ name, raw, offset: r.u64() });
   }
   const dataStart = Math.ceil(r.pos / alignment) * alignment;
-  return { version, splitCount, kvs, tensors, alignment, dataStart };
+  return {
+    version,
+    splitCount,
+    arch,
+    type: generalType,
+    kvs,
+    tensors,
+    alignment,
+    dataStart,
+  };
 };
 
 const readHeader = async (blob: Blob): Promise<GgufHeader> => {
@@ -179,6 +197,23 @@ const readHeader = async (blob: Blob): Promise<GgufHeader> => {
       size *= 4;
     }
   }
+};
+
+export const readGgufInfo = async (
+  blob: Blob
+): Promise<{
+  arch: string;
+  type: string;
+  splitCount: number;
+  tensorNames: string[];
+}> => {
+  const h = await readHeader(blob);
+  return {
+    arch: h.arch,
+    type: h.type,
+    splitCount: h.splitCount,
+    tensorNames: h.tensors.map((t) => t.name),
+  };
 };
 
 class Writer {

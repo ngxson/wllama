@@ -285,3 +285,35 @@ export const makeFakeModel = (p: FakeModelParams): Blob[] => {
     ) as unknown as Blob;
   });
 };
+
+// header only, for classifyGguf()
+export const makeGgufHeader = (p: {
+  arch: string;
+  type?: string;
+  splitCount?: number;
+  tensors: string[];
+}): Blob => {
+  const w = new Writer();
+  const kvs: (() => void)[] = [
+    () => w.kv('general.architecture', T_STRING, () => w.str(p.arch)),
+  ];
+  if (p.type)
+    kvs.push(() => w.kv('general.type', T_STRING, () => w.str(p.type!)));
+  if (p.splitCount)
+    kvs.push(() => w.kv('split.count', T_U16, () => w.u16(p.splitCount!)));
+  w.u32(GGUF_MAGIC);
+  w.u32(3);
+  w.u64(p.tensors.length);
+  w.u64(kvs.length);
+  kvs.forEach((kv) => kv());
+  let offset = 0;
+  for (const name of p.tensors) {
+    w.str(name);
+    w.u32(1); // n_dims
+    w.u64(32);
+    w.u32(GGML_F32);
+    w.u64(offset);
+    offset += pad(32 * 4);
+  }
+  return new Blob([w.finish() as BlobPart]);
+};

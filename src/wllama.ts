@@ -15,6 +15,7 @@ import {
   isSupportMultiThread,
   isSupportWebGPU,
   MAX_RPC_WORKERS,
+  DRAFT_FILE_NAME,
   MMPROJ_FILE_NAME,
   needCompat,
   prepareBlobs,
@@ -616,6 +617,17 @@ export class Wllama {
       ? await this.modelManager.getModelOrDownload(source, params)
       : await this.modelManager.downloadModel(source, params);
     const blobs = await model.open();
+    // a draft-simple model looks like any model, so it is passed explicitly
+    const iDraft = source.draftUrl
+      ? model.files.findIndex((f) => f.metadata.originalURL === source.draftUrl)
+      : -1;
+    if (iDraft >= 0 && params.spec_draft_model === undefined) {
+      const [draft] = blobs.splice(iDraft, 1);
+      return await this.loadModel(blobs, {
+        ...params,
+        spec_draft_model: draft,
+      });
+    }
     return await this.loadModel(blobs, params);
   }
 
@@ -673,7 +685,22 @@ export class Wllama {
     this.useMultiThread = supportMultiThread && nbThreads > 1;
 
     // before creating the worker, so a bad file does not leave this instance half initialized
-    const modelFiles = await prepareBlobs(blobs);
+    let modelFiles: Awaited<ReturnType<typeof prepareBlobs>>;
+    try {
+      modelFiles = await prepareBlobs(
+        blobs,
+        params.spec_draft_model instanceof Blob
+          ? params.spec_draft_model
+          : undefined
+      );
+    } catch (e) {
+      throw new WllamaError((e as Error).message, 'load_error');
+    }
+    // scale 1, like --lora of llama-server
+    const loraAdapters = [
+      ...(params.lora_adapters ?? []),
+      ...modelFiles.loras.map((f) => ({ path: `/models/${f.name}`, scale: 1 })),
+    ];
 
     // initialize the worker
     const workerResources = this.getWorkerResources();
@@ -787,17 +814,23 @@ export class Wllama {
         ctx_shift: params.ctx_shift,
         cache_idle_slots: params.cache_idle_slots,
         n_cache_reuse: params.n_cache_reuse,
-        lora_paths: params.lora_adapters?.map((a) => a.path),
-        lora_scales: params.lora_adapters?.map((a) => a.scale ?? 1.0),
+        lora_paths: loraAdapters.length
+          ? loraAdapters.map((a) => a.path)
+          : undefined,
+        lora_scales: loraAdapters.length
+          ? loraAdapters.map((a) => a.scale ?? 1.0)
+          : undefined,
         lora_init_without_apply: params.lora_init_without_apply,
-        spec_draft_model: params.spec_draft_model,
+        spec_draft_model: modelFiles.draft
+          ? `/models/${DRAFT_FILE_NAME}`
+          : (params.spec_draft_model as string | undefined),
         spec_draft_ngl: params.spec_draft_ngl,
         spec_draft_n_max: params.spec_draft_n_max,
         spec_draft_n_min: params.spec_draft_n_min,
         spec_draft_p_min: params.spec_draft_p_min,
         spec_draft_threads: params.spec_draft_threads,
         spec_draft_threads_batch: params.spec_draft_threads_batch,
-        spec_type: params.spec_type,
+        spec_type: params.spec_type ?? modelFiles.draft?.spec_type,
         spec_ngram_simple_size_n: params.spec_ngram_simple_size_n,
         spec_ngram_simple_size_m: params.spec_ngram_simple_size_m,
         spec_ngram_simple_min_hits: params.spec_ngram_simple_min_hits,

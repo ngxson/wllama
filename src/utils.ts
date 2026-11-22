@@ -1,4 +1,4 @@
-import { splitBigGguf } from './gguf-split';
+import { readGgufInfo, splitBigGguf } from './gguf-split';
 
 export const joinBuffers = (buffers: Uint8Array[]): Uint8Array => {
   const totalSize = buffers.reduce((acc, buf) => acc + buf.length, 0);
@@ -115,40 +115,6 @@ export const sortFileByShard = (blobs: Blob[]): void => {
   }
 };
 
-export const isMmproj = async (blob: Blob): Promise<boolean> => {
-  const META_NAME = 'general.architecture';
-  const META_VAL = 'clip';
-  const tmp = blob.slice(0, 128 * 1024);
-  const header = await tmp.arrayBuffer();
-
-  const buf = new Uint8Array(header);
-  const nameBytes = new TextEncoder().encode(META_NAME);
-  const valBytes = new TextEncoder().encode(META_VAL);
-
-  // Find offset of META_NAME in buffer
-  let offset = -1;
-  outer: for (let i = 0; i <= buf.length - nameBytes.length; i++) {
-    for (let j = 0; j < nameBytes.length; j++) {
-      if (buf[i + j] !== nameBytes[j]) continue outer;
-    }
-    offset = i;
-    break;
-  }
-  if (offset === -1) return false;
-
-  // Read valLen as uint64 at offset+8*3 (little-endian, read low 32 bits)
-  if (offset + 8 * 4 + 4 > buf.length) return false;
-  const view = new DataView(header);
-  const valLen = view.getBigUint64(offset + 8 * 3, true);
-  if (valLen !== 4n) return false;
-
-  // Read 4 bytes at offset+8*4, compare with META_VAL bytes
-  for (let i = 0; i < valBytes.length; i++) {
-    if (buf[offset + 8 * 4 + i] !== valBytes[i]) return false;
-  }
-  return true;
-};
-
 export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const absoluteUrl = (relativePath: string) =>
@@ -168,24 +134,88 @@ export const sumArr = (arr: number[]) =>
 export const isString = (value: any): boolean => !!value?.startsWith;
 
 export const MMPROJ_FILE_NAME = 'mmproj.gguf';
+export const DRAFT_FILE_NAME = 'draft.gguf';
+
+export type GgufRole =
+  | { role: 'model' }
+  | { role: 'mmproj' }
+  | { role: 'lora' }
+  | { role: 'draft'; spec_type: string };
+
+// drafts are detected like common_speculative_types_from_gguf() of llama.cpp
+export const classifyGguf = async (blob: Blob): Promise<GgufRole> => {
+  let info: Awaited<ReturnType<typeof readGgufInfo>>;
+  try {
+    info = await readGgufInfo(blob);
+  } catch {
+    return { role: 'model' }; // llama.cpp reports the error
+  }
+  if (info.arch === 'clip') return { role: 'mmproj' };
+  if (info.type === 'adapter') return { role: 'lora' };
+  if (info.arch === 'dflash')
+    return { role: 'draft', spec_type: 'draft-dflash' };
+  if (info.arch === 'eagle3')
+    return { role: 'draft', spec_type: 'draft-eagle3' };
+  // MTP sidecar (convert_hf_to_gguf.py --mtp) only has the MTP blocks, the last shard of a split model can too
+  if (info.splitCount <= 1) {
+    const blocks = new Set<string>();
+    const nextn = new Set<string>();
+    for (const name of info.tensorNames) {
+      const m = name.match(/^blk\.(\d+)\.(nextn\.)?/);
+      if (!m) continue;
+      blocks.add(m[1]);
+      if (m[2]) nextn.add(m[1]);
+    }
+    if (nextn.size > 0 && [...blocks].every((b) => nextn.has(b))) {
+      return { role: 'draft', spec_type: 'draft-mtp' };
+    }
+  }
+  return { role: 'model' };
+};
 
 type ModelShard = { blob: Blob; name: string };
 export const prepareBlobs = async (
-  blobsInp: Blob[]
+  blobsInp: Blob[],
+  draftInp?: Blob
 ): Promise<{
   llm: ModelShard[];
   mmproj: ModelShard | null;
+  draft: (ModelShard & { spec_type: string }) | null;
+  loras: ModelShard[];
   all: ModelShard[];
 }> => {
   const blobs: Blob[] = [];
   let blobMmproj: Blob | null = null;
+  let draft: { blob: Blob; spec_type: string } | null = null;
+  const blobLoras: Blob[] = [];
 
+  const setDraft = (blob: Blob, spec_type: string) => {
+    if (draft) {
+      throw new Error('More than one speculative draft model is given');
+    }
+    draft = { blob, spec_type };
+  };
+  if (draftInp) {
+    const r = await classifyGguf(draftInp);
+    setDraft(draftInp, r.role === 'draft' ? r.spec_type : 'draft-simple');
+  }
   for (const blob of blobsInp) {
-    if (await isMmproj(blob)) {
+    const r = await classifyGguf(blob);
+    if (r.role === 'mmproj') {
+      if (blobMmproj) {
+        throw new Error('More than one mmproj file is given');
+      }
       blobMmproj = blob;
+    } else if (r.role === 'lora') {
+      blobLoras.push(blob);
+    } else if (r.role === 'draft') {
+      setDraft(blob, r.spec_type);
     } else {
       blobs.push(blob);
     }
+  }
+  if (blobs.length === 0) {
+    throw new Error('No model file is given');
   }
 
   // a single file of 4GB or more is split into virtual shards
@@ -195,23 +225,33 @@ export const prepareBlobs = async (
 
   // prepare model-XXXXX-of-XXXXX.gguf blobs
   sortFileByShard(blobs);
-  const result = blobs.map((blob, i) => ({
+  const llm = blobs.map((blob, i) => ({
     blob,
     name: `model-${padDigits(i + 1, 5)}-of-${padDigits(blobs.length, 5)}.gguf`,
   }));
-
-  // prepare mmproj.gguf blob
-  if (blobMmproj) {
-    result.push({
-      blob: blobMmproj,
-      name: MMPROJ_FILE_NAME,
-    });
-  }
+  const mmproj = blobMmproj
+    ? { blob: blobMmproj, name: MMPROJ_FILE_NAME }
+    : null;
+  const d = draft as { blob: Blob; spec_type: string } | null;
+  const draftShard = d
+    ? { blob: d.blob, name: DRAFT_FILE_NAME, spec_type: d.spec_type }
+    : null;
+  const loras = blobLoras.map((blob, i) => ({
+    blob,
+    name: `lora-${i + 1}.gguf`,
+  }));
 
   return {
-    llm: result.filter((f) => f.name !== MMPROJ_FILE_NAME),
-    mmproj: blobMmproj ? { blob: blobMmproj, name: MMPROJ_FILE_NAME } : null,
-    all: result,
+    llm,
+    mmproj,
+    draft: draftShard,
+    loras,
+    all: [
+      ...llm,
+      ...(mmproj ? [mmproj] : []),
+      ...(draftShard ? [{ blob: draftShard.blob, name: draftShard.name }] : []),
+      ...loras,
+    ],
   };
 };
 
