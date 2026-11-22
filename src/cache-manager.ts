@@ -152,6 +152,11 @@ export class CacheManager {
         metadata?.originalURL === url &&
         metadata.originalSize === cachedSize
       ) {
+        // the file is reused by another model: its mmproj, draft and adapters change
+        const updated = { ...metadata, ...(options.metadataAdditional ?? {}) };
+        if (JSON.stringify(updated) !== JSON.stringify(metadata)) {
+          await this.writeMetadata(fileKey, updated);
+        }
         return;
       }
       const partial = metadata

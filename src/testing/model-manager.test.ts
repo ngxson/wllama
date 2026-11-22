@@ -455,6 +455,21 @@ test.sequential(
   }
 );
 
+test.sequential(
+  'updates the extra files of a cached model without downloading it again',
+  async () => {
+    const manager = new ModelManager();
+    await manager.clear();
+    const [, b] = ModelManager.parseModelUrl(SPLIT_MODEL);
+    await manager.downloadModel(TINY_MODEL);
+    const net = hookNetwork();
+    await manager.downloadModel({ url: TINY_MODEL, loraUrls: [b] });
+    const listed = await manager.getModels();
+    expect(listed.map((m) => [m.url, m.loraUrls])).toEqual([[TINY_MODEL, [b]]]);
+    expect(getRequests(net).filter((r) => r.url === TINY_MODEL).length).toBe(0);
+  }
+);
+
 test.sequential('download invalid model URL', async () => {
   const manager = new ModelManager();
   const invalidUrl = 'https://invalid.example.com/model.gguf';

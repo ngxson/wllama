@@ -1356,12 +1356,16 @@ test.sequential(
         stream: true,
         abortSignal: abort.signal,
       });
+      let last: { final: boolean } | undefined;
       const err = await (async () => {
-        for await (const _ of stream) {
+        for await (const chunk of stream) {
+          last = chunk;
           abort.abort();
         }
       })().catch((e: unknown) => e);
-      expect((err as Error).name).toBe('AbortError');
+      // the first chunk can be the last one, then there is nothing to abort
+      if (err === undefined) expect(last?.final).toBe(true);
+      else expect((err as Error).name).toBe('AbortError');
     }
     const res = await wllama.createSpeech({ input: 'Hi', n_predict: 4 });
     expect(res.audio.byteLength).toBeGreaterThan(44);
@@ -1831,12 +1835,16 @@ test.sequential(
       response_format: 'pcm',
       stream: true,
     });
+    let last: { final: boolean } | undefined;
     const err = await (async () => {
-      for await (const _ of running) {
+      for await (const chunk of running) {
+        last = chunk;
         await wllama.exit();
       }
     })().catch((e: unknown) => e);
-    expect((err as Error).message).toMatch('unloaded');
+    // the first chunk can be the last one, then there is nothing to stop
+    if (err === undefined) expect(last?.final).toBe(true);
+    else expect((err as Error).message).toMatch('unloaded');
   },
   120000
 );
