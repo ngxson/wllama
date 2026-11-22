@@ -1,8 +1,4 @@
-import {
-  MAX_RPC_WORKERS,
-  countRpcWorkers,
-  readGgufTensorSizes,
-} from './gguf-split';
+import { GGUF_SPLIT_CONFIG } from './gguf-split';
 import {
   ProxyToWorker,
   type RpcInitOptions,
@@ -18,9 +14,11 @@ import {
   isSupportJSPI,
   isSupportMultiThread,
   isSupportWebGPU,
+  MAX_RPC_WORKERS,
   MMPROJ_FILE_NAME,
   needCompat,
   prepareBlobs,
+  RPC_CONFIG,
 } from './utils';
 import CacheManager, { type DownloadOptions } from './cache-manager';
 import { ModelManager, Model, type ModelSource } from './model-manager';
@@ -344,6 +342,7 @@ export class Wllama {
 
   private proxy: ProxyToWorker = null as any;
   private rpcWorkers: ProxyToWorker[] = [];
+  private exitCount = 0; // number of exit() calls
   private config: WllamaConfig;
   private pathConfig: AssetsPathConfig;
   private useMultiThread: boolean = false;
@@ -675,15 +674,11 @@ export class Wllama {
         'WebGPU on Firefox is slower than on other browsers, due to a Firefox bug (https://bugzilla.mozilla.org/show_bug.cgi?id=1870699). wllama works around most of it, see https://github.com/ngxson/wllama/issues/296'
       );
     }
-    const nRpcWorkers = await this.pickRpcWorkers(
-      params,
-      modelFiles.llm,
-      workerResources
-    );
-    if (nRpcWorkers > 0) {
-      // the layers go to the rpc workers, not to WebGPU
-      workerResources.noWebGPU = true;
-    }
+    const nRpcWorkers = this.pickRpcWorkers(params, workerResources);
+    const rpcMemMax =
+      params.rpc_workers === undefined
+        ? this.autoRpcMemMax(modelFiles.llm, workerResources)
+        : undefined;
     this.proxy = new ProxyToWorker(
       workerResources,
       this.useMultiThread ? nbThreads : 0, // 0 means disable pthread
@@ -698,6 +693,15 @@ export class Wllama {
     // this attempt's proxy and rpc workers: exit() can be called meanwhile, and a new load can then own this.proxy
     const proxy = this.proxy;
     const ownRpcWorkers: ProxyToWorker[] = [];
+    // terminate the workers of this attempt, so this instance can load again
+    const exitWorkers = async () => {
+      if (this.proxy === proxy) {
+        await this.exit();
+      } else {
+        await proxy.wllamaExit();
+        for (const w of ownRpcWorkers) await w.wllamaExit();
+      }
+    };
     let loadResult: GlueMsgLoadRes;
     try {
       const rpc = await this.startRpcWorkers(
@@ -725,9 +729,9 @@ export class Wllama {
         // if async read is not supported, use mmap; refer to README-dev.md for more details
         use_mmap: !canUseAsyncFileRead(workerResources.compat),
         use_mlock: false,
-        // rpc devices only get layers when they are offloaded
-        n_gpu_layers: nRpcWorkers > 0 ? 99999 : (params.n_gpu_layers ?? 99999),
+        n_gpu_layers: params.n_gpu_layers ?? 99999,
         token_embd_on_gpu: params.token_embd_on_gpu ?? true,
+        rpc_mem_max: rpcMemMax,
         n_ctx: params.n_ctx ?? 1024,
         n_threads: this.useMultiThread ? nbThreads : 1,
         n_ctx_auto: false, // not supported for now
@@ -797,18 +801,31 @@ export class Wllama {
         skip_chat_parsing: params.skip_chat_parsing,
         prefill_assistant: params.prefill_assistant,
       });
-      if (!loadResult.success) {
+      if (!loadResult.success && !loadResult.n_rpc_workers) {
         throw new WllamaError('Failed to load model', 'load_error');
       }
     } catch (e) {
-      // terminate the workers of this attempt, so this instance can load again
-      if (this.proxy === proxy) {
-        await this.exit();
-      } else {
-        await proxy.wllamaExit();
-        for (const w of ownRpcWorkers) await w.wllamaExit();
-      }
+      await exitWorkers();
       throw e;
+    }
+    if (!loadResult.success) {
+      // the part of the model on the CPU does not fit in this wasm instance: load again with rpc workers
+      this.logger().debug(
+        `The model does not fit in one wasm instance, using ${loadResult.n_rpc_workers} rpc workers`
+      );
+      const exitCount = this.exitCount;
+      await exitWorkers();
+      // exitWorkers() calls exit() once, or not at all if exit() was called before
+      if (this.exitCount !== exitCount + 1) {
+        throw new WllamaError(
+          'exit() was called while the model was loading',
+          'load_error'
+        );
+      }
+      return await this.loadModel(blobs, {
+        ...params,
+        rpc_workers: loadResult.n_rpc_workers,
+      });
     }
     const loadedCtxInfo: LoadedContextInfo & GlueMsgLoadRes = {
       ...loadResult,
@@ -1312,6 +1329,7 @@ export class Wllama {
    */
   async exit(): Promise<void> {
     // detach them first: a new load can start while this one is shutting down
+    this.exitCount++;
     const proxy = this.proxy;
     const rpcWorkers = this.rpcWorkers;
     this.proxy = null as any;
@@ -1325,12 +1343,10 @@ export class Wllama {
   private static RPC_NEEDS_ASYNC_READ =
     'The model does not fit in one wasm instance (4GB): rpc workers need a browser with JSPI, or the compat build (see setCompat)';
 
-  // by default, rpc workers are used only when the model does not fit in one wasm instance and WebGPU does not take the layers
-  private async pickRpcWorkers(
+  private pickRpcWorkers(
     params: LoadModelParams,
-    files: { blob: Blob }[],
     resources: WllamaWorkerResources
-  ): Promise<number> {
+  ): number {
     if (params.rpc_workers !== undefined) {
       const n = params.rpc_workers;
       if (!Number.isInteger(n) || n < 0 || n > MAX_RPC_WORKERS) {
@@ -1350,35 +1366,25 @@ export class Wllama {
       }
       return params.rpc_workers;
     }
-    // the main wasm does the rpc I/O in its own threads
-    if (!this.useMultiThread) return 0;
-    if (
-      !resources.noWebGPU &&
-      (await (navigator as any).gpu?.requestAdapter?.().catch(() => null))
-    ) {
-      return 0;
-    }
-    let nVocab = 0;
-    const tensors: { name: string; size: number }[] = [];
-    try {
-      for (const f of files) {
-        const info = await readGgufTensorSizes(f.blob);
-        nVocab = Math.max(nVocab, info.nVocab);
-        tensors.push(...info.tensors);
+    return 0;
+  }
+
+  // by default, the wasm measures the part of the model on the CPU, and asks for rpc workers if it is over this limit (MiB)
+  // undefined: no measure. It reads the metadata one more time, so small files skip it
+  private autoRpcMemMax(
+    files: { blob: Blob }[],
+    resources: WllamaWorkerResources
+  ): number | undefined {
+    const size = files.reduce((sum, f) => sum + f.blob.size, 0);
+    if (size < RPC_CONFIG.autoMinSize) return undefined;
+    if (!canUseAsyncFileRead(resources.compat)) {
+      if (size >= GGUF_SPLIT_CONFIG.maxFileSize) {
+        throw new WllamaError(Wllama.RPC_NEEDS_ASYNC_READ, 'load_error');
       }
-    } catch {
-      return 0; // not a valid GGUF, the native load reports the error
+      return undefined;
     }
-    const n = countRpcWorkers(tensors, nVocab, params.n_ubatch ?? 512);
-    if (n > 0 && !canUseAsyncFileRead(resources.compat)) {
-      throw new WllamaError(Wllama.RPC_NEEDS_ASYNC_READ, 'load_error');
-    }
-    if (n > 0) {
-      this.logger().debug(
-        `The model does not fit in one wasm instance, using ${n} rpc workers`
-      );
-    }
-    return n;
+    // the main wasm does the rpc I/O in its own threads
+    return this.useMultiThread ? RPC_CONFIG.mainMemMax : undefined;
   }
 
   // spawn wasm instances that each hold a part of the model in their own 4GB memory

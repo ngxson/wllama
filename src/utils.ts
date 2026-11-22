@@ -407,3 +407,12 @@ export const canUseAsyncFileRead = (compat: boolean) =>
   isSupportJSPI() || compat;
 
 export const needCompat = () => !isSupportJSPI() || !isSupportRelaxedSIMD();
+
+export const MAX_RPC_WORKERS = 16; // GGML_RPC_MAX_SERVERS
+
+export const RPC_CONFIG = {
+  // smaller models fit in one wasm instance (4GB), they are not measured
+  autoMinSize: 2.5 * 1024 * 1024 * 1024,
+  // max memory of the model and its context in the main wasm instance, in MiB. Above it, rpc workers are used
+  mainMemMax: 3584,
+};

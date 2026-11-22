@@ -16,6 +16,8 @@ const char *llama_build_target() { return "native-test"; }
 #include "mtmd.h"
 mtmd_context *shared_mctx = nullptr;
 bool force_single_thread = false;
+bool wllama_mem_kib = false;
+size_t wllama_fit_gpu_mem = 0;
 
 #include "wllama-context.h"
 
@@ -29,7 +31,6 @@ void common_log_flush(struct common_log *) {}
 void common_log_pause(struct common_log *) {}
 void common_log_resume(struct common_log *) {}
 void common_log_free(struct common_log *) {}
-void common_memory_breakdown_print(const llama_context *) {}
 server_response_reader::batch_response server_response_reader::wait_for_all(const std::function<bool()> &) {
   return {};
 }

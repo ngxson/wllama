@@ -1,6 +1,7 @@
 // the model is split across wasm instances in other workers
 import { test, expect } from 'vitest';
 import { Wllama } from '../wllama';
+import { RPC_CONFIG } from '../utils';
 import { makeFakeModel } from './fake-gguf';
 
 declare const __COMPAT__: boolean;
@@ -48,6 +49,55 @@ test('splits the model across rpc workers', async () => {
     true
   );
   expect(rpc.text).toBe(cpu.text);
+}, 60000);
+
+test('uses rpc workers when the model does not fit in the main instance', async () => {
+  const cpu = await run({ n_gpu_layers: 0, n_threads: 2 });
+  // measure all models, and allow 1MiB in the main instance
+  const config = { ...RPC_CONFIG };
+  Object.assign(RPC_CONFIG, { autoMinSize: 0, mainMemMax: 1 });
+  try {
+    const rpc = await run({ n_gpu_layers: 0, n_threads: 2 });
+    expect(rpc.logs.some((l) => /using 1 rpc workers/.test(l))).toBe(true);
+    expect(rpc.logs.some((l) => /RPC0\[.*\] model buffer size/.test(l))).toBe(
+      true
+    );
+    expect(rpc.text).toBe(cpu.text);
+  } finally {
+    Object.assign(RPC_CONFIG, config);
+  }
+}, 60000);
+
+test('exit() during the restart with rpc workers stops the load', async () => {
+  const config = { ...RPC_CONFIG };
+  Object.assign(RPC_CONFIG, { autoMinSize: 0, mainMemMax: 1 });
+  const wllama = new Wllama(
+    { default: '/src/wasm/wllama.wasm' },
+    {
+      logger: {
+        // called before the first attempt is cleaned up
+        debug: (...args: any[]) => {
+          if (/using 1 rpc workers/.test(args.join(' '))) wllama.exit();
+        },
+        log: () => {},
+        warn: () => {},
+        error: () => {},
+      },
+    }
+  );
+  wllama.setCompat(
+    __COMPAT__ ? { wasm: '/compat/wasm/wllama.wasm' } : null,
+    'firefox_safari'
+  );
+  try {
+    await expect(
+      wllama.loadModelFromUrl(TINY_MODEL, { n_gpu_layers: 0, n_threads: 2 })
+    ).rejects.toThrow('exit() was called');
+    expect(wllama.isModelLoaded()).toBe(false);
+  } finally {
+    Object.assign(RPC_CONFIG, config);
+    await wllama.exit();
+  }
 }, 60000);
 
 test('rpc workers need async file reads', async () => {

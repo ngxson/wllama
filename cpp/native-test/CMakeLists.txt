@@ -27,7 +27,6 @@ list(REMOVE_ITEM LLAMA_COMMON_SRC
     ${WLLAMA_ROOT}/llama.cpp/common/arg.cpp
     ${WLLAMA_ROOT}/llama.cpp/common/console.cpp
     ${WLLAMA_ROOT}/llama.cpp/common/debug.cpp
-    ${WLLAMA_ROOT}/llama.cpp/common/fit.cpp
     ${WLLAMA_ROOT}/llama.cpp/common/hf-cache.cpp
     ${WLLAMA_ROOT}/llama.cpp/common/log.cpp
     ${WLLAMA_ROOT}/llama.cpp/common/preset.cpp
