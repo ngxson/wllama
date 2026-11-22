@@ -419,13 +419,17 @@ export class CacheManager {
         Math.min(total, offset + (i + 1) * PART_SIZE),
       ] as const;
 
+    // one at a time: two writes of the same OPFS file fail with NoModificationAllowedError
+    let saving = Promise.resolve();
     const saveMetadata = (contiguous: number) =>
-      this.writeMetadata(`${PREFIX_PARTIAL}${fileKey}`, {
-        originalURL: url,
-        originalSize: total,
-        etag,
-        contiguous,
-      });
+      (saving = saving.then(() =>
+        this.writeMetadata(`${PREFIX_PARTIAL}${fileKey}`, {
+          originalURL: url,
+          originalSize: total,
+          etag,
+          contiguous,
+        })
+      ));
     await saveMetadata(offset);
     p.onPrefix(offset);
 
