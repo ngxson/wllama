@@ -226,10 +226,11 @@ export class CacheManager {
     let kept = offset;
     // true if the bytes on disk can be kept for the next try
     let resumable = offset > 0;
-    // set by downloadParts(), kept until a stream write truncates the file
-    let partsPrefix: number | null = null;
+    // the start of the file known to be complete: parts can leave holes after it
+    let safePrefix = offset;
 
     while (true) {
+      let streaming = false;
       try {
         const response = await fetch(url, {
           headers: {
@@ -317,7 +318,7 @@ export class CacheManager {
                 progressCallback({ loaded, total });
               }
             },
-            onPrefix: (prefix) => (partsPrefix = prefix),
+            onPrefix: (p) => (safePrefix = p),
           });
           progressCallback?.({ loaded, total });
           if (loaded < total) {
@@ -343,7 +344,7 @@ export class CacheManager {
           },
         });
 
-        partsPrefix = null;
+        streaming = true;
         await this.sb.write(
           fileKey,
           response.body.pipeThrough(progressStream),
@@ -364,9 +365,10 @@ export class CacheManager {
           e?.name === 'NoModificationAllowedError';
         if (fatal) throw e;
         // keep the bytes on disk only if the next try can check that the file did not change
-        const size = resumable
-          ? (partsPrefix ?? (await this.sb.getSize(fileKey, hint)))
-          : 0;
+        // a stream write truncates the file at `offset` before the bytes it receives
+        const physical = resumable ? await this.sb.getSize(fileKey, hint) : 0;
+        const size = Math.min(physical, streaming ? loaded : safePrefix);
+        safePrefix = size;
         if (size > kept) {
           failures = 0;
           kept = size;
@@ -494,7 +496,9 @@ export class CacheManager {
         if (
           res.status !== 206 ||
           !res.body ||
-          (res.headers.get('etag') ?? '') !== etag
+          (res.headers.get('etag') ?? '') !== etag ||
+          parseContentRange(res)?.start !== start ||
+          parseContentRange(res)?.total !== total
         ) {
           res.body?.cancel().catch(() => {});
           throw new Error(
