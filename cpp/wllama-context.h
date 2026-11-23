@@ -1859,7 +1859,7 @@ struct wllama_context
       }
     }
 
-    res.data_json.value = json{{"tokens", std::move(tokens_response)}}.dump();
+    res.data_json.value = safe_json_to_str(json{{"tokens", std::move(tokens_response)}});
     return res;
   }
 
@@ -1886,7 +1886,7 @@ struct wllama_context
       content = tokens_to_str(vocab, tokens);
     }
 
-    res.data_json.value = json{{"content", std::move(content)}}.dump();
+    res.data_json.value = safe_json_to_str(json{{"content", std::move(content)}});
     return res;
   }
 
@@ -2040,7 +2040,7 @@ struct wllama_context
 
     res.success.value = true;
     res.has_more.value = has_more;
-    res.data_json.value = result ? data_json.dump() : "";
+    res.data_json.value = result ? safe_json_to_str(data_json) : "";
     res.is_error.value = is_error;
 
     if (!has_more)
