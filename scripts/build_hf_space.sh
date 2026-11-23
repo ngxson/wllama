@@ -38,7 +38,11 @@ git clone --recurse-submodules https://github.com/ngxson/wllama.git source
 find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .gitattributes ! -name .gitignore ! -name README.md ! -name build.sh ! -name source -exec rm -rf {} +
 ./build.sh
 # the space rejects binary files that are not in LFS (the build has icons, images and fonts, not only the wasm)
-git lfs track "*.png" "*.ico" "*.woff2" > /dev/null
+# not "git lfs track": it touches the matching files of the last commit, and fails on the ones the build removed
+for ext in png ico woff2; do
+  rule="*.$ext filter=lfs diff=lfs merge=lfs -text"
+  grep -qxF "$rule" .gitattributes || echo "$rule" >> .gitattributes
+done
 
 echo ">>> push"
 if [ -z "$(git status --porcelain)" ]; then
