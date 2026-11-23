@@ -152,7 +152,11 @@ export interface SamplingParams {
   min_p?: number | undefined;
   typ_p?: number | undefined;
   typical_p?: number | undefined;
-  logit_bias?: { token: number; bias: number }[] | undefined;
+  // token (ID or text) to bias, false bans the token
+  logit_bias?:
+    | Record<string, number | false>
+    | [number | string, number | false][]
+    | undefined;
   ignore_eos?: boolean | undefined;
 }
 

@@ -606,6 +606,27 @@ test.sequential('tokenizes and detokenizes', async () => {
   await wllama.exit();
 });
 
+test.sequential('returns a part of a UTF-8 character', async () => {
+  const wllama = createWllama();
+  await wllama.loadModelFromUrl(TINY_MODEL, { n_ctx: 128 });
+
+  // not in the vocab: one token per byte (<0xF0> <0x9F> <0x98> <0x80>)
+  const tokens = await wllama.tokenize('😀');
+  const bytes = tokens.slice(-4);
+  expect(await wllama.detokenize(bytes)).toContain('😀');
+  expect(await wllama.detokenize([bytes[0]])).toBe('�');
+
+  // the generation stops after the first byte of a character
+  const res = await wllama.createCompletion({
+    prompt: 'Once upon a time',
+    max_tokens: 1,
+    temperature: 0,
+    logit_bias: { [bytes[0]]: 100 },
+  });
+  expect(res.choices[0].text).toBe('�');
+  await wllama.exit();
+});
+
 test.sequential('generates embeddings', async () => {
   const wllama = createWllama();
 
