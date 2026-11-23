@@ -65,6 +65,18 @@ test('uses rpc workers when the model does not fit in the main instance', async 
   }
 }, 60000);
 
+test('single-thread throws when the model does not fit in 4GB', async () => {
+  const config = { ...RPC_CONFIG };
+  Object.assign(RPC_CONFIG, { autoMinSize: 0, singleThreadMemMax: 1 });
+  try {
+    await expect(run({ n_gpu_layers: 0, n_threads: 1 })).rejects.toThrow(
+      'single-thread build does not support'
+    );
+  } finally {
+    Object.assign(RPC_CONFIG, config);
+  }
+}, 60000);
+
 test('exit() during the restart with rpc workers stops the load', async () => {
   const config = { ...RPC_CONFIG };
   Object.assign(RPC_CONFIG, { autoMinSize: 0, mainMemMax: 1 });

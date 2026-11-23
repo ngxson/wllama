@@ -870,6 +870,9 @@ export class Wllama {
       if (!loadResult.success && !loadResult.n_rpc_workers) {
         throw new WllamaError('Failed to load model', 'load_error');
       }
+      if (!loadResult.success && !this.useMultiThread) {
+        throw new WllamaError(Wllama.RPC_NEEDS_MULTI_THREAD, 'load_error');
+      }
     } catch (e) {
       await exitWorkers();
       throw e;
@@ -1464,6 +1467,9 @@ export class Wllama {
   private static RPC_NEEDS_ASYNC_READ =
     'The model does not fit in one wasm instance (4GB): rpc workers need a browser with JSPI, or the compat build (see setCompat)';
 
+  private static RPC_NEEDS_MULTI_THREAD =
+    'The model does not fit in one wasm instance (4GB): the single-thread build does not support more than that. Bigger models need multi-thread (see the Cross-Origin headers in README, and n_threads > 1)';
+
   private pickRpcWorkers(
     params: LoadModelParams,
     resources: WllamaWorkerResources
@@ -1505,7 +1511,9 @@ export class Wllama {
       return undefined;
     }
     // the main wasm does the rpc I/O in its own threads
-    return this.useMultiThread ? RPC_CONFIG.mainMemMax : undefined;
+    return this.useMultiThread
+      ? RPC_CONFIG.mainMemMax
+      : RPC_CONFIG.singleThreadMemMax;
   }
 
   // spawn wasm instances that each hold a part of the model in their own 4GB memory

@@ -456,4 +456,6 @@ export const RPC_CONFIG = {
   autoMinSize: 2.5 * 1024 * 1024 * 1024,
   // max memory of the model and its context in the main wasm instance, in MiB. Above it, rpc workers are used
   mainMemMax: 3584,
+  // single-thread cannot use rpc workers: above this (4GB), the load fails with a clear error
+  singleThreadMemMax: 4096,
 };
