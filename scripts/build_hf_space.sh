@@ -7,6 +7,8 @@ delete_lfs_except() {
   python3 - "$@" <<'PY'
 import os, sys
 from huggingface_hub import HfApi
+from huggingface_hub.hf_api import LFSFileInfo
+from huggingface_hub.utils import build_hf_headers, paginate
 
 api = HfApi(token=os.environ.get("HF_TOKEN"))
 keep = set()
@@ -14,7 +16,11 @@ for path in sys.argv[1:]:
     keep |= set(open(path).read().split())
 if not keep:
     sys.exit("no LFS file to keep, refusing to delete all of them")
-old = [f for f in api.list_lfs_files("ngxson/wllama", repo_type="space") if f.file_oid not in keep]
+# same as api.list_lfs_files(), which fails on the LFS files of a rejected push: they are in no commit, so they have no filename
+url = f"{api.endpoint}/api/spaces/ngxson/wllama/lfs-files"
+headers = build_hf_headers(token=os.environ.get("HF_TOKEN"))
+files = [LFSFileInfo(**{"filename": "", **item}) for item in paginate(url, params={}, headers=headers)]
+old = [f for f in files if f.file_oid not in keep]
 print(f"deleting {len(old)} LFS files ({sum(f.size for f in old) / 1e6:.0f} MB), keeping {len(keep)}")
 if old and not os.environ.get("DRY_RUN"):
     api.permanently_delete_lfs_files("ngxson/wllama", old, repo_type="space")
