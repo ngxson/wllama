@@ -120,7 +120,7 @@ export type ChatCompletionParams = {
   // n?: number;
   logprobs?: boolean;
   top_logprobs?: number;
-  logit_bias?: Record<string, number>;
+  logit_bias?: SamplingParams['logit_bias'];
   // tools
   tools?: ChatCompletionTool[];
   tool_choice?: ChatCompletionToolChoice;
@@ -261,7 +261,7 @@ export type RawCompletionParams = {
   presence_penalty?: number;
   frequency_penalty?: number;
   best_of?: number;
-  logit_bias?: Record<string, number>;
+  logit_bias?: SamplingParams['logit_bias'];
   seed?: number;
   user?: string;
   return_progress?: boolean;
