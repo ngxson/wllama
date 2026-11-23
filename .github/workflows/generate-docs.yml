@@ -71,10 +71,9 @@ jobs:
       - name: Build main example
         working-directory: ./examples/main
         run: |
-          npm i
           npm run build
           rm .gitignore
-          rm -rf node_modules
+          rm -rf .build
 
       - name: Upload artifact
         if: github.ref == 'refs/heads/master'

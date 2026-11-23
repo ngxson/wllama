@@ -1,0 +1,95 @@
+[
+  {
+    "repo": "Qwen/Qwen3-0.6B-GGUF",
+    "url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
+    "size": 639446688,
+    "modalities": [],
+    "tools": true,
+    "thinking": true
+  },
+  {
+    "repo": "openbmb/MiniCPM5-1B-GGUF",
+    "url": "https://huggingface.co/openbmb/MiniCPM5-1B-GGUF/resolve/main/MiniCPM5-1B-Q4_K_M.gguf",
+    "size": 688065920,
+    "modalities": [],
+    "tools": true,
+    "thinking": true
+  },
+  {
+    "repo": "prism-ml/Ternary-Bonsai-2-2B-gguf",
+    "url": "https://huggingface.co/prism-ml/Ternary-Bonsai-2-2B-gguf/resolve/main/Ternary-Bonsai-2-2B-Q2_0.gguf",
+    "mmprojUrl": "https://huggingface.co/prism-ml/Ternary-Bonsai-2-2B-gguf/resolve/main/Ternary-Bonsai-2-2B-mmproj-Q8_0.gguf",
+    "size": 911353856,
+    "modalities": [
+      "image"
+    ],
+    "tools": true,
+    "thinking": true
+  },
+  {
+    "repo": "openbmb/MiniCPM5-2B-GGUF",
+    "url": "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF/resolve/main/MiniCPM5-2B-Q4_K_M.gguf",
+    "size": 1561318368,
+    "modalities": [],
+    "tools": true,
+    "thinking": true
+  },
+  {
+    "repo": "LiquidAI/LFM3-Omni-2B-GGUF",
+    "url": "https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF/resolve/main/LFM3-Omni-2B-Q4_K_M.gguf",
+    "mmprojUrl": "https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF/resolve/main/mmproj-LFM3-Omni-2B-Q8_0.gguf",
+    "size": 1606472608,
+    "modalities": [
+      "image",
+      "audio"
+    ],
+    "tools": true,
+    "thinking": true
+  },
+  {
+    "repo": "unsloth/Qwen3.5-2B-GGUF",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
+    "mmprojUrl": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/mmproj-F16.gguf",
+    "size": 1949063104,
+    "modalities": [
+      "image"
+    ],
+    "tools": true,
+    "thinking": true
+  },
+  {
+    "repo": "unsloth/Qwen3.5-4B-GGUF",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+    "mmprojUrl": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/mmproj-F16.gguf",
+    "size": 3413361504,
+    "modalities": [
+      "image"
+    ],
+    "tools": true,
+    "thinking": true
+  },
+  {
+    "repo": "unsloth/gemma-4-E2B-it-GGUF",
+    "url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
+    "mmprojUrl": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf",
+    "size": 4092392352,
+    "modalities": [
+      "image",
+      "audio"
+    ],
+    "tools": true,
+    "thinking": true
+  },
+  {
+    "repo": "unsloth/gemma-4-E4B-it-GGUF",
+    "url": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf",
+    "mmprojUrl": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/mmproj-F16.gguf",
+    "size": 5967544256,
+    "modalities": [
+      "image",
+      "audio"
+    ],
+    "tools": true,
+    "thinking": true
+  }
+]
