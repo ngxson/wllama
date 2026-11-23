@@ -37,6 +37,8 @@ git clone --recurse-submodules https://github.com/ngxson/wllama.git source
 # build.sh only removes assets/: remove all the previous build output (the hashed files in _app/ change on each build), keep the space files
 find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .gitattributes ! -name .gitignore ! -name README.md ! -name build.sh ! -name source -exec rm -rf {} +
 ./build.sh
+# the space rejects binary files that are not in LFS (the build has icons, images and fonts, not only the wasm)
+git lfs track "*.png" "*.ico" "*.woff2" > /dev/null
 
 echo ">>> push"
 if [ -z "$(git status --porcelain)" ]; then
