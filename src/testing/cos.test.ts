@@ -1,5 +1,11 @@
 import { test, expect, beforeEach } from 'vitest';
 import { COSBackend, mockCOS } from '../storage/cos';
+import { OPFSBackend } from '../storage/opfs';
+import CacheManager from '../cache-manager';
+import { ModelManager } from '../model-manager';
+
+const TINY_MODEL =
+  'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf';
 
 async function randomBufAndHash(): Promise<{
   buf: Uint8Array;
@@ -81,3 +87,52 @@ test.sequential('read missing key returns null', async () => {
   const blob = await backend.read('non-existent-key', { sha256 });
   expect(blob).toBeNull();
 });
+
+test.sequential(
+  'downloaded model stored in COS is found in the cache',
+  async () => {
+    const manager = new ModelManager({
+      cacheManager: new CacheManager([new COSBackend()]),
+    });
+    await manager.clear();
+    const model = await manager.downloadModel(TINY_MODEL);
+    expect(model.validate()).toBe('valid');
+
+    // the file is in COS, OPFS has only its metadata
+    const fileKey = await manager.cacheManager.getNameFromURL(TINY_MODEL);
+    expect(await new OPFSBackend().getSize(fileKey)).toBe(-1);
+
+    const models = await manager.getModels();
+    expect(models.find((m) => m.url === TINY_MODEL)?.validate()).toBe('valid');
+    const [blob] = await model.open();
+    expect(blob.size).toBe(model.size);
+
+    await manager.clear();
+  }
+);
+
+test.sequential(
+  'COS blocked by Permissions Policy falls back to OPFS',
+  async () => {
+    (navigator as any).crossOriginStorage = {
+      getFileHandle: () =>
+        Promise.reject(
+          new DOMException(
+            'Cross-Origin Storage is disabled by Permissions Policy in this context.',
+            'NotAllowedError'
+          )
+        ),
+    };
+    const manager = new ModelManager({
+      cacheManager: new CacheManager([new COSBackend()]),
+    });
+    await manager.clear();
+    const model = await manager.downloadModel(TINY_MODEL);
+    expect(model.validate()).toBe('valid');
+
+    const fileKey = await manager.cacheManager.getNameFromURL(TINY_MODEL);
+    expect(await new OPFSBackend().getSize(fileKey)).toBe(model.size);
+
+    await manager.clear();
+  }
+);

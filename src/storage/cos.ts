@@ -25,8 +25,12 @@ function makeHash(key: string): CrossOriginStorageGetFileHandleHash {
 
 // internal, non-standard implementation
 class COSInternalBackend implements StorageBackend {
+  // set when the Permissions Policy blocks COS in this document (for example, an iframe without allow="cross-origin-storage")
+  private notAllowed = false;
+
   isSupported(): boolean {
     return (
+      !this.notAllowed &&
       typeof navigator !== 'undefined' &&
       typeof navigator.crossOriginStorage?.getFileHandle === 'function'
     );
@@ -39,17 +43,23 @@ class COSInternalBackend implements StorageBackend {
         makeHash(key)
       );
       return handle.getFile();
-    } catch {
+    } catch (e) {
+      this.checkNotAllowed(e);
       return null;
     }
   }
 
   // IMPORTANT: key must be SHA-256 hash of the data
   async write(key: string, stream: ReadableStream): Promise<void> {
-    const handle = await navigator.crossOriginStorage!.getFileHandle(
-      makeHash(key),
-      { create: true, origins: '*' }
-    );
+    const handle = await navigator
+      .crossOriginStorage!.getFileHandle(makeHash(key), {
+        create: true,
+        origins: '*',
+      })
+      .catch((e) => {
+        this.checkNotAllowed(e);
+        throw e;
+      });
     const writable = await (handle as any).createWritable();
     const reader = stream.getReader();
     try {
@@ -71,9 +81,14 @@ class COSInternalBackend implements StorageBackend {
       );
       const file = await handle.getFile();
       return file.size;
-    } catch {
+    } catch (e) {
+      this.checkNotAllowed(e);
       return -1;
     }
+  }
+
+  private checkNotAllowed(e: any): void {
+    if (e?.name === 'NotAllowedError') this.notAllowed = true;
   }
 
   async list(): Promise<Array<{ key: string; size: number }>> {
@@ -114,10 +129,15 @@ export class COSBackend implements StorageBackend {
   ): Promise<void> {
     if (hint?.sha256 && this.cos.isSupported()) {
       if (offset > 0) throw new Error('COS backend cannot write at an offset');
-      await this.cos.write(hint.sha256, stream);
-    } else {
-      await this.priv.write(key, stream, undefined, offset);
+      try {
+        await this.cos.write(hint.sha256, stream);
+        return;
+      } catch (e) {
+        // the stream is not read yet, so OPFS can still use it
+        if (this.cos.isSupported()) throw e;
+      }
     }
+    await this.priv.write(key, stream, undefined, offset);
   }
 
   canWriteAt(hint?: StorageFileHint): boolean {

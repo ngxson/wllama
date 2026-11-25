@@ -647,6 +647,13 @@ export class CacheManager {
         });
       }
     }
+    // a file stored by its hash (COS) is not in the list, only its metadata is
+    for (const [name, metadata] of Object.entries(metadataMap)) {
+      const hint = hintFromMetadata(metadata);
+      if (!hint || result.some((e) => e.name === name)) continue;
+      const size = await this.sb.getSize(name, hint);
+      if (size !== -1) result.push({ name, size, metadata });
+    }
     return result;
   }
 
