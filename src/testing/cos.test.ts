@@ -89,6 +89,34 @@ test.sequential('read missing key returns null', async () => {
 });
 
 test.sequential(
+  'write falls back to OPFS when COS is not allowed',
+  async () => {
+    let calls = 0;
+    (navigator as any).crossOriginStorage = {
+      getFileHandle: () => {
+        calls++;
+        return Promise.reject(
+          new DOMException('Not allowed', 'NotAllowedError')
+        );
+      },
+    };
+    const backend = new COSBackend();
+    const { buf, sha256 } = await randomBufAndHash();
+    const key = 'test-not-allowed';
+
+    await backend.write(key, bufStream(buf), { sha256 });
+    const blob = await backend.read(key);
+    expect(new Uint8Array(await blob!.arrayBuffer())).toEqual(buf);
+
+    // the next write skips COS
+    await backend.write(key, bufStream(buf), { sha256 });
+    expect(calls).toBe(1);
+
+    await backend.delete(key);
+  }
+);
+
+test.sequential(
   'downloaded model stored in COS is found in the cache',
   async () => {
     const manager = new ModelManager({
