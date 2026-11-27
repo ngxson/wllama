@@ -59,6 +59,16 @@ export const GLUE_MESSAGE_PROTOTYPES: { [name: string]: GlueMessageProto } = {
         "isNullable": true
       },
       {
+        "type": "bool",
+        "name": "moe_cpu",
+        "isNullable": true
+      },
+      {
+        "type": "int",
+        "name": "moe_cache_mib",
+        "isNullable": true
+      },
+      {
         "type": "int",
         "name": "rpc_mem_max",
         "isNullable": true
@@ -1036,6 +1046,8 @@ export interface GlueMsgLoadReq {
   use_mlock: boolean;
   n_gpu_layers: number;
   token_embd_on_gpu?: boolean | undefined;
+  moe_cpu?: boolean | undefined;
+  moe_cache_mib?: number | undefined;
   rpc_mem_max?: number | undefined;
   n_ctx: number;
   n_threads: number;

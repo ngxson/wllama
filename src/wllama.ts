@@ -791,6 +791,8 @@ export class Wllama {
         use_mlock: false,
         n_gpu_layers: params.n_gpu_layers ?? 99999,
         token_embd_on_gpu: params.token_embd_on_gpu ?? true,
+        moe_cpu: params.moe_cpu,
+        moe_cache_mib: params.moe_cache_mib,
         rpc_mem_max: rpcMemMax,
         n_ctx: params.n_ctx ?? 1024,
         n_threads: this.useMultiThread ? nbThreads : 1,
