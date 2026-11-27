@@ -797,10 +797,7 @@ struct wllama_context
     if (meta_split)
       ggml_free(meta_split);
     if (on_gpu)
-    {
       params.tensor_buft_overrides.push_back({"^token_embd\\.weight$", ggml_backend_dev_buffer_type(gpu)});
-      params.tensor_buft_overrides.push_back({nullptr, nullptr});
-    }
   }
 
   // a wasm instance has 4GB: memory to keep free in each rpc worker, in KiB
@@ -916,6 +913,8 @@ struct wllama_context
     }
     if (req.n_gpu_layers.not_null())
       params.n_gpu_layers = req.n_gpu_layers.value;
+    if (req.moe_cache_mib.not_null())
+      params.moe_cache_size = (size_t)req.moe_cache_mib.value * 1024 * 1024;
     if (req.model_alias.not_null())
       params.model_alias.insert(req.model_alias.value);
 
@@ -1133,14 +1132,22 @@ struct wllama_context
     // load model
     llama_backend_init();
     llama_numa_init(params.numa);
+    const bool moe_cpu = req.moe_cpu.not_null() && req.moe_cpu.value;
     if (n_rpc > 0)
     {
+      // the fit refuses tensor overrides, it can put the experts on the CPU itself
+      if (moe_cpu)
+        LOG_WRN("%s: moe_cpu is ignored with rpc workers\n", __func__);
       fit_rpc_workers(n_rpc);
     }
     else
     {
+      if (moe_cpu)
+        params.tensor_buft_overrides.push_back(llm_ffn_exps_cpu_override());
       if (!req.token_embd_on_gpu.not_null() || req.token_embd_on_gpu.value)
         keep_tok_embd_on_gpu(model_paths);
+      if (!params.tensor_buft_overrides.empty())
+        params.tensor_buft_overrides.push_back({nullptr, nullptr});
       const int n_rpc_needed = req.rpc_mem_max.not_null() ? count_rpc_workers((size_t)req.rpc_mem_max.value * 1024) : 0;
       if (n_rpc_needed > 0)
       {

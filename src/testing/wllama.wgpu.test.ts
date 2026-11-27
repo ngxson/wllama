@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { Wllama } from '../wllama';
-import { LogLevel } from '../types/types';
+import { LoadModelParams, LogLevel } from '../types/types';
 
 const CONFIG_PATHS = {
   default: '/src/wasm/wllama.wasm',
@@ -160,5 +160,47 @@ test.sequential(
     expect(onGpu.overridden).toBe(true);
     expect(onCpu.overridden).toBe(false);
     expect(onGpu.text).toBe(onCpu.text);
+  }
+);
+
+// same model as the LoRA test of wllama.test.ts
+const MOE_MODEL =
+  'https://huggingface.co/ggml-org-dev/stories15M_MOE/resolve/main/stories15M_MOE-Q8_0.gguf';
+
+test.sequential(
+  'MoE experts on the CPU, with or without a GPU cache, give the same text',
+  async () => {
+    const complete = async (params: LoadModelParams) => {
+      const logs: string[] = [];
+      const keep = (...args: any[]) => logs.push(args.join(' '));
+      const wllama = new Wllama(CONFIG_PATHS, {
+        logger: { debug: keep, log: keep, warn: keep, error: keep },
+      });
+      wllama.setCompat(null);
+      await wllama.loadModelFromUrl(MOE_MODEL, {
+        n_ctx: 512,
+        log_level: LogLevel.DEBUG, // the override is logged at debug level
+        ...params,
+      });
+      const res = await wllama.createCompletion({
+        prompt: 'Once upon a time',
+        max_tokens: 8,
+        temperature: 0.0,
+        seed: 42,
+      });
+      await wllama.exit();
+      return { text: res.choices[0].text, logs };
+    };
+
+    const onGpu = await complete({});
+    const onCpu = await complete({ moe_cpu: true });
+    const cached = await complete({ moe_cpu: true, moe_cache_mib: 4 });
+    expect(
+      onCpu.logs.some((l) => /_exps\.weight.*overridden to CPU/.test(l))
+    ).toBe(true);
+    expect(cached.logs.some((l) => /MoE cache size =/.test(l))).toBe(true);
+    expect(onGpu.text.length).toBeGreaterThan(0);
+    expect(onCpu.text).toBe(onGpu.text);
+    expect(cached.text).toBe(onGpu.text);
   }
 );

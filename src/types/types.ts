@@ -10,6 +10,11 @@ export interface LoadModelParams {
   // keep the token embedding on the GPU only, not also on the CPU, when all layers are on the GPU (default: true)
   // this saves its size in page memory; on a model with a separate output layer, it uses this size more GPU memory
   token_embd_on_gpu?: boolean;
+  // MoE models: keep the experts on the CPU, same as --cpu-moe of llama.cpp (default: false). Not used with rpc workers
+  moe_cpu?: boolean;
+  // MoE models: GPU cache in MiB for the experts on the CPU, same as --moe-cache-mib of llama.cpp (default: 0, disabled)
+  // the experts that a token uses are uploaded to the cache when they are not in it
+  moe_cache_mib?: number;
   // number of extra wasm instances (rpc workers) that hold a part of the model, each one has its own 4GB memory
   // by default, they are used only when the part of the model on the CPU does not fit in one instance; set 0 to disable
   // WebGPU keeps the layers of n_gpu_layers, the workers get the other layers
